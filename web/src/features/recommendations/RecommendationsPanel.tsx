@@ -6,7 +6,7 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
 import type { Recommendation } from "../../shared/recommendation";
 
-type Rec = Recommendation & { id: string; status: string };
+type Rec = Recommendation & { id: string; status: string; aiSummary?: { text: string } };
 const EVIDENCE_LABEL = { explore: "Explore: early signals only", improve: "Improve: partial evidence", optimize: "Optimize: spend, sales and costs" };
 
 export function RecommendationsPanel() {
@@ -61,6 +61,10 @@ export function RecommendationsPanel() {
         <article key={r.id} className="card" style={{ marginTop: 16 }}
           onMouseEnter={() => { if (r.status === "generated" && !seen.has(r.id)) { seen.add(r.id); act(r.id, "viewed"); } }}>
           <p className="muted mono">{EVIDENCE_LABEL[r.mode]} · {r.status.replace(/_/g, " ")}</p>
+          {r.aiSummary && (<>
+            <p>{r.aiSummary.text}</p>
+            <p className="muted">Summary written by AI from the facts below. The facts and numbers come from your data.</p>
+          </>)}
           <h3 style={{ marginTop: 0 }}>Your next move</h3>
           <p>{r.action}</p>
           <h4>Why</h4>

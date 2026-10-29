@@ -15,3 +15,4 @@ service-account*.json
 # generated copies of /shared (see scripts/sync-shared.mjs)
 web/src/shared/
 functions/src/shared/
+.secret.local

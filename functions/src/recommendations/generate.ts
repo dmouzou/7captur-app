@@ -1,13 +1,17 @@
 import { FieldValue, getFirestore, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
+import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { generateRecommendationInput } from "../shared/recommendation";
 import { recordSchemas, type RecordCollection } from "../shared/records";
 import { requireMember } from "../workspaces/access";
 import { runEngine, ENGINE_VERSION } from "./engine";
+import { explainWithAI } from "./explain";
 import { confirmReservation, localToday, releaseReservation, reserveRecommendation } from "./usage";
 
 const MAX_DOCS = 500;
+// Set with: firebase functions:secrets:set ANTHROPIC_API_KEY (per project). Never commit it.
+const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 
 async function load(db: FirebaseFirestore.Firestore, wid: string, bid: string, coll: RecordCollection) {
   const snap = await db.collection(`workspaces/${wid}/${coll}`).where("businessId", "==", bid).limit(MAX_DOCS).get();
@@ -26,7 +30,7 @@ async function load(db: FirebaseFirestore.Firestore, wid: string, bid: string, c
  * run deterministic engine, persist, confirm credit. Any failure releases the credit.
  * The recommendation id equals requestId, so a retry returns the same result.
  */
-export const generateRecommendation = onCall(async (request) => {
+export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 60 }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
   const parsed = generateRecommendationInput.safeParse(request.data);
@@ -66,9 +70,13 @@ export const generateRecommendation = onCall(async (request) => {
     const dropped = posts.dropped + promotions.dropped + leads.dropped + sales.dropped + costs.dropped;
     if (dropped > 0) rec.evidence.warnings.push(`${dropped} record(s) had invalid values and were ignored.`);
 
+    // Optional AI phrasing. Never blocks or fails the recommendation; rejected output is dropped.
+    const ai = await explainWithAI(rec, ANTHROPIC_API_KEY.value());
+
     const batch = db.batch();
     batch.set(recRef, {
-      ...rec, workspaceId, businessId, requestId, status: "generated", createdBy: uid,
+      ...rec,
+      ...(ai ? { aiSummary: { text: ai.text, model: ai.model, promptVersion: ai.promptVersion }, aiUsage: { inputTokens: ai.inputTokens ?? null, outputTokens: ai.outputTokens ?? null } } : {}), workspaceId, businessId, requestId, status: "generated", createdBy: uid,
       engineVersion: ENGINE_VERSION, createdAt: FieldValue.serverTimestamp(),
     });
     batch.set(db.collection(`workspaces/${workspaceId}/recommendationEvents`).doc(), {
