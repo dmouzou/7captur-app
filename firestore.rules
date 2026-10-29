@@ -1,0 +1,131 @@
+rules_version = '2';
+
+// Deny by default. Tenant model: users -> workspaces -> businesses -> records.
+// Clients can NEVER write: plan/entitlements, usage, billing, connections, tokens,
+// recommendations, recommendation events, audit events, config. Those go through Functions.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    function memberDoc(wid) {
+      return get(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid));
+    }
+    function isMember(wid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid))
+        && memberDoc(wid).data.status == 'active';
+    }
+    function canEdit(wid) {
+      return isMember(wid) && memberDoc(wid).data.role in ['owner', 'editor'];
+    }
+
+    // Manual input records (posts, promotions, leads, sales, costs).
+    function validNewRecord(wid) {
+      let d = request.resource.data;
+      return d.workspaceId == wid
+        && d.createdBy == request.auth.uid
+        && d.createdAt == request.time
+        && d.provenance == 'manual'
+        && d.businessId is string;
+    }
+    function validRecordUpdate(wid) {
+      let d = request.resource.data;
+      return d.workspaceId == resource.data.workspaceId
+        && d.workspaceId == wid
+        && d.businessId == resource.data.businessId
+        && d.createdBy == resource.data.createdBy
+        && d.provenance == resource.data.provenance
+        && d.updatedAt == request.time;
+    }
+
+    // Public pricing / feature config, server-written only.
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(["displayName", "locale", "notificationPrefs", "createdAt", "status"])
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'locale', 'notificationPrefs']);
+      allow delete: if false;
+    }
+
+    match /workspaces/{wid} {
+      // Workspace doc holds plan reference, so it is read-only for clients.
+      allow read: if isMember(wid);
+      allow write: if false;
+
+      match /members/{uid} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+
+      match /businesses/{bid} {
+        allow read: if isMember(wid);
+        allow create: if false;  // plan business-count limit is enforced by createWorkspace / later callable
+        allow update: if canEdit(wid)
+          && request.resource.data.workspaceId == resource.data.workspaceId
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name', 'type', 'objective', 'channels', 'buyingMethods', 'currency', 'timezone', 'products', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /{coll}/{recordId} {
+        allow read: if coll in ['posts', 'promotions', 'leads', 'sales', 'costs'] && isMember(wid);
+        allow create: if coll in ['posts', 'promotions', 'leads', 'sales', 'costs']
+          && canEdit(wid) && validNewRecord(wid);
+        allow update: if coll in ['posts', 'promotions', 'leads', 'sales', 'costs']
+          && canEdit(wid) && validRecordUpdate(wid);
+        allow delete: if coll in ['posts', 'promotions', 'leads', 'sales', 'costs'] && canEdit(wid);
+      }
+
+      // Server-written, member-readable.
+      match /recommendations/{id} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      match /recommendationEvents/{id} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      match /reports/{id} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      match /usage/{periodId} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      match /imports/{jobId} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+
+      // Connection docs hold status only. Tokens live in Secret Manager, never in Firestore.
+      match /connections/{id} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+
+      // Billing state comes only from verified provider webhooks.
+      match /billing/{id} {
+        allow read: if isMember(wid) && memberDoc(wid).data.role == 'owner';
+        allow write: if false;
+      }
+    }
+
+    match /auditEvents/{id} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

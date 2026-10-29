@@ -1,0 +1,28 @@
+/* Brand tokens: dark + lime. Lime is for accents and primary actions, never low-contrast body text. */
+:root {
+  --bg: #15171d;
+  --surface: #1c1f27;
+  --border: #2a2e39;
+  --text: #eceef2;
+  --muted: #a3a9b8;
+  --lime: #8fce3a;
+  --gold: #d8b14a;
+  --danger: #ff7a7a;
+  --font-sans: "Inter Tight", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans); line-height: 1.5; }
+a { color: var(--lime); }
+h1, h2 { letter-spacing: -0.02em; }
+.page { max-width: 520px; margin: 0 auto; padding: 48px 16px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+label { display: block; margin: 16px 0 6px; font-size: 14px; color: var(--muted); }
+input, select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+button { margin-top: 20px; padding: 10px 16px; border: 0; border-radius: 8px; background: var(--lime); color: #0e1014; font: inherit; font-weight: 600; cursor: pointer; }
+button.link { background: none; color: var(--lime); padding: 0; margin: 0; font-weight: 500; text-decoration: underline; }
+button:disabled { opacity: .6; cursor: not-allowed; }
+.error { color: var(--danger); margin-top: 12px; font-size: 14px; }
+.muted { color: var(--muted); font-size: 14px; }
+.mono { font-family: var(--font-mono); }

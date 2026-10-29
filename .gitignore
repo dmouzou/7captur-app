@@ -1,0 +1,17 @@
+node_modules/
+dist/
+lib/
+.env
+.env.*
+!.env.example
+.firebase/
+*.log
+firebase-debug.log*
+firestore-debug.log
+ui-debug.log
+.DS_Store
+.runtimeconfig.json
+service-account*.json
+# generated copies of /shared (see scripts/sync-shared.mjs)
+web/src/shared/
+functions/src/shared/

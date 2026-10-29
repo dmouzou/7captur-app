@@ -1,0 +1,33 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isMember(wid) {
+      let p = /databases/(default)/documents/workspaces/$(wid)/members/$(request.auth.uid);
+      return request.auth != null && firestore.exists(p) && firestore.get(p).data.status == 'active';
+    }
+    function canEdit(wid) {
+      let p = /databases/(default)/documents/workspaces/$(wid)/members/$(request.auth.uid);
+      return isMember(wid) && firestore.get(p).data.role in ['owner', 'editor'];
+    }
+
+    // Private, workspace-bound uploads (CSV/XLSX/screenshots). Size and type limited.
+    match /workspaces/{wid}/uploads/{fileName} {
+      allow read: if isMember(wid);
+      allow create: if canEdit(wid)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp)|text/csv|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      allow update, delete: if false;
+    }
+
+    // Exports are written by Functions only.
+    match /workspaces/{wid}/exports/{fileName} {
+      allow read: if isMember(wid);
+      allow write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
