@@ -112,3 +112,13 @@ describe("analyzeRows", () => {
 describe("templates", () => {
   it("header-only templates", () => expect(buildTemplate("sales").trim().split(",")).toContain("amount"));
 });
+
+describe("Meta Ads Manager export headers", () => {
+  it("maps reporting dates and amount spent with currency suffix", () => {
+    const m = autoMap(["Campaign name", "Reporting starts", "Reporting ends", "Amount spent (EUR)", "Impressions", "Reach", "Link clicks"], "promotions");
+    expect(m.startDate).toBe("Reporting starts");
+    expect(m.endDate).toBe("Reporting ends");
+    expect(m.spend).toBe("Amount spent (EUR)");
+    expect(m.clicks).toBe("Link clicks");
+  });
+});

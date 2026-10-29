@@ -104,9 +104,9 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
   ],
   promotions: [
     platform,
-    dateField("startDate", "Start date", ["start", "date", "from", "begin"]),
-    dateField("endDate", "End date", ["end", "to", "stop"], false),
-    { name: "spend", label: "Spend", kind: "number", required: true, aliases: ["spend", "cost", "amount_spent", "ad_spend", "budget_spent"] },
+    dateField("startDate", "Start date", ["start", "date", "from", "begin", "reporting_starts"]),
+    dateField("endDate", "End date", ["end", "to", "stop", "reporting_ends"], false),
+    { name: "spend", label: "Spend", kind: "number", required: true, aliases: ["spend", "cost", "amount_spent", "campaign_spend", "ad_spend", "budget_spent"] },
     currencyField,
     {
       name: "objective", label: "Objective", kind: "enum", enumValues: OBJECTIVES, aliases: ["objective", "goal"],
@@ -164,7 +164,7 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
 
 // ---------- Cell parsing ----------
 
-const norm = (s: string) => s.trim().toLowerCase().replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[^a-z0-9%]+/g, "_").replace(/^_+|_+$/g, "");
+const norm = (s: string) => s.trim().replace(/\s*\([^)]*\)\s*$/, "").toLowerCase().replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[^a-z0-9%]+/g, "_").replace(/^_+|_+$/g, "");
 
 export function autoMap(headers: string[], coll: RecordCollection): Record<string, string> {
   const used = new Set<string>();
