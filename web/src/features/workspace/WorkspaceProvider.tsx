@@ -6,6 +6,7 @@ import type { PlanId } from "../../shared/plans";
 
 export interface WorkspaceState {
   workspaceId: string; businessId: string; plan: PlanId; timezone: string; currency: string; objective: string;
+  ownerUid: string; billingStatus: string; restrictAtMs: number | null; hasSubscription: boolean;
 }
 const Ctx = createContext<WorkspaceState | null>(null);
 export const useWorkspace = () => {
@@ -36,6 +37,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setState({
             workspaceId, businessId: b.id, plan: d.plan, timezone: d.timezone,
             currency: b.data().currency, objective: b.data().objective,
+            ownerUid: d.ownerUid, billingStatus: d.billingStatus ?? "none", hasSubscription: Boolean(d.paddleSubscriptionId),
+            restrictAtMs: d.restrictAt?.toMillis?.() ?? null,
           });
         });
       } catch { setError("Could not load your workspace."); }

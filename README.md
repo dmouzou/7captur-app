@@ -2,7 +2,7 @@
 
 Customer SaaS for 7Captur (app.7captur.com). Baseline: `7Captur_MVP_Product_Specification.pdf` v1.0 (Project docs). Stack: Vite + React + TypeScript, Firebase (Auth, Firestore, Functions TS, Storage, Hosting).
 
-## Status: spec Phase 0 done, Phase 1 in progress
+## Status: spec Phases 0 and 1 done, Phase 2 built (needs provider setup and live testing)
 
 Done: tenant model (User > Workspace > Business), deny-by-default Firestore and Storage rules, canonical plan config, runtime schemas, transactional recommendation-credit reservation (idempotent, releasable), `createWorkspace` callable, auth + onboarding shell, dark/lime tokens.
 
@@ -15,6 +15,26 @@ Screenshot import (spec AC-04): upload (PNG/JPEG/WebP, 5 MB, private workspace p
 Phase 1 not done: data export (must neutralize cells starting with = + - @ when writing CSV), AI-written explanations (the engine text is deterministic for now), edit-in-place for records.
 
 Not done (later phases): weekly reports, billing webhooks, Meta/Shopify, admin panel, admin custom claims, App Check, Secret Manager wiring, email.
+
+Phase 1 finished: data export (CSV or JSON; text cells that start with = + - @ are neutralized so they cannot run as spreadsheet formulas) and editing saved records (original source label kept).
+
+## Phase 2: weekly reports and billing
+
+Weekly summary: hourly scheduler picks workspaces due, builds a deterministic report (changes vs the week before, data freshness, recommendation choices, gaps, next focus). Monday 08:00 in the workspace timezone, DST-safe. No-change weeks are skipped unless the owner opts into status-only. Never uses recommendation credits and never invents advice. Email goes through an idempotent outbox (`mail` collection, id = workspace + week), no business values in subject or body, verified addresses only, preference-controlled. Bounded retries (3), then the week is skipped and the error is kept on the workspace.
+
+Billing (Paddle): `paddleWebhook` verifies the `Paddle-Signature` HMAC (5 minute replay window, secret rotation supported), is idempotent on `event_id`, ignores out-of-order events and unmapped prices, and is the ONLY thing that changes plan or billing state (AC-11). Payment failure keeps the paid plan for a grace period (`BILLING_GRACE_DAYS`, default 7), then `enforceBilling` drops to Free; recovery restores the plan. Cancellation keeps access until the paid-through date. Nothing is ever deleted on downgrade. Callables: `createBillingPortalSession` (payment method, invoices, cancel) and `changeSubscriptionPlan` (owner only; asks Paddle, then waits for the webhook).
+
+Plan changes: upgrades are charged pro rata now. Downgrades take effect immediately with the new price billed from the next billing date, because Paddle cannot schedule an item change for later. Cancellation is at period end.
+
+### Provider setup (per Firebase project)
+
+1. Paddle: create products and monthly prices for Starter, Growth and the three Pro bands (USD). Create a notification destination pointing at the deployed `paddleWebhook` URL, subscribed to `subscription.*` and `transaction.payment_failed`. Create a client-side token and an API key.
+2. Secrets: `firebase functions:secrets:set PADDLE_WEBHOOK_SECRET`, `PADDLE_API_KEY`, `ANTHROPIC_API_KEY`.
+3. `functions/.env.<project-id>` from `functions/.env.example` (price id to plan map).
+4. `web/.env.local`: `VITE_PADDLE_ENV`, `VITE_PADDLE_CLIENT_TOKEN`, `VITE_PADDLE_PRICES`.
+5. Email: install the Firebase "Trigger Email from Firestore" extension on collection `mail` with a verified sender domain (SMTP or SendGrid). It sends, retries and writes delivery status onto each doc.
+
+Not done: Pro spend band from connected ad accounts (needs Phase 3), notice before a band change, account deletion flow, in-app notification center, admin billing views (Phase 4).
 
 ## Layout
 

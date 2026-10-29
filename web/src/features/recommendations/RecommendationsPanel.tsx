@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
+import { periodIds } from "../../shared/periods";
 import type { Recommendation } from "../../shared/recommendation";
 
 type Rec = Recommendation & { id: string; status: string; aiSummary?: { text: string } };
@@ -23,11 +24,11 @@ export function RecommendationsPanel() {
     (s) => setRecs(s.docs.map((d) => ({ id: d.id, ...(d.data() as Recommendation & { status: string }) }))),
   ), [ws.workspaceId]);
 
-  // Usage doc id is the ISO week id, computed by the server; we show the latest weekly doc.
-  useEffect(() => onSnapshot(
-    query(collection(db, `workspaces/${ws.workspaceId}/usage`), orderBy("updatedAt", "desc"), limit(2)),
-    (s) => setUsed(s.docs.find((d) => d.data().kind === "week")?.data().recommendations ?? 0),
-  ), [ws.workspaceId]);
+  // Usage doc id is the ISO week id in the workspace timezone (same helper the server uses).
+  useEffect(() => {
+    const { weekId } = periodIds(new Date(), ws.timezone);
+    return onSnapshot(doc(db, `workspaces/${ws.workspaceId}/usage/${weekId}`), (s) => setUsed((s.data()?.recommendations as number | undefined) ?? 0));
+  }, [ws.workspaceId, ws.timezone]);
 
   async function generate() {
     setError(""); setBusy(true);

@@ -12,6 +12,8 @@ export { importRecords } from "./imports/importRecords";
 export { extractFromScreenshot, cleanupUploads } from "./imports/screenshot";
 export { exportData } from "./exports/exportData";
 export { weeklyReports } from "./reports/weekly";
+export { paddleWebhook } from "./billing/webhook";
+export { createBillingPortalSession, changeSubscriptionPlan, enforceBilling } from "./billing/manage";
 
 export const health = onRequest((_req, res) => {
   res.json({ ok: true, service: "7captur-functions", time: new Date().toISOString() });

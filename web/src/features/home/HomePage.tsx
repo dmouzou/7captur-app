@@ -6,18 +6,19 @@ import { ImportPanel } from "../imports/ImportPanel";
 import { ScreenshotPanel } from "../imports/ScreenshotPanel";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import { ReportsPanel } from "../reports/ReportsPanel";
+import { BillingPanel } from "../billing/BillingPanel";
 import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { PANELS } from "../records/config";
 import { COLLECTIONS, type RecordCollection } from "../../shared/records";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
 
-type Tab = "recommendations" | RecordCollection | "import" | "screenshot" | "settings" | "reports";
+type Tab = "recommendations" | RecordCollection | "import" | "screenshot" | "settings" | "reports" | "billing";
 
 export function HomePage() {
   const ws = useWorkspace();
   const [tab, setTab] = useState<Tab>("recommendations");
-  const tabs: [Tab, string][] = [["recommendations", "Recommendations"], ["reports", "Weekly summary"], ...COLLECTIONS.map((c): [Tab, string] => [c, PANELS[c].title]), ["import", "Import CSV"], ["screenshot", "Import screenshot"], ["settings", "Settings"]];
+  const tabs: [Tab, string][] = [["recommendations", "Recommendations"], ["reports", "Weekly summary"], ...COLLECTIONS.map((c): [Tab, string] => [c, PANELS[c].title]), ["import", "Import CSV"], ["screenshot", "Import screenshot"], ["billing", "Billing"], ["settings", "Settings"]];
   return (
     <main className="page" style={{ maxWidth: 720 }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -32,7 +33,10 @@ export function HomePage() {
           </button>
         ))}
       </nav>
-      {tab === "recommendations" ? <RecommendationsPanel /> : tab === "import" ? <ImportPanel /> : tab === "screenshot" ? <ScreenshotPanel /> : tab === "settings" ? <SettingsPanel /> : tab === "reports" ? <ReportsPanel /> : <RecordsPanel coll={tab} />}
+      {ws.billingStatus === "past_due" && tab !== "billing" && (
+        <p className="card error" role="alert">Your last payment failed. <button type="button" className="link" onClick={() => setTab("billing")}>Update your payment method</button> to keep your plan.</p>
+      )}
+      {tab === "recommendations" ? <RecommendationsPanel /> : tab === "import" ? <ImportPanel /> : tab === "screenshot" ? <ScreenshotPanel /> : tab === "settings" ? <SettingsPanel /> : tab === "reports" ? <ReportsPanel /> : tab === "billing" ? <BillingPanel /> : <RecordsPanel coll={tab} />}
     </main>
   );
 }
