@@ -9,6 +9,12 @@ function localDate(now: Date, timeZone: string) {
   return { y: get("year"), m: get("month"), d: get("day") };
 }
 
+/** Today's date (YYYY-MM-DD) in an IANA timezone. */
+export function localToday(now: Date, timeZone: string): string {
+  const { y, m, d } = localDate(now, timeZone);
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 /** ISO week id (Monday start) and next reset date, in the workspace timezone. */
 export function periodIds(now: Date, timeZone: string) {
   const { y, m, d } = localDate(now, timeZone);

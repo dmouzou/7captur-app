@@ -2,11 +2,15 @@
 
 Customer SaaS for 7Captur (app.7captur.com). Baseline: `7Captur_MVP_Product_Specification.pdf` v1.0 (Project docs). Stack: Vite + React + TypeScript, Firebase (Auth, Firestore, Functions TS, Storage, Hosting).
 
-## Status: spec Phase 0 (Foundation)
+## Status: spec Phase 0 done, Phase 1 in progress
 
 Done: tenant model (User > Workspace > Business), deny-by-default Firestore and Storage rules, canonical plan config, runtime schemas, transactional recommendation-credit reservation (idempotent, releasable), `createWorkspace` callable, auth + onboarding shell, dark/lime tokens.
 
-Not done (later phases): manual input forms, imports, recommendation generation, weekly reports, billing webhooks, Meta/Shopify, admin panel, admin custom claims, App Check, Secret Manager wiring, email.
+Phase 1 so far: manual forms for posts, promotions, enquiries, sales and costs (saved with `manual` provenance); deterministic recommendation engine (`rules-v1`, evidence modes explore / improve / optimize, 28-day window, reproducible calculation); `generateRecommendation` and `recordRecommendationAction` callables with atomic credit reservation and release on failure; recommendations UI with accept / later / dismiss.
+
+Phase 1 not done: CSV/spreadsheet import, screenshot import with review, data export, AI-written explanations (the engine text is deterministic for now), edit-in-place for records.
+
+Not done (later phases): weekly reports, billing webhooks, Meta/Shopify, admin panel, admin custom claims, App Check, Secret Manager wiring, email.
 
 ## Layout
 
