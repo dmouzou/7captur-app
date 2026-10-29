@@ -8,7 +8,9 @@ Done: tenant model (User > Workspace > Business), deny-by-default Firestore and 
 
 Phase 1 so far: manual forms for posts, promotions, enquiries, sales and costs (saved with `manual` provenance); deterministic recommendation engine (`rules-v1`, evidence modes explore / improve / optimize, 28-day window, reproducible calculation); `generateRecommendation` and `recordRecommendationAction` callables with atomic credit reservation and release on failure; recommendations UI with accept / later / dismiss.
 
-Phase 1 not done: CSV/spreadsheet import, screenshot import with review, data export, AI-written explanations (the engine text is deterministic for now), edit-in-place for records.
+CSV import (spec 7.3): template download, column mapping with auto-match, explicit date and number formats (never guessed), preview with row-level errors and defaults shown, duplicate detection (in file and against saved records, via deterministic ids so re-uploads are safe), monthly import quota, import report and history. The browser previews; the `importRecords` function re-runs the same shared normalizer, so the server never trusts client validation. Files are parsed in the browser and not stored. Limits: 2 MB, 2000 rows, 50 columns. XLSX is not supported (export as CSV).
+
+Phase 1 not done: screenshot import with review, data export (must neutralize cells starting with = + - @ when writing CSV), AI-written explanations (the engine text is deterministic for now), edit-in-place for records.
 
 Not done (later phases): weekly reports, billing webhooks, Meta/Shopify, admin panel, admin custom claims, App Check, Secret Manager wiring, email.
 
