@@ -33,6 +33,7 @@ Tenant data lives under `workspaces/{wid}/...` and every record carries `workspa
 ## Product rules enforced in code so far
 
 - Plans: Free $0 (3 recs/week, permanent, no trial), Starter $9, Growth $39, Pro $59 / $79 / $119 by monthly ad spend (<15k / 15k-30k / 30k-50k), Custom from $199.
-- Allowances for every plan except Free are PROVISIONAL placeholders in `shared/plans.json`. Lock before launch (spec 18.1).
+- Weekly recommendations (locked): Free 3, Starter 10, Growth 25, Pro bands 40 / 60 / 100. No monthly caps yet. Custom, imports per month, history days and business counts are still placeholders in `shared/plans.json`.
+- Payment provider: Paddle (decided 2026-10-29). Billing state will come only from verified Paddle webhooks (Phase 2). Maintenance Plan removed.
 - Clients cannot write plan, usage, billing, connections, recommendations, audit events or roles.
 - No execution: nothing in this repo writes to an ad platform.

@@ -33,3 +33,10 @@ describe("periodIds", () => {
     expect(periodIds(new Date("2026-11-01T23:30:00Z"), "Asia/Kolkata").weekId).toBe("2026-W45");
   });
 });
+
+describe("locked weekly allowances", () => {
+  it("Free 3, Starter 10, Growth 25, Pro bands 40/60/100", () => {
+    expect([PLANS.free, PLANS.starter, PLANS.growth, PLANS.pro_growth, PLANS.pro_scale, PLANS.pro_pro]
+      .map((p) => p.recommendations.weekly)).toEqual([3, 10, 25, 40, 60, 100]);
+  });
+});
