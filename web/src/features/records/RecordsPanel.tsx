@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, where,
+  addDoc, collection, deleteDoc, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where,
 } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { useAuth } from "../auth/AuthProvider";
@@ -34,12 +34,20 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
   const [values, setValues] = useState(() => initial(cfg.fields, ws.currency));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const refRows = {
     posts: useRows("posts"), promotions: useRows("promotions"), leads: useRows("leads"),
     sales: [] as Row[], costs: [] as Row[],
   };
 
-  useEffect(() => setValues(initial(cfg.fields, ws.currency)), [coll, cfg.fields, ws.currency]);
+  useEffect(() => { setValues(initial(cfg.fields, ws.currency)); setEditingId(null); }, [coll, cfg.fields, ws.currency]);
+
+  function startEdit(r: Row) {
+    const v: Record<string, string | boolean> = {};
+    for (const f of cfg.fields) v[f.name] = f.type === "checkbox" ? Boolean(r[f.name]) : r[f.name] === undefined || r[f.name] === null ? "" : String(r[f.name]);
+    setValues(v); setEditingId(r.id); setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -59,6 +67,13 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
     }
     setBusy(true);
     try {
+      if (editingId) {
+        // Provenance stays as originally recorded; the edit is tracked with updatedAt.
+        const cleared = Object.fromEntries(cfg.fields.filter((f) => !(f.name in parsed.data)).map((f) => [f.name, deleteField()]));
+        await updateDoc(doc(db, `workspaces/${ws.workspaceId}/${coll}/${editingId}`), { ...cleared, ...parsed.data, updatedAt: serverTimestamp() });
+        setEditingId(null); setValues(initial(cfg.fields, ws.currency));
+        return;
+      }
       await addDoc(collection(db, `workspaces/${ws.workspaceId}/${coll}`), {
         ...parsed.data, workspaceId: ws.workspaceId, businessId: ws.businessId,
         createdBy: user!.uid, createdAt: serverTimestamp(), provenance: "manual",
@@ -71,8 +86,8 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
   return (
     <section>
       <form className="card" onSubmit={submit} noValidate>
-        <h2>Add to {cfg.title.toLowerCase()}</h2>
-        <p className="muted">Saved as <span className="mono">manual</span>: you entered it, we have not verified it.</p>
+        <h2>{editingId ? "Edit entry" : `Add to ${cfg.title.toLowerCase()}`}</h2>
+        <p className="muted">{editingId ? "Changes keep the original source label." : <>Saved as <span className="mono">manual</span>: you entered it, we have not verified it.</>}</p>
         {cfg.fields.map((f) => (
           <div key={f.name}>
             {f.type === "checkbox" ? (
@@ -100,7 +115,7 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
             </>)}
           </div>
         ))}
-        <button type="submit" disabled={busy}>Save</button>
+        <button type="submit" disabled={busy}>{editingId ? "Save changes" : "Save"}</button>{editingId && <> <button type="button" className="link" onClick={() => { setEditingId(null); setValues(initial(cfg.fields, ws.currency)); }}>Cancel</button></>}
         <div role="alert" className="error">{error}</div>
       </form>
 
@@ -109,7 +124,8 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
       <ul style={{ listStylePosition: "inside", padding: 0 }}>
         {rows.map((r) => (
           <li key={r.id} style={{ margin: "8px 0" }}>
-            {cfg.summary(r)}{" "}
+            {cfg.summary(r)} <span className="muted mono">[{String(r.provenance ?? "manual").replace(/_/g, " ")}]</span>{" "}
+            <button type="button" className="link" onClick={() => startEdit(r)}>edit</button>{" "}
             <button type="button" className="link" onClick={() => deleteDoc(doc(db, `workspaces/${ws.workspaceId}/${coll}/${r.id}`))}>delete</button>
           </li>
         ))}
