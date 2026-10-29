@@ -10,7 +10,9 @@ Phase 1 so far: manual forms for posts, promotions, enquiries, sales and costs (
 
 CSV import (spec 7.3): template download, column mapping with auto-match, explicit date and number formats (never guessed), preview with row-level errors and defaults shown, duplicate detection (in file and against saved records, via deterministic ids so re-uploads are safe), monthly import quota, import report and history. The browser previews; the `importRecords` function re-runs the same shared normalizer, so the server never trusts client validation. Files are parsed in the browser and not stored. Limits: 2 MB, 2000 rows, 50 columns. XLSX is not supported (export as CSV).
 
-Phase 1 not done: screenshot import with review, data export (must neutralize cells starting with = + - @ when writing CSV), AI-written explanations (the engine text is deterministic for now), edit-in-place for records.
+Screenshot import (spec AC-04): upload (PNG/JPEG/WebP, 5 MB, private workspace path, type checked by file content) > `extractFromScreenshot` reads it with Claude vision and returns DRAFT rows only (it has no write path to records) > the customer reviews and edits rows beside the image and ticks a confirmation > `importRecords` with `source: "screenshot"` (rejected without `reviewConfirmed`) saves rows as `screenshot_extracted` with `reviewedBy`. Same normalizer, duplicate detection and monthly import quota as CSV (one import is reserved at extraction and released if extraction fails). The image is deleted after saving and by a daily cleanup after 7 days. Image text is treated as data, never instructions; output keys are whitelisted and every cell is re-validated.
+
+Phase 1 not done: data export (must neutralize cells starting with = + - @ when writing CSV), AI-written explanations (the engine text is deterministic for now), edit-in-place for records.
 
 Not done (later phases): weekly reports, billing webhooks, Meta/Shopify, admin panel, admin custom claims, App Check, Secret Manager wiring, email.
 

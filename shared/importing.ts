@@ -322,10 +322,24 @@ export const importRecordsInput = z.object({
   requestId: z.string().min(8).max(64),
   fileName: z.string().max(200),
   dryRun: z.boolean().optional(),
+  /** "screenshot" rows come from AI extraction and must be human-reviewed (spec AC-04). */
+  source: z.enum(["csv", "screenshot"]).default("csv"),
+  reviewConfirmed: z.boolean().optional(),
+  uploadPath: z.string().max(300).optional(),
   mapping: z.record(z.string().max(100), z.string().max(200)),
   options: z.object({
     dateFormat: z.enum(["iso", "mdy", "dmy"]),
     numberFormat: z.enum(["us", "eu"]),
   }),
   rows: z.array(z.record(z.string().max(200), z.string().max(2000))).min(1).max(IMPORT_LIMITS.maxRows),
+});
+
+export const SCREENSHOT_LIMITS = { maxBytes: 5 * 1024 * 1024, maxRows: 100 } as const;
+
+export const extractScreenshotInput = z.object({
+  workspaceId: z.string().min(1).max(128),
+  businessId: z.string().min(1).max(128),
+  collection: z.enum(["posts", "promotions", "leads", "sales", "costs"]),
+  requestId: z.string().min(8).max(64),
+  uploadPath: z.string().min(1).max(300),
 });

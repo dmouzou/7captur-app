@@ -1,17 +1,15 @@
 import { FieldValue, getFirestore, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
-import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { generateRecommendationInput } from "../shared/recommendation";
 import { recordSchemas, type RecordCollection } from "../shared/records";
 import { requireMember } from "../workspaces/access";
 import { runEngine, ENGINE_VERSION } from "./engine";
 import { explainWithAI } from "./explain";
+import { ANTHROPIC_API_KEY } from "../config";
 import { confirmReservation, localToday, releaseReservation, reserveRecommendation } from "./usage";
 
 const MAX_DOCS = 500;
-// Set with: firebase functions:secrets:set ANTHROPIC_API_KEY (per project). Never commit it.
-const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 
 async function load(db: FirebaseFirestore.Firestore, wid: string, bid: string, coll: RecordCollection) {
   const snap = await db.collection(`workspaces/${wid}/${coll}`).where("businessId", "==", bid).limit(MAX_DOCS).get();

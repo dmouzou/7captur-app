@@ -3,18 +3,19 @@ import { signOut } from "firebase/auth";
 import { auth } from "../../services/firebase";
 import { RecordsPanel } from "../records/RecordsPanel";
 import { ImportPanel } from "../imports/ImportPanel";
+import { ScreenshotPanel } from "../imports/ScreenshotPanel";
 import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { PANELS } from "../records/config";
 import { COLLECTIONS, type RecordCollection } from "../../shared/records";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
 
-type Tab = "recommendations" | RecordCollection | "import";
+type Tab = "recommendations" | RecordCollection | "import" | "screenshot";
 
 export function HomePage() {
   const ws = useWorkspace();
   const [tab, setTab] = useState<Tab>("recommendations");
-  const tabs: [Tab, string][] = [["recommendations", "Recommendations"], ...COLLECTIONS.map((c): [Tab, string] => [c, PANELS[c].title]), ["import", "Import CSV"]];
+  const tabs: [Tab, string][] = [["recommendations", "Recommendations"], ...COLLECTIONS.map((c): [Tab, string] => [c, PANELS[c].title]), ["import", "Import CSV"], ["screenshot", "Import screenshot"]];
   return (
     <main className="page" style={{ maxWidth: 720 }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -29,7 +30,7 @@ export function HomePage() {
           </button>
         ))}
       </nav>
-      {tab === "recommendations" ? <RecommendationsPanel /> : tab === "import" ? <ImportPanel /> : <RecordsPanel coll={tab} />}
+      {tab === "recommendations" ? <RecommendationsPanel /> : tab === "import" ? <ImportPanel /> : tab === "screenshot" ? <ScreenshotPanel /> : <RecordsPanel coll={tab} />}
     </main>
   );
 }

@@ -11,12 +11,12 @@ service firebase.storage {
       return isMember(wid) && firestore.get(p).data.role in ['owner', 'editor'];
     }
 
-    // Private, workspace-bound uploads (CSV/XLSX/screenshots). Size and type limited.
+    // Private, workspace-bound screenshot uploads (png/jpeg/webp, under 5 MB). Deleted after import, and by a daily cleanup after 7 days.
     match /workspaces/{wid}/uploads/{fileName} {
       allow read: if isMember(wid);
       allow create: if canEdit(wid)
-        && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType.matches('image/(png|jpeg|webp)|text/csv|application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp)');
       allow update, delete: if false;
     }
 
