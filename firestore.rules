@@ -107,6 +107,15 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // In-app notifications are written by Functions. Members may only mark them read.
+      match /notifications/{id} {
+        allow read: if isMember(wid);
+        allow update: if isMember(wid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt'])
+          && request.resource.data.readAt == request.time;
+        allow create, delete: if false;
+      }
+
       // Connection docs hold status only. Tokens live in Secret Manager, never in Firestore.
       match /connections/{id} {
         allow read: if isMember(wid);

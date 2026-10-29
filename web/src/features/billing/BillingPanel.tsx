@@ -52,6 +52,15 @@ export function BillingPanel() {
     catch (e) { setError((e as { message?: string }).message ?? "Could not change your plan."); }
     finally { setBusy(""); }
   }
+  async function saveSpend() {
+    if (spend === "" || !Number.isFinite(spendNum) || spendNum < 0) { setError("Enter a spend of 0 or more."); return; }
+    setError(""); setNote(""); setBusy("spend");
+    try {
+      const r = await httpsCallable<unknown, { decision: string; to: string | null }>(functions, "setReportedSpend")({ workspaceId: ws.workspaceId, monthlySpendUsd: spendNum });
+      setNote(r.data.decision === "schedule" ? "Saved. Your Pro price band will change from your next billing date. We sent you a notice." : r.data.decision === "suggest_custom" ? "Saved. At this spend, Custom is a better fit. Contact us." : "Saved.");
+    } catch (e) { setError((e as { message?: string }).message ?? "Could not save."); }
+    finally { setBusy(""); }
+  }
   async function portal() {
     setError(""); setBusy("portal");
     try { const r = await httpsCallable<unknown, { url: string }>(functions, "createBillingPortalSession")({ workspaceId: ws.workspaceId }); window.open(r.data.url, "_blank", "noopener"); }
@@ -66,6 +75,7 @@ export function BillingPanel() {
         <h2>Billing</h2>
         <p><strong>{plan.name}</strong> · {ws.plan === "free" ? "$0" : price(ws.plan)}</p>
         {status === "past_due" && <p className="error" role="alert">Your last payment failed. Update your payment method{ws.restrictAtMs ? ` by ${fmtDate(ws.restrictAtMs)}` : ""} to keep your plan. Nothing is deleted if it lapses.</p>}
+        {ws.pendingBand && <p role="status">Your price band changes to {PLANS[ws.pendingBand.to].name} ({price(ws.pendingBand.to)}) on {fmtDate(ws.pendingBand.effectiveMs)}. Nothing changes before then.</p>}
         {status === "canceling" && <p role="status">Your subscription ends on {fmtDate(ws.restrictAtMs)}. You keep your plan until then, then move to Free. Your data stays.</p>}
         {(status === "restricted" || status === "canceled" || status === "paused") && <p role="status">You are on the Free plan. Your history and records are kept.</p>}
         <p className="muted">This week: {usage.week} of {plan.recommendations.weekly} recommendations · This month: {usage.imports} of {plan.importsPerMonth} imports · Direct connections: up to {plan.maxConnections}</p>
@@ -82,6 +92,7 @@ export function BillingPanel() {
           <h3 style={{ marginTop: 0 }}>Plans</h3>
           <label htmlFor="spend">Monthly ad spend (USD), as you report it. Only used to suggest a Pro price band.</label>
           <input id="spend" type="number" min={0} inputMode="decimal" value={spend} onChange={(e) => setSpend(e.target.value)} placeholder="Leave empty if you do not run paid ads" />
+          {ws.plan.startsWith("pro_") && <button type="button" disabled={!!busy} onClick={saveSpend}>Save reported spend</button>}
           {band === "custom" && <p className="muted">At $50,000 a month or more, Custom fits better. <a href="https://7captur.com/contact/" target="_blank" rel="noopener noreferrer">Contact us</a>.</p>}
           <p className="muted">Pro bands: under $15,000 is $59, $15,000 to $30,000 is $79, $30,000 to $50,000 is $119. Band changes apply from your next billing date, with notice first.</p>
           <ul style={{ listStyle: "none", padding: 0 }}>

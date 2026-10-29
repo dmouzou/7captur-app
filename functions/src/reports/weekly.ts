@@ -4,6 +4,7 @@ import { logger } from "firebase-functions/v2";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { recordSchemas, type RecordCollection } from "../shared/records";
 import { enqueueMail, weeklyEmail } from "../notify/mail";
+import { addNotification } from "../notify/inapp";
 import { localToday, periodIds } from "../recommendations/usage";
 import { buildWeeklyReport, type RecEvent } from "./buildReport";
 import { addDays, nextWeeklyRun } from "./time";
@@ -25,6 +26,7 @@ const dateOf = (t: unknown, tz: string) => (t instanceof Timestamp ? localToday(
 export async function runWeeklyForWorkspace(db: Firestore, wid: string, now = new Date()): Promise<"created" | "suppressed" | "exists"> {
   const wsSnap = await db.doc(`workspaces/${wid}`).get();
   const ws = wsSnap.data()!;
+  if (ws.deletionScheduledFor) return "suppressed";
   const tz = ws.timezone as string;
   const bizSnap = await db.collection(`workspaces/${wid}/businesses`).limit(1).get();
   const biz = bizSnap.docs[0];
@@ -59,6 +61,8 @@ export async function runWeeklyForWorkspace(db: Firestore, wid: string, now = ne
     if ((e as { code?: number }).code === 6) return "exists";
     throw e;
   }
+
+  await addNotification(db, wid, { kind: "weekly_report", title: "Your weekly summary is ready", body: "See what changed last week, what is missing and what to focus on next." }, `weekly_${weekId}`);
 
   // Email: preference-controlled, verified address only, idempotent per workspace and week.
   if (prefs.weeklyEmail !== false) {

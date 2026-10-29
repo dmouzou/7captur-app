@@ -14,9 +14,11 @@ export { exportData } from "./exports/exportData";
 export { weeklyReports } from "./reports/weekly";
 export { paddleWebhook } from "./billing/webhook";
 export { createBillingPortalSession, changeSubscriptionPlan, enforceBilling } from "./billing/manage";
+export { setReportedSpend, applyBandChanges } from "./billing/spend";
+export { requestAccountDeletion, cancelAccountDeletion, processDeletions } from "./account/deletion";
 
 export const health = onRequest((_req, res) => {
   res.json({ ok: true, service: "7captur-functions", time: new Date().toISOString() });
 });
 
-// Phase 2 in progress: weekly reports, billing. Phase 2: billing webhooks. Phase 3: Meta/Shopify adapters. Phase 4: admin.
+// Phase 3 in progress: Shopify, then Meta Ads. Phase 4: admin.

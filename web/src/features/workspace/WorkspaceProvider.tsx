@@ -7,6 +7,7 @@ import type { PlanId } from "../../shared/plans";
 export interface WorkspaceState {
   workspaceId: string; businessId: string; plan: PlanId; timezone: string; currency: string; objective: string;
   ownerUid: string; billingStatus: string; restrictAtMs: number | null; hasSubscription: boolean;
+  deletionScheduledMs: number | null; reportedSpendUsd: number | null; pendingBand: { to: PlanId; effectiveMs: number } | null;
 }
 const Ctx = createContext<WorkspaceState | null>(null);
 export const useWorkspace = () => {
@@ -39,6 +40,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             currency: b.data().currency, objective: b.data().objective,
             ownerUid: d.ownerUid, billingStatus: d.billingStatus ?? "none", hasSubscription: Boolean(d.paddleSubscriptionId),
             restrictAtMs: d.restrictAt?.toMillis?.() ?? null,
+            deletionScheduledMs: d.deletionScheduledFor?.toMillis?.() ?? null,
+            reportedSpendUsd: typeof d.reportedSpendUsd === "number" ? d.reportedSpendUsd : null,
+            pendingBand: d.pendingBandChange?.to ? { to: d.pendingBandChange.to, effectiveMs: d.pendingBandChange.effectiveAt?.toMillis?.() ?? 0 } : null,
           });
         });
       } catch { setError("Could not load your workspace."); }

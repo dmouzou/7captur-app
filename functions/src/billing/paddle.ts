@@ -137,3 +137,9 @@ export async function cancelAtPeriodEnd(env: string, apiKey: string, subscriptio
   const r = await paddleCall(env, apiKey, "POST", `/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, { effective_from: "next_billing_period" }, f);
   return r.ok;
 }
+
+/** Cancel immediately (used when an account is deleted). */
+export async function cancelNow(env: string, apiKey: string, subscriptionId: string, f?: typeof fetch): Promise<boolean> {
+  const r = await paddleCall(env, apiKey, "POST", `/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, { effective_from: "immediately" }, f);
+  return r.ok;
+}

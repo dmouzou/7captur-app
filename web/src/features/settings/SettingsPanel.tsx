@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { EmailAuthProvider, GoogleAuthProvider, reauthenticateWithCredential, reauthenticateWithPopup } from "firebase/auth";
+import { useAuth } from "../auth/AuthProvider";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../../services/firebase";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
@@ -15,6 +17,12 @@ function download(name: string, text: string, type: string) {
 
 export function SettingsPanel() {
   const ws = useWorkspace();
+  const { user } = useAuth();
+  const isOwner = ws.ownerUid === user?.uid;
+  const [password, setPassword] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+  const [delErr, setDelErr] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -35,6 +43,30 @@ export function SettingsPanel() {
     finally { setBusy(false); }
   }
 
+  async function requestDeletion() {
+    if (!user) return;
+    setDelErr(""); setDelBusy(true);
+    try {
+      const usesPassword = user.providerData.some((p) => p.providerId === "password");
+      if (usesPassword) {
+        if (!user.email || !password) { setDelErr("Enter your password to confirm."); return; }
+        await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+      } else await reauthenticateWithPopup(user, new GoogleAuthProvider());
+      await user.getIdToken(true);
+      await httpsCallable(functions, "requestAccountDeletion")({ workspaceId: ws.workspaceId });
+      setPassword(""); setConfirmText("");
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? "";
+      setDelErr(code.includes("wrong-password") || code.includes("invalid-credential") ? "Wrong password." : "Could not schedule deletion. Try again.");
+    } finally { setDelBusy(false); }
+  }
+  async function cancelDeletion() {
+    setDelErr(""); setDelBusy(true);
+    try { await httpsCallable(functions, "cancelAccountDeletion")({ workspaceId: ws.workspaceId }); }
+    catch { setDelErr("Could not cancel. Try again."); }
+    finally { setDelBusy(false); }
+  }
+
   return (
     <section>
       <div className="card">
@@ -45,6 +77,29 @@ export function SettingsPanel() {
         <div role="alert" className="error">{error}</div>
         <div role="status" className="muted">{note}</div>
       </div>
+
+      {isOwner && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h2>Delete account</h2>
+          {ws.deletionScheduledMs ? (
+            <>
+              <p role="status">Deletion is scheduled for {new Date(ws.deletionScheduledMs).toLocaleDateString()}. Until then nothing is deleted and you can cancel.</p>
+              <button type="button" disabled={delBusy} onClick={cancelDeletion}>Cancel deletion</button>
+            </>
+          ) : (
+            <>
+              <p className="muted">Permanently deletes your workspace, records, recommendations, reports and connections, and stops any subscription. There is a waiting period you can cancel in. Download your data first.</p>
+              {user?.providerData.some((p) => p.providerId === "password") && (
+                <><label htmlFor="del-pw">Password</label><input id="del-pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></>
+              )}
+              <label htmlFor="del-confirm">Type DELETE to confirm</label>
+              <input id="del-confirm" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} />
+              <button type="button" disabled={delBusy || confirmText !== "DELETE"} onClick={requestDeletion}>Schedule deletion</button>
+            </>
+          )}
+          <div role="alert" className="error">{delErr}</div>
+        </div>
+      )}
     </section>
   );
 }

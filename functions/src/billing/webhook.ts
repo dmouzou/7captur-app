@@ -5,6 +5,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { defineInt, defineString } from "firebase-functions/params";
 import { PADDLE_WEBHOOK_SECRET } from "../config";
 import { enqueueMail, APP_URL } from "../notify/mail";
+import { addNotification } from "../notify/inapp";
 import { parsePriceMap, reducePaddleEvent, verifyPaddleSignature, type Notify, type PaddleEvent, type PrevBilling } from "./paddle";
 
 export const PADDLE_PRICE_MAP = defineString("PADDLE_PRICE_MAP", { default: "{}" });
@@ -20,6 +21,7 @@ export async function notifyOwner(wid: string, kind: Notify, idemKey: string) {
   const db = getFirestore();
   const ws = (await db.doc(`workspaces/${wid}`).get()).data();
   if (!ws) return;
+  await addNotification(db, wid, { kind, title: MAIL[kind].subject.replace(/^Action needed: /, ""), body: MAIL[kind].body, priority: kind === "payment_failed" ? "high" : "normal" }, idemKey);
   const user = await getAuth().getUser(ws.ownerUid).catch(() => null);
   if (!user?.email || !user.emailVerified) return;
   const m = MAIL[kind];
