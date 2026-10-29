@@ -1,7 +1,8 @@
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { createWorkspaceInput } from "../shared/schemas";
 import { PLAN_CONFIG_VERSION } from "../shared/plans";
+import { nextWeeklyRun } from "../reports/time";
 
 /**
  * Creates User -> Workspace -> Business -> owner membership in one batch.
@@ -37,6 +38,8 @@ export const createWorkspace = onCall(async (request) => {
     defaultCurrency: input.currency,
     plan: "free",
     planConfigVersion: PLAN_CONFIG_VERSION,
+    billingStatus: "none",
+    reportNextRunAt: Timestamp.fromDate(nextWeeklyRun(new Date(), input.timezone)),
     createdAt: FieldValue.serverTimestamp(),
   });
   batch.set(wsRef.collection("members").doc(uid), {

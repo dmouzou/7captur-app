@@ -2,7 +2,7 @@ import { Firestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import { getPlan } from "../shared/plans";
 
 /** Local calendar date parts in an IANA timezone. */
-function localDate(now: Date, timeZone: string) {
+export function localDate(now: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
     .formatToParts(now);
   const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);

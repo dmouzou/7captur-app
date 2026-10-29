@@ -11,6 +11,7 @@ export { recordRecommendationAction } from "./recommendations/action";
 export { importRecords } from "./imports/importRecords";
 export { extractFromScreenshot, cleanupUploads } from "./imports/screenshot";
 export { exportData } from "./exports/exportData";
+export { weeklyReports } from "./reports/weekly";
 
 export const health = onRequest((_req, res) => {
   res.json({ ok: true, service: "7captur-functions", time: new Date().toISOString() });
