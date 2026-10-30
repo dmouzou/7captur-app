@@ -17,7 +17,13 @@ export const db = getFirestore(app);
 export const functions = getFunctions(app, "us-central1");
 export const storage = getStorage(app);
 
-if (import.meta.env.VITE_USE_EMULATORS === "true") {
+const isLocalhost =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+   window.location.hostname === "127.0.0.1" ||
+   window.location.hostname === "[::1]");
+
+if (import.meta.env.VITE_USE_EMULATORS === "true" && isLocalhost) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
   connectFunctionsEmulator(functions, "127.0.0.1", 5001);

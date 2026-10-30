@@ -30,6 +30,8 @@ function Gate() {
 }
 
 export default function App() {
-  const isAdmin = window.location.pathname === "/admin" || window.location.pathname.startsWith("/admin/");
+  const isHostAdmin = window.location.hostname.includes("-admin.") || window.location.hostname.startsWith("admin.");
+  const isPathAdmin = window.location.pathname === "/admin" || window.location.pathname.startsWith("/admin/");
+  const isAdmin = isHostAdmin || isPathAdmin;
   return <AuthProvider>{isAdmin ? <Suspense fallback={null}><AdminApp /></Suspense> : <Gate />}</AuthProvider>;
 }

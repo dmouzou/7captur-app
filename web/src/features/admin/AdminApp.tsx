@@ -4,6 +4,8 @@ import { httpsCallable } from "firebase/functions";
 import { auth, functions } from "../../services/firebase";
 import { AuthPage } from "../auth/AuthPage";
 import { useAuth } from "../auth/AuthProvider";
+import { Logo } from "../../components/Logo";
+import { ThemeToggle } from "../../components/ThemeContext";
 
 // UX only. Every call below is authorized again on the server by the custom claim.
 const call = async <T,>(name: string, data?: unknown): Promise<T> => (await httpsCallable<unknown, T>(functions, name)(data ?? {})).data;
@@ -192,6 +194,7 @@ export default function AdminApp() {
   const { user, loading } = useAuth();
   const [role, setRole] = useState<string | null | undefined>(undefined);
   const [tab, setTab] = useState("overview");
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   useEffect(() => {
     if (!user) return;
     user.getIdToken(true).then(() => call<{ role: string | null }>("adminWhoAmI")).then((r) => setRole(r.role)).catch(() => setRole(null));
@@ -201,9 +204,18 @@ export default function AdminApp() {
   if (role === undefined) return <main className="page"><p className="muted" role="status">Loading…</p></main>;
   if (!role) return <main className="page"><h1>Not found</h1><p className="muted">This page does not exist.</p></main>;
   return (
-    <main className="page" style={{ maxWidth: 1000 }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h1>7Captur admin</h1><span className="muted">{user.email} · {role} · <button type="button" className="link" onClick={() => signOut(auth)}>Sign out</button></span>
+    <main className="page" style={{ maxWidth: 1100 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <Logo size={32} subtitle={`Internal Administration · ${role}`} />
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <ThemeToggle />
+          <span className="muted" style={{ fontSize: 13 }}>
+            {user.email} · <span className="badge badge-primary">{role}</span> ·{" "}
+            <button type="button" className="link" onClick={() => setConfirmSignOut(true)}>
+              Sign out
+            </button>
+          </span>
+        </div>
       </header>
       <nav aria-label="Admin sections" style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "16px 0" }}>
         {TABS.filter(([id]) => id !== "admins" || role === "super_admin").map(([id, name]) => (
@@ -211,6 +223,34 @@ export default function AdminApp() {
         ))}
       </nav>
       {TABS.find(([id]) => id === tab)?.[2]()}
+
+      {confirmSignOut && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setConfirmSignOut(false)}
+        >
+          <div
+            className="modal-box"
+            onClick={(e) => e.stopPropagation()}
+            style={{ textAlign: "center" }}
+          >
+            <h3 style={{ fontSize: 18, marginBottom: 8, color: "var(--ink)" }}>Sign out of Admin?</h3>
+            <p className="muted" style={{ fontSize: 14, marginBottom: 24 }}>Are you sure you want to end your admin session?</p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <button type="button" className="btn-secondary" onClick={() => setConfirmSignOut(false)} style={{ flex: 1, margin: 0 }}>Cancel</button>
+              <button
+                type="button"
+                onClick={() => { setConfirmSignOut(false); signOut(auth); }}
+                style={{ flex: 1, margin: 0, background: "var(--red, #e2685f)", borderColor: "var(--red, #e2685f)", color: "#fff" }}
+              >
+                Yes, Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -52,46 +52,325 @@ export function RecommendationsPanel() {
 
   return (
     <section>
-      <div className="card">
-        <h2>Recommendations</h2>
-        <p className="muted">This week: {used} of {plan.recommendations.weekly} used. Unused recommendations do not carry over.</p>
-        <button type="button" onClick={generate} disabled={busy}>{busy ? "Working…" : "Get a recommendation"}</button>
-        <div role="alert" className="error">{error}</div>
+      {/* Top Header Card */}
+      <div
+        className="card"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 18,
+          marginBottom: 24,
+          background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-subtle) 100%)",
+        }}
+      >
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <h1 style={{ margin: 0, fontSize: "1.65rem" }}>Growth Recommendations</h1>
+            <span className="badge badge-primary">AI Powered</span>
+          </div>
+          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+            Weekly credits: <strong style={{ color: "var(--ink)" }}>{used} of {plan.recommendations.weekly} used</strong>. Credits reset every Monday.
+          </p>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={generate}
+            disabled={busy}
+            style={{
+              padding: "10px 22px",
+              fontSize: 14,
+              borderRadius: 10,
+            }}
+          >
+            {busy ? "Analyzing Telemetry…" : "Generate Recommendation ✨"}
+          </button>
+        </div>
       </div>
-      {recs.map((r) => (
-        <article key={r.id} className="card" style={{ marginTop: 16 }}
-          onMouseEnter={() => { if (r.status === "generated" && !seen.has(r.id)) { seen.add(r.id); act(r.id, "viewed"); } }}>
-          <p className="muted mono">{EVIDENCE_LABEL[r.mode]} · {r.status.replace(/_/g, " ")}</p>
-          {r.aiSummary && (<>
-            <p>{r.aiSummary.text}</p>
-            <p className="muted">Summary written by AI from the facts below. The facts and numbers come from your data.</p>
-          </>)}
-          <h3 style={{ marginTop: 0 }}>Your next move</h3>
-          <p>{r.action}</p>
-          <h4>Why</h4>
-          {r.rationale.map((t, i) => <p key={i}>{t}</p>)}
-          <h4>What we don't know</h4>
-          <ul>{r.unknowns.map((t, i) => <li key={i}>{t}</li>)}</ul>
-          <h4>Risk</h4><p>{r.risk}</p>
-          <h4>Do not act if</h4><p>{r.doNotActIf}</p>
-          <h4>What to measure next</h4><p>{r.nextMeasurement}</p>
-          {r.evidence.warnings.map((w, i) => <p key={i} className="error">{w}</p>)}
-          <details>
-            <summary className="muted">Evidence and calculation</summary>
-            <p className="muted mono">Window {r.evidence.windowStart} to {r.evidence.windowEnd} · {r.engineVersion}</p>
-            <p className="muted mono">Records used: {JSON.stringify(r.evidence.sampleSize)} · Sources: {JSON.stringify(r.evidence.provenance)}</p>
-            {r.calculation && <p className="muted mono">{r.calculation.formulaVersion}: revenue {r.calculation.revenue} − costs {r.calculation.costs} ÷ spend {r.calculation.spend} = {r.calculation.adjustedReturn?.toFixed(2)} ({r.calculation.currency}, business-level)</p>}
-          </details>
-          <p className="muted">You decide. Nothing here changes your ads or posts.</p>
-          {["generated", "viewed", "deferred"].includes(r.status) && (<>
-            <button type="button" onClick={() => act(r.id, "marked_to_try")}>I'll try this</button>{" "}
-            <button type="button" onClick={() => act(r.id, "deferred")} style={{ background: "transparent", color: "var(--text)", border: "1px solid var(--border)" }}>Later</button>{" "}
-            <button type="button" onClick={() => act(r.id, "dismissed")} style={{ background: "transparent", color: "var(--text)", border: "1px solid var(--border)" }}>Dismiss</button>
-          </>)}
-          {r.status === "marked_to_try" && <button type="button" onClick={() => act(r.id, "completed")}>I did this</button>}
-        </article>
-      ))}
-      {recs.length === 0 && <p className="muted">No recommendations yet. Enter a few posts or enquiries first, or ask for one now to see what to record.</p>}
+
+      {error && (
+        <div
+          role="alert"
+          className="error"
+          style={{
+            padding: "12px 18px",
+            background: "var(--danger-bg)",
+            borderRadius: 10,
+            border: "1px solid rgba(239, 68, 68, 0.3)",
+            marginBottom: 20,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Recommendations Feed */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {recs.map((r) => {
+          const modeColor =
+            r.mode === "optimize" ? "badge-primary" : r.mode === "improve" ? "badge-pop" : "badge-warning";
+          const statusLabel = r.status.replace(/_/g, " ");
+
+          return (
+            <article
+              key={r.id}
+              className="card"
+              style={{
+                padding: "26px 28px",
+                border: "1px solid var(--border)",
+                boxShadow: "var(--shadow)",
+              }}
+              onMouseEnter={() => {
+                if (r.status === "generated" && !seen.has(r.id)) {
+                  seen.add(r.id);
+                  act(r.id, "viewed");
+                }
+              }}
+            >
+              {/* Header Badges */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  marginBottom: 16,
+                  borderBottom: "1px solid var(--border)",
+                  paddingBottom: 12,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className={`badge ${modeColor}`}>{EVIDENCE_LABEL[r.mode]}</span>
+                  <span className="badge" style={{ textTransform: "capitalize" }}>
+                    Status: {statusLabel}
+                  </span>
+                </div>
+                <span className="muted mono" style={{ fontSize: 12 }}>
+                  ID: {r.id.slice(0, 8)}
+                </span>
+              </div>
+
+              {/* AI Executive Summary Banner */}
+              {r.aiSummary && (
+                <div
+                  style={{
+                    padding: "14px 18px",
+                    borderRadius: 10,
+                    background: "var(--accent-soft)",
+                    border: "1px solid var(--accent-line)",
+                    marginBottom: 18,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 14 }}>✨</span>
+                    <strong style={{ fontSize: 13, color: "var(--accent)" }}>AI Synthesized Takeaway</strong>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 14, color: "var(--ink)", lineHeight: 1.5 }}>
+                    {r.aiSummary.text}
+                  </p>
+                </div>
+              )}
+
+              {/* Next Move Callout Box */}
+              <div
+                style={{
+                  padding: "18px 20px",
+                  borderRadius: 12,
+                  background: "var(--surface-hover)",
+                  border: "1px solid var(--line-strong)",
+                  marginBottom: 20,
+                }}
+              >
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--muted)",
+                    marginBottom: 6,
+                  }}
+                >
+                  Recommended Next Move
+                </span>
+                <h3 style={{ margin: 0, fontSize: "1.25rem", color: "var(--ink)", lineHeight: 1.4 }}>
+                  {r.action}
+                </h3>
+              </div>
+
+              {/* 3-Column Structured Breakdown */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: 16,
+                  marginBottom: 20,
+                }}
+              >
+                {/* Column 1: Strategic Rationale */}
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    borderRadius: 10,
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--accent)" }}>
+                    💡 Why this action?
+                  </h4>
+                  {r.rationale.map((t, i) => (
+                    <p key={i} style={{ margin: "0 0 6px 0", fontSize: 13, color: "var(--body)", lineHeight: 1.45 }}>
+                      • {t}
+                    </p>
+                  ))}
+                </div>
+
+                {/* Column 2: Risks & Contraindications */}
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    borderRadius: 10,
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--gold)" }}>
+                    ⚠️ Risk & Contraindications
+                  </h4>
+                  <p style={{ margin: "0 0 6px 0", fontSize: 13, color: "var(--body)", lineHeight: 1.45 }}>
+                    <strong>Risk:</strong> {r.risk}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 13, color: "var(--body)", lineHeight: 1.45 }}>
+                    <strong>Do not act if:</strong> {r.doNotActIf}
+                  </p>
+                </div>
+
+                {/* Column 3: Measurement */}
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    borderRadius: 10,
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--ink)" }}>
+                    📊 What to measure next
+                  </h4>
+                  <p style={{ margin: "0 0 6px 0", fontSize: 13, color: "var(--body)", lineHeight: 1.45 }}>
+                    {r.nextMeasurement}
+                  </p>
+                  {r.unknowns.length > 0 && (
+                    <p style={{ margin: 0, fontSize: 12.5, color: "var(--muted)" }}>
+                      Unknowns: {r.unknowns.join(", ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Calculation & Telemetry Dropdown */}
+              <details style={{ marginBottom: 20 }}>
+                <summary className="muted" style={{ cursor: "pointer", fontSize: 13 }}>
+                  View technical calculation & source telemetry
+                </summary>
+                <div style={{ marginTop: 10, padding: 14, background: "var(--bg2)", borderRadius: 8, fontSize: 12.5 }}>
+                  <p className="muted mono" style={{ margin: "0 0 4px" }}>
+                    Window: {r.evidence.windowStart} to {r.evidence.windowEnd} · Engine {r.engineVersion}
+                  </p>
+                  <p className="muted mono" style={{ margin: "0 0 4px" }}>
+                    Records: {JSON.stringify(r.evidence.sampleSize)} · Provenance: {JSON.stringify(r.evidence.provenance)}
+                  </p>
+                  {r.calculation && (
+                    <p className="muted mono" style={{ margin: 0 }}>
+                      Formula {r.calculation.formulaVersion}: Revenue {r.calculation.revenue} − Costs {r.calculation.costs} ÷ Spend {r.calculation.spend} = {r.calculation.adjustedReturn?.toFixed(2)} ({r.calculation.currency})
+                    </p>
+                  )}
+                </div>
+              </details>
+
+              {/* Action Toolbar */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 12,
+                  paddingTop: 16,
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  You decide. Recommendations never alter external ad campaigns automatically.
+                </span>
+
+                <div style={{ display: "flex", gap: 10 }}>
+                  {["generated", "viewed", "deferred"].includes(r.status) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => act(r.id, "marked_to_try")}
+                        style={{ padding: "8px 18px", fontSize: 13.5, borderRadius: 8 }}
+                      >
+                        ✓ I'll try this
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => act(r.id, "deferred")}
+                        style={{ padding: "8px 16px", fontSize: 13.5, borderRadius: 8 }}
+                      >
+                        Later
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => act(r.id, "dismissed")}
+                        style={{ padding: "8px 16px", fontSize: 13.5, borderRadius: 8 }}
+                      >
+                        Dismiss
+                      </button>
+                    </>
+                  )}
+                  {r.status === "marked_to_try" && (
+                    <button
+                      type="button"
+                      onClick={() => act(r.id, "completed")}
+                      style={{ padding: "8px 20px", fontSize: 13.5, borderRadius: 8 }}
+                    >
+                      ✓ Mark Completed
+                    </button>
+                  )}
+                </div>
+              </div>
+            </article>
+          );
+        })}
+
+        {recs.length === 0 && (
+          <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>💡</div>
+            <h3 style={{ margin: "0 0 8px 0" }}>No recommendations yet</h3>
+            <p className="muted" style={{ margin: "0 0 20px 0", fontSize: 14, maxWidth: 440, marginLeft: "auto", marginRight: "auto" }}>
+              Enter commercial records (sales, spend, enquiries, posts) or click below to generate your first AI strategic move.
+            </p>
+            <button
+              type="button"
+              onClick={generate}
+              disabled={busy}
+              style={{ borderRadius: 10, padding: "10px 22px" }}
+            >
+              {busy ? "Working…" : "Generate First Recommendation"}
+            </button>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

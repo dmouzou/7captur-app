@@ -28,6 +28,14 @@ export const createWorkspace = onCall(async (request) => {
   const wsRef = db.doc(`workspaces/${uid}_${input.requestId}`);
   if ((await wsRef.get()).exists) return { workspaceId: wsRef.id, created: false };
 
+  const primaryObjective = input.objective ?? input.objectives?.[0] ?? "profitability";
+  const objectives = input.objectives && input.objectives.length > 0 ? input.objectives : [primaryObjective];
+
+  const cName = (input.contactName ?? "").trim();
+  const cEmail = (input.contactEmail ?? "").trim();
+  const cPhone = (input.contactPhone ?? "").trim();
+  const hasContact = Boolean(cName || cEmail || cPhone);
+
   const bizRef = wsRef.collection("businesses").doc();
   const batch = db.batch();
   batch.set(wsRef, {
@@ -41,6 +49,13 @@ export const createWorkspace = onCall(async (request) => {
     billingStatus: "none",
     reportNextRunAt: Timestamp.fromDate(nextWeeklyRun(new Date(), input.timezone)),
     createdAt: FieldValue.serverTimestamp(),
+    ...(hasContact ? {
+      contact: {
+        name: cName,
+        email: cEmail,
+        phone: cPhone,
+      },
+    } : {}),
   });
   batch.set(wsRef.collection("members").doc(uid), {
     role: "owner", status: "active", joinedAt: FieldValue.serverTimestamp(),
@@ -49,7 +64,8 @@ export const createWorkspace = onCall(async (request) => {
     workspaceId: wsRef.id,
     name: input.businessName,
     type: input.businessType,
-    objective: input.objective,
+    objective: primaryObjective,
+    objectives,
     buyingMethods: input.buyingMethods,
     channels: [],
     currency: input.currency,

@@ -57,17 +57,15 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(["displayName", "locale", "notificationPrefs", "createdAt", "status"])
-        && request.resource.data.status == 'active'
-        && request.resource.data.createdAt == request.time;
+        && !request.resource.data.keys().hasAny(['role', 'defaultWorkspaceId']);
       allow update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'locale', 'notificationPrefs']);
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'defaultWorkspaceId']);
       allow delete: if false;
     }
 
     match /workspaces/{wid} {
       // Workspace doc holds plan reference, so it is read-only for clients.
-      allow read: if isMember(wid);
+      allow read: if isMember(wid) || (signedIn() && resource.data.ownerUid == request.auth.uid);
       allow write: if false;
 
       match /members/{uid} {

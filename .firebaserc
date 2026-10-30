@@ -1,7 +1,20 @@
 {
   "projects": {
-    "default": "REPLACE_WITH_DEV_PROJECT_ID",
-    "dev": "REPLACE_WITH_DEV_PROJECT_ID",
-    "prod": "REPLACE_WITH_PROD_PROJECT_ID"
-  }
+    "default": "captur-app-dev",
+    "dev": "captur-app-dev",
+    "prod": "captur-app-e1ef1"
+  },
+  "targets": {
+    "captur-app-dev": {
+      "hosting": {
+        "app": [
+          "captur-app-dev"
+        ],
+        "admin": [
+          "captur-app-dev-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
