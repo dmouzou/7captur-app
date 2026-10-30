@@ -65,3 +65,18 @@ Tenant data lives under `workspaces/{wid}/...` and every record carries `workspa
 - Payment provider: Paddle (decided 2026-10-29). Billing state will come only from verified Paddle webhooks (Phase 2). Maintenance Plan removed.
 - Clients cannot write plan, usage, billing, connections, recommendations, audit events or roles.
 - No execution: nothing in this repo writes to an ad platform.
+
+## Shopify (Phase 3, read-only)
+
+Public app, GraphQL Admin API, scope `read_orders` only. Revenue = order subtotal after discounts, excluding shipping and tax,
+in shop currency. Test, cancelled, voided and expired orders are skipped. No customer personal data is requested or stored.
+Synced orders are `sales` records with provenance `connected` (id `shopify_<orderId>`); customers can only edit link fields
+(post, promotion, lead, attribution, notes) on them. Sync runs every 6 hours and on demand; incremental with a 1 hour overlap.
+By default Shopify exposes only the last 60 days of orders to apps (`read_all_orders` needs Shopify approval); older history comes in via CSV import.
+
+Setup (do once per Firebase project, after you create the app in the Shopify Partner dashboard):
+1. Secrets: `firebase functions:secrets:set SHOPIFY_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` (value from `openssl rand -base64 32`; never rotate without re-connecting stores).
+2. Params (functions/.env.<project>): `SHOPIFY_CLIENT_ID`, `SHOPIFY_REDIRECT_URI` (the deployed `shopifyCallback` URL), optional `SHOPIFY_API_VERSION` (default 2026-07).
+3. Partner dashboard: App URL `https://app.7captur.com`, allowed redirect URL = `SHOPIFY_REDIRECT_URI`, scope `read_orders`.
+4. Mandatory privacy webhooks (customers/data_request, customers/redact, shop/redact) all point to the deployed `shopifyWebhook` URL. `app/uninstalled` is registered automatically per shop.
+5. Deploy indexes: `firebase deploy --only firestore:indexes` (collection group indexes on connections.status and connections.shop).

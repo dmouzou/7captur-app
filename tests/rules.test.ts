@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import {
   assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 
 let env: RulesTestEnvironment;
 
@@ -79,6 +79,18 @@ describe("privilege escalation", () => {
     const db = env.authenticatedContext("alice").firestore();
     await assertFails(setDoc(doc(db, "workspaces/wsA/posts/p4"), { ...post("wsA", "alice"), provenance: "connected" }));
     await assertFails(setDoc(doc(db, "workspaces/wsA/posts/p5"), post("wsB", "alice")));
+  });
+  it("connected records: only link fields editable, no delete", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "workspaces/wsA/sales/shopify_1"), {
+        workspaceId: "wsA", businessId: "b1", createdBy: "system:shopify", provenance: "connected", amount: 80, attribution: "unknown",
+      });
+    });
+    const db = env.authenticatedContext("alice").firestore();
+    const ref = doc(db, "workspaces/wsA/sales/shopify_1");
+    await assertFails(updateDoc(ref, { amount: 999, updatedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(ref, { promotionId: "promo1", attribution: "manual_reported", updatedAt: serverTimestamp() }));
+    await assertFails(deleteDoc(ref));
   });
   it("public config is readable", async () => {
     await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), "config/plans")));

@@ -6,7 +6,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineInt, defineString } from "firebase-functions/params";
 import { z } from "zod";
-import { PADDLE_API_KEY } from "../config";
+import { PADDLE_API_KEY, TOKEN_ENCRYPTION_KEY } from "../config";
 import { addNotification } from "../notify/inapp";
 import { APP_URL, enqueueMail } from "../notify/mail";
 import { cancelNow } from "../billing/paddle";
@@ -76,7 +76,7 @@ export const cancelAccountDeletion = onCall(async (request) => {
  * and the user, then write a PII-free audit event. Idempotent: if a step throws, it runs again tomorrow.
  * Provider billing records stay in Paddle and our `billingEvents` log (no personal data) for accounting.
  */
-export const processDeletions = onSchedule({ schedule: "every day 02:30", secrets: [PADDLE_API_KEY], timeoutSeconds: 540, memory: "512MiB" }, async () => {
+export const processDeletions = onSchedule({ schedule: "every day 02:30", secrets: [PADDLE_API_KEY, TOKEN_ENCRYPTION_KEY], timeoutSeconds: 540, memory: "512MiB" }, async () => {
   const db = getFirestore();
   const due = await db.collection("deletionRequests").where("scheduledFor", "<=", Timestamp.now()).limit(20).get();
   for (const req of due.docs) {

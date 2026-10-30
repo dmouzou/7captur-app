@@ -16,9 +16,12 @@ export { paddleWebhook } from "./billing/webhook";
 export { createBillingPortalSession, changeSubscriptionPlan, enforceBilling } from "./billing/manage";
 export { setReportedSpend, applyBandChanges } from "./billing/spend";
 export { requestAccountDeletion, cancelAccountDeletion, processDeletions } from "./account/deletion";
+export { startShopifyConnect, shopifyCallback, disconnectIntegration } from "./integrations/shopify/connect";
+export { syncShopifyNow, syncShopifyScheduled } from "./integrations/shopify/sync";
+export { shopifyWebhook } from "./integrations/shopify/webhook";
 
 export const health = onRequest((_req, res) => {
   res.json({ ok: true, service: "7captur-functions", time: new Date().toISOString() });
 });
 
-// Phase 3 in progress: Shopify, then Meta Ads. Phase 4: admin.
+// Phase 3: Shopify done; Meta Ads next. Phase 4: admin.

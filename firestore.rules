@@ -29,9 +29,15 @@ service cloud.firestore {
         && d.provenance == 'manual'
         && d.businessId is string;
     }
+    // Connected (synced) records: clients may only edit link fields, never the synced numbers.
+    function connectedEditOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['postId', 'promotionId', 'leadId', 'attribution', 'notes', 'updatedAt']);
+    }
     function validRecordUpdate(wid) {
       let d = request.resource.data;
-      return d.workspaceId == resource.data.workspaceId
+      return (resource.data.provenance != 'connected' || connectedEditOnly())
+        && d.workspaceId == resource.data.workspaceId
         && d.workspaceId == wid
         && d.businessId == resource.data.businessId
         && d.createdBy == resource.data.createdBy
@@ -82,7 +88,8 @@ service cloud.firestore {
           && canEdit(wid) && validNewRecord(wid);
         allow update: if coll in ['posts', 'promotions', 'leads', 'sales', 'costs']
           && canEdit(wid) && validRecordUpdate(wid);
-        allow delete: if coll in ['posts', 'promotions', 'leads', 'sales', 'costs'] && canEdit(wid);
+        allow delete: if coll in ['posts', 'promotions', 'leads', 'sales', 'costs'] && canEdit(wid)
+          && resource.data.provenance != 'connected';
       }
 
       // Server-written, member-readable.
