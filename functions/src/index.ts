@@ -18,6 +18,8 @@ export { setReportedSpend, applyBandChanges } from "./billing/spend";
 export { requestAccountDeletion, cancelAccountDeletion, processDeletions } from "./account/deletion";
 export { startShopifyConnect, shopifyCallback, disconnectIntegration } from "./integrations/shopify/connect";
 export { syncShopifyNow, syncShopifyScheduled } from "./integrations/shopify/sync";
+export { startGoogleAdsConnect, googleAdsCallback, selectGoogleAdsAccount } from "./integrations/googleads/connect";
+export { syncGoogleAdsNow, syncGoogleAdsScheduled } from "./integrations/googleads/sync";
 export { shopifyWebhook } from "./integrations/shopify/webhook";
 export * from "./admin/callables";
 

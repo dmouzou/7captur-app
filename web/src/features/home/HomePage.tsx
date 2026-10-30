@@ -19,7 +19,7 @@ type Tab = "recommendations" | RecordCollection | "import" | "screenshot" | "set
 
 export function HomePage() {
   const ws = useWorkspace();
-  const [tab, setTab] = useState<Tab>(() => (new URLSearchParams(window.location.search).has("shopify") ? "connections" : "recommendations"));
+  const [tab, setTab] = useState<Tab>(() => ((new URLSearchParams(window.location.search).has("shopify") || new URLSearchParams(window.location.search).has("googleads")) ? "connections" : "recommendations"));
   const unread = useUnreadCount();
   const tabs: [Tab, string][] = [["recommendations", "Recommendations"], ["reports", "Weekly summary"], ...COLLECTIONS.map((c): [Tab, string] => [c, PANELS[c].title]), ["connections", "Connections"], ["import", "Import CSV"], ["screenshot", "Import screenshot"], ["notifications", unread ? `Notifications (${unread})` : "Notifications"], ["billing", "Billing"], ["settings", "Settings"]];
   return (

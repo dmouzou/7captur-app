@@ -10,3 +10,7 @@ export const PADDLE_API_KEY = defineSecret("PADDLE_API_KEY");
 // Shopify (public app). Secrets: SHOPIFY_CLIENT_SECRET, TOKEN_ENCRYPTION_KEY (32 random bytes, base64: `openssl rand -base64 32`).
 export const SHOPIFY_CLIENT_SECRET = defineSecret("SHOPIFY_CLIENT_SECRET");
 export const TOKEN_ENCRYPTION_KEY = defineSecret("TOKEN_ENCRYPTION_KEY");
+
+// Google Ads. Secrets: GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_ADS_DEVELOPER_TOKEN. Client id and redirect URI are params (see README).
+export const GOOGLE_OAUTH_CLIENT_SECRET = defineSecret("GOOGLE_OAUTH_CLIENT_SECRET");
+export const GOOGLE_ADS_DEVELOPER_TOKEN = defineSecret("GOOGLE_ADS_DEVELOPER_TOKEN");

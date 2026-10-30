@@ -2,7 +2,7 @@ import { z } from "zod";
 import { OBJECTIVES } from "./schemas";
 
 export const PLATFORMS = [
-  "facebook", "instagram", "tiktok", "whatsapp_dm", "phone", "marketplace", "booking", "in_person", "other",
+  "facebook", "instagram", "tiktok", "google", "whatsapp_dm", "phone", "marketplace", "booking", "in_person", "other",
 ] as const;
 export const COLLECTIONS = ["posts", "promotions", "leads", "sales", "costs"] as const;
 export type RecordCollection = (typeof COLLECTIONS)[number];

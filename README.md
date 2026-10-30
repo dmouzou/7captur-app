@@ -96,3 +96,18 @@ GOOGLE_CLOUD_PROJECT=<project-id> node scripts/set-super-admin.mjs you@example.c
 Then sign out and in again at `/admin`. Other admins are added in the Admins tab. Plan limits are read-only in the console on purpose:
 they are versioned in `shared/plans.json` so the app and website cannot drift.
 Not built yet: feedback/support inbox, rule/feature-flag editor, cost analytics.
+
+## Google Ads (Phase 3, read-only)
+
+OAuth with the read-only `adwords` scope and offline access; the refresh token is stored AES-256-GCM encrypted server-side (same as Shopify).
+After consent the customer picks one ad account (direct client accounts, or clients under a manager account they can access); one authorization = one account.
+Sync (every 6 hours and on demand) writes one `promotions` record per campaign per day (platform `google`, provenance `connected`, id `gads_<customer>_<campaign>_<date>`):
+spend, impressions, clicks in the account's currency. First sync reads 60 days; later syncs re-read the last 7 days (Google adjusts recent cost).
+Conversion value is deliberately not imported: platform revenue claims stay out of evidence (spec 7.5). Customers can only edit link fields on these records.
+
+Setup (after you have the credentials):
+1. Google Cloud project: enable the Google Ads API, create an OAuth client (Web), authorized redirect URI = deployed `googleAdsCallback` URL, consent screen In production with brand verification and the privacy policy URL.
+2. Google Ads manager account: apply for a developer token (Basic access).
+3. Secrets: `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`. Params: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_REDIRECT_URI`, optional `GOOGLE_ADS_API_VERSION` (default v23; Google retires old versions about a year after release).
+4. Until the developer token has Basic access it only works with Google Ads test accounts.
+5. Privacy policy must include Google's Limited Use statement for data obtained through Google APIs.

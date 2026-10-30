@@ -80,7 +80,7 @@ const platform: ImportField = {
   enumAliases: {
     ig: "instagram", insta: "instagram", fb: "facebook", meta: "facebook", whatsapp: "whatsapp_dm", wa: "whatsapp_dm",
     dm: "whatsapp_dm", dms: "whatsapp_dm", direct_message: "whatsapp_dm", instore: "in_person", in_store: "in_person",
-    store: "in_person", call: "phone", calls: "phone", tiktok_shop: "tiktok", etsy: "marketplace", amazon: "marketplace",
+    store: "in_person", call: "phone", calls: "phone", tiktok_shop: "tiktok", google_ads: "google", adwords: "google", youtube: "google", etsy: "marketplace", amazon: "marketplace",
   },
 };
 const currencyField: ImportField = {
