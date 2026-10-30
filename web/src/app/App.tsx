@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { AuthProvider, useAuth } from "../features/auth/AuthProvider";
 import { AuthPage } from "../features/auth/AuthPage";
@@ -6,6 +6,8 @@ import { OnboardingPage } from "../features/onboarding/OnboardingPage";
 import { HomePage } from "../features/home/HomePage";
 import { WorkspaceProvider } from "../features/workspace/WorkspaceProvider";
 import { db } from "../services/firebase";
+
+const AdminApp = lazy(() => import("../features/admin/AdminApp"));
 
 // Route guards are UX only. Firestore rules and Functions enforce access.
 function Gate() {
@@ -28,5 +30,6 @@ function Gate() {
 }
 
 export default function App() {
-  return <AuthProvider><Gate /></AuthProvider>;
+  const isAdmin = window.location.pathname === "/admin" || window.location.pathname.startsWith("/admin/");
+  return <AuthProvider>{isAdmin ? <Suspense fallback={null}><AdminApp /></Suspense> : <Gate />}</AuthProvider>;
 }

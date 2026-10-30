@@ -80,3 +80,19 @@ Setup (do once per Firebase project, after you create the app in the Shopify Par
 3. Partner dashboard: App URL `https://app.7captur.com`, allowed redirect URL = `SHOPIFY_REDIRECT_URI`, scope `read_orders`.
 4. Mandatory privacy webhooks (customers/data_request, customers/redact, shop/redact) all point to the deployed `shopifyWebhook` URL. `app/uninstalled` is registered automatically per shop.
 5. Deploy indexes: `firebase deploy --only firestore:indexes` (collection group indexes on connections.status and connections.shop).
+
+## Admin console (Phase 4)
+
+Served at `/admin` on the same app. Roles are Firebase custom claims (`role`: super_admin, ops, billing, support), set only by the server.
+Every admin callable re-checks the claim; state changes need a login from the last 5 minutes plus a written reason, and every read of customer
+data and every change is written to `auditEvents`. No impersonation. Tokens and secrets are never returned. Set `ADMIN_REQUIRE_MFA=true`
+(functions env) once Identity Platform MFA is enabled and you have enrolled a second factor.
+
+Create the first super admin (once per project; the email must be verified; run locally):
+```
+gcloud auth application-default login
+GOOGLE_CLOUD_PROJECT=<project-id> node scripts/set-super-admin.mjs you@example.com
+```
+Then sign out and in again at `/admin`. Other admins are added in the Admins tab. Plan limits are read-only in the console on purpose:
+they are versioned in `shared/plans.json` so the app and website cannot drift.
+Not built yet: feedback/support inbox, rule/feature-flag editor, cost analytics.

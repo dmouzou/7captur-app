@@ -119,7 +119,7 @@ export const disconnectIntegration = onCall({ secrets: [TOKEN_ENCRYPTION_KEY] },
   const p = discInput.safeParse(request.data);
   if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
   const db = getFirestore();
-  await requireMember(db, p.data.workspaceId, uid, true);
+  await requireMember(db, p.data.workspaceId, uid, true, { allowSuspended: true });
   await disconnectConnection(db, p.data.workspaceId, p.data.connectionId);
   return { ok: true };
 });

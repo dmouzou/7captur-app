@@ -16,8 +16,11 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid))
         && memberDoc(wid).data.status == 'active';
     }
+    function notSuspended(wid) {
+      return get(/databases/$(database)/documents/workspaces/$(wid)).data.get('suspended', false) != true;
+    }
     function canEdit(wid) {
-      return isMember(wid) && memberDoc(wid).data.role in ['owner', 'editor'];
+      return isMember(wid) && memberDoc(wid).data.role in ['owner', 'editor'] && notSuspended(wid);
     }
 
     // Manual input records (posts, promotions, leads, sales, costs).

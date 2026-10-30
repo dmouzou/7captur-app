@@ -19,6 +19,7 @@ export { requestAccountDeletion, cancelAccountDeletion, processDeletions } from 
 export { startShopifyConnect, shopifyCallback, disconnectIntegration } from "./integrations/shopify/connect";
 export { syncShopifyNow, syncShopifyScheduled } from "./integrations/shopify/sync";
 export { shopifyWebhook } from "./integrations/shopify/webhook";
+export * from "./admin/callables";
 
 export const health = onRequest((_req, res) => {
   res.json({ ok: true, service: "7captur-functions", time: new Date().toISOString() });
