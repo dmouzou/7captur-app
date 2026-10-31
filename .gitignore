@@ -16,3 +16,6 @@ service-account*.json
 web/src/shared/
 functions/src/shared/
 .secret.local
+
+# TypeScript incremental build cache
+*.tsbuildinfo

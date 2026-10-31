@@ -2,7 +2,7 @@
 
 Customer SaaS for 7Captur (app.7captur.com). Baseline: `7Captur_MVP_Product_Specification.pdf` v1.0 (Project docs). Stack: Vite + React + TypeScript, Firebase (Auth, Firestore, Functions TS, Storage, Hosting).
 
-## Status: spec Phases 0 and 1 done, Phase 2 built (needs provider setup and live testing)
+## Status: spec Phases 0 to 4 built, plus the v2 decision layer (provider setup and live testing still needed)
 
 Done: tenant model (User > Workspace > Business), deny-by-default Firestore and Storage rules, canonical plan config, runtime schemas, transactional recommendation-credit reservation (idempotent, releasable), `createWorkspace` callable, auth + onboarding shell, dark/lime tokens.
 
@@ -13,8 +13,6 @@ CSV import (spec 7.3): template download, column mapping with auto-match, explic
 Screenshot import (spec AC-04): upload (PNG/JPEG/WebP, 5 MB, private workspace path, type checked by file content) > `extractFromScreenshot` reads it with Claude vision and returns DRAFT rows only (it has no write path to records) > the customer reviews and edits rows beside the image and ticks a confirmation > `importRecords` with `source: "screenshot"` (rejected without `reviewConfirmed`) saves rows as `screenshot_extracted` with `reviewedBy`. Same normalizer, duplicate detection and monthly import quota as CSV (one import is reserved at extraction and released if extraction fails). The image is deleted after saving and by a daily cleanup after 7 days. Image text is treated as data, never instructions; output keys are whitelisted and every cell is re-validated.
 
 Phase 1 not done: data export (must neutralize cells starting with = + - @ when writing CSV), AI-written explanations (the engine text is deterministic for now), edit-in-place for records.
-
-Not done (later phases): weekly reports, billing webhooks, Meta/Shopify, admin panel, admin custom claims, App Check, Secret Manager wiring, email.
 
 Phase 1 finished: data export (CSV or JSON; text cells that start with = + - @ are neutralized so they cannot run as spreadsheet formulas) and editing saved records (original source label kept).
 
@@ -111,3 +109,16 @@ Setup (after you have the credentials):
 3. Secrets: `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`. Params: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_REDIRECT_URI`, optional `GOOGLE_ADS_API_VERSION` (default v23; Google retires old versions about a year after release).
 4. Until the developer token has Basic access it only works with Google Ads test accounts.
 5. Privacy policy must include Google's Limited Use statement for data obtained through Google APIs.
+
+## v2 decision layer (additive)
+
+Spec: `7Captur_Product_Specification_Version_2.pdf`. It sits on top of v1 and changes nothing in it.
+`createDecision` turns an existing recommendation into a decision record (alternatives, evidence quality, cost of delay, review date, frozen evidence snapshot). It uses no extra recommendation credit.
+`recordDecisionUpdate` stores the customer's response, their own progress and optional outcome feedback. These are customer reported and never treated as proof of cause.
+Decision content is written by the server only and is never rewritten. Nothing here writes to an ad platform.
+Evidence quality maps from the v1 modes: optimize = sufficient, improve = partial, explore = insufficient.
+Not built yet: the conversational interface, reassessment of a saved decision, and Firestore rules tests for `decisions` (they need the emulator).
+
+## Mobile
+
+Below 900px the app shows a bottom tab bar (Home, Advice, Decisions, Weekly, More). More opens the full menu. Fields are 16px so iOS does not zoom, and touch targets are at least 44px.
