@@ -102,6 +102,15 @@ service cloud.firestore {
         allow read: if isMember(wid);
         allow write: if false;
       }
+      // v2 decision layer: server-written, member-readable, same as recommendations.
+      match /decisions/{id} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
+      match /decisionEvents/{id} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
       match /reports/{id} {
         allow read: if isMember(wid);
         allow write: if false;

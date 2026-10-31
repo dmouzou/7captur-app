@@ -8,6 +8,8 @@ setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 export { createWorkspace } from "./workspaces/createWorkspace";
 export { generateRecommendation } from "./recommendations/generate";
 export { recordRecommendationAction } from "./recommendations/action";
+export { createDecision } from "./decisions/create";
+export { recordDecisionUpdate } from "./decisions/respond";
 export { importRecords } from "./imports/importRecords";
 export { extractFromScreenshot, cleanupUploads } from "./imports/screenshot";
 export { exportData } from "./exports/exportData";
