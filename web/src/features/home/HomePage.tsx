@@ -12,6 +12,7 @@ import { NotificationsPanel, useUnreadCount } from "../notifications/Notificatio
 import { ConnectionsPanel } from "../connections/ConnectionsPanel";
 import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { DecisionCenter } from "../decisions/DecisionCenter";
+import { MobileTabBar } from "./MobileTabBar";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { useAuth } from "../auth/AuthProvider";
 import { PLANS } from "../../shared/plans";
@@ -851,6 +852,18 @@ export function HomePage() {
           {tab === "settings" && <SettingsPanel />}
         </main>
       </div>
+
+      <MobileTabBar
+        items={(["overview", "recommendations", "decisions", "reports"] as const).map((id) => {
+          const it = navGroups.flatMap((g) => g.items).find((x) => x.id === id)!;
+          const label = { overview: "Home", recommendations: "Advice", decisions: "Decisions", reports: "Weekly" }[id];
+          return { id, label, icon: it.icon, badge: it.badge ?? undefined };
+        })}
+        active={tab}
+        moreActive={mobileNavOpen}
+        onSelect={(id) => { setTab(id as Tab); setMobileNavOpen(false); }}
+        onMore={() => setMobileNavOpen((o) => !o)}
+      />
 
       {/* Sign Out Confirmation Modal */}
       {confirmSignOut && (
