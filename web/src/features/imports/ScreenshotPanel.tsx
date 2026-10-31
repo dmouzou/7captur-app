@@ -83,7 +83,7 @@ export function ScreenshotPanel() {
     const id = `shot-${i}-${f.name}`;
     return f.kind === "enum" ? (
       <select id={id} aria-label={f.label} value={v} onChange={(e) => setCell(i, f.name, e.target.value)}>
-        <option value="">{f.default ? "(default)" : "—"}</option>
+        <option value="">{f.default ? "(default)" : "Not mapped"}</option>
         {f.enumValues!.map((o) => <option key={o} value={o}>{o.replace(/_/g, " ")}</option>)}
       </select>
     ) : (

@@ -510,7 +510,7 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
                   >
                     {CURRENCIES.map((c) => (
                       <option key={c.code} value={c.code}>
-                        {c.code} — {c.name} ({c.symbol})
+                        {c.code}, {c.name} ({c.symbol})
                       </option>
                     ))}
                   </select>
