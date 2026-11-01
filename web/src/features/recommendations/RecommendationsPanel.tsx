@@ -6,6 +6,7 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
 import { periodIds } from "../../shared/periods";
 import type { Recommendation } from "../../shared/recommendation";
+import { Icon } from "../../components/Icon";
 
 type Rec = Recommendation & { id: string; status: string; aiSummary?: { text: string } };
 const EVIDENCE_LABEL = { explore: "Explore: early signals only", improve: "Improve: partial evidence", optimize: "Optimize: spend, sales and costs" };
@@ -86,7 +87,7 @@ export function RecommendationsPanel() {
               borderRadius: 10,
             }}
           >
-            {busy ? "Analyzing Telemetry…" : "Generate Recommendation ✨"}
+            {busy ? "Analyzing Telemetry…" : "Generate Recommendation"}
           </button>
         </div>
       </div>
@@ -166,7 +167,7 @@ export function RecommendationsPanel() {
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <span style={{ fontSize: 14 }}>✨</span>
+                    <Icon name="sparkle" size={15} accent />
                     <strong style={{ fontSize: 13, color: "var(--accent)" }}>AI Synthesized Takeaway</strong>
                   </div>
                   <p style={{ margin: 0, fontSize: 14, color: "var(--ink)", lineHeight: 1.5 }}>
@@ -222,7 +223,7 @@ export function RecommendationsPanel() {
                   }}
                 >
                   <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--accent)" }}>
-                    💡 Why this action?
+                    <Icon name="bulb" size={15} inline />Why this action?
                   </h4>
                   {r.rationale.map((t, i) => (
                     <p key={i} style={{ margin: "0 0 6px 0", fontSize: 13, color: "var(--body)", lineHeight: 1.45 }}>
@@ -241,7 +242,7 @@ export function RecommendationsPanel() {
                   }}
                 >
                   <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--gold)" }}>
-                    ⚠️ Risk & Contraindications
+                    <Icon name="alert" size={15} inline />Risk & Contraindications
                   </h4>
                   <p style={{ margin: "0 0 6px 0", fontSize: 13, color: "var(--body)", lineHeight: 1.45 }}>
                     <strong>Risk:</strong> {r.risk}
@@ -261,7 +262,7 @@ export function RecommendationsPanel() {
                   }}
                 >
                   <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--ink)" }}>
-                    📊 What to measure next
+                    <Icon name="bars" size={15} inline />What to measure next
                   </h4>
                   <p style={{ margin: "0 0 6px 0", fontSize: 13, color: "var(--body)", lineHeight: 1.45 }}>
                     {r.nextMeasurement}
@@ -318,7 +319,7 @@ export function RecommendationsPanel() {
                         onClick={() => act(r.id, "marked_to_try")}
                         style={{ padding: "8px 18px", fontSize: 13.5, borderRadius: 8 }}
                       >
-                        ✓ I'll try this
+                        <Icon name="check" size={14} inline />I'll try this
                       </button>
                       <button
                         type="button"
@@ -344,7 +345,7 @@ export function RecommendationsPanel() {
                       onClick={() => act(r.id, "completed")}
                       style={{ padding: "8px 20px", fontSize: 13.5, borderRadius: 8 }}
                     >
-                      ✓ Mark Completed
+                      <Icon name="check" size={14} inline />Mark Completed
                     </button>
                   )}
                 </div>
@@ -355,7 +356,7 @@ export function RecommendationsPanel() {
 
         {recs.length === 0 && (
           <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>💡</div>
+            <div className="empty-icon"><Icon name="bulb" size={34} /></div>
             <h3 style={{ margin: "0 0 8px 0" }}>No recommendations yet</h3>
             <p className="muted" style={{ margin: "0 0 20px 0", fontSize: 14, maxWidth: 440, marginLeft: "auto", marginRight: "auto" }}>
               Enter commercial records (sales, spend, enquiries, posts) or click below to generate your first AI strategic move.

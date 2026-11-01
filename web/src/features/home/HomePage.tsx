@@ -13,6 +13,7 @@ import { ConnectionsPanel } from "../connections/ConnectionsPanel";
 import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { DecisionCenter } from "../decisions/DecisionCenter";
 import { MobileTabBar } from "./MobileTabBar";
+import { Icon } from "../../components/Icon";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { useAuth } from "../auth/AuthProvider";
 import { PLANS } from "../../shared/plans";
@@ -576,7 +577,7 @@ export function HomePage() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Enquiries & Leads</span>
-                    <span style={{ fontSize: 18 }}>👥</span>
+                    <Icon name="users" size={18} accent />
                   </div>
                   <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
                     {leadsCount ?? 0}
@@ -597,7 +598,7 @@ export function HomePage() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Sales & Orders</span>
-                    <span style={{ fontSize: 18 }}>💰</span>
+                    <Icon name="money" size={18} accent />
                   </div>
                   <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
                     {salesCount ?? 0}
@@ -618,7 +619,7 @@ export function HomePage() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Ad Spend & Costs</span>
-                    <span style={{ fontSize: 18 }}>💳</span>
+                    <Icon name="card" size={18} accent />
                   </div>
                   <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
                     {costsCount ?? 0}
@@ -639,7 +640,7 @@ export function HomePage() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Marketing Posts</span>
-                    <span style={{ fontSize: 18 }}>📢</span>
+                    <Icon name="megaphone" size={18} accent />
                   </div>
                   <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
                     {postsCount ?? 0}
@@ -789,42 +790,42 @@ export function HomePage() {
                 </div>
                 <div className="dashboard-hub-grid">
                   <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("leads")}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>👥</span>
+                    <Icon name="users" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Leads</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>WhatsApp & DM enquiries</div>
                     </div>
                   </button>
                   <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("sales")}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>💰</span>
+                    <Icon name="money" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Sales</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Track orders & gross revenue</div>
                     </div>
                   </button>
                   <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("costs")}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>💳</span>
+                    <Icon name="card" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Ad Spend</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Daily campaign expenditures</div>
                     </div>
                   </button>
                   <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("posts")}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>📢</span>
+                    <Icon name="megaphone" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Posts</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Social media creatives & hooks</div>
                     </div>
                   </button>
                   <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("connections")}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>🔌</span>
+                    <Icon name="plug" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>Integrations</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Connect Shopify & Google Ads</div>
                     </div>
                   </button>
                   <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("screenshot")}>
-                    <span style={{ fontSize: 20, flexShrink: 0 }}>📸</span>
+                    <Icon name="camera" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>Screenshot OCR</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Auto-extract ads & metrics</div>

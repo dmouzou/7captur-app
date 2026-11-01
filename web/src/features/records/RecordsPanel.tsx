@@ -7,6 +7,7 @@ import { useAuth } from "../auth/AuthProvider";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { recordSchemas, type RecordCollection } from "../../shared/records";
 import { PANELS, type Field } from "./config";
+import { Icon } from "../../components/Icon";
 
 type Row = Record<string, unknown> & { id: string };
 
@@ -278,7 +279,7 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
 
         {rows.length === 0 ? (
           <div style={{ padding: "48px 24px", textAlign: "center" }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
+            <div className="empty-icon"><Icon name="clipboard" size={34} /></div>
             <h4 style={{ margin: "0 0 6px 0" }}>No records yet</h4>
             <p className="muted" style={{ margin: 0, fontSize: 13.5, maxWidth: 380, marginLeft: "auto", marginRight: "auto" }}>
               Add your first {cfg.title.toLowerCase()} entry using the button above or import them in bulk via CSV.

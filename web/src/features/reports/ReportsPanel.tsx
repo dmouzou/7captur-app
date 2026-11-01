@@ -4,6 +4,7 @@ import { db } from "../../services/firebase";
 import { useAuth } from "../auth/AuthProvider";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import type { WeeklyReport } from "../../shared/report";
+import { Icon } from "../../components/Icon";
 
 interface Prefs { weeklyEmail?: boolean; weeklyStatusOnly?: boolean }
 
@@ -82,7 +83,7 @@ export function ReportsPanel() {
 
       {reports.length === 0 && (
         <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>📅</div>
+          <div className="empty-icon"><Icon name="calendar" size={34} /></div>
           <h3 style={{ margin: "0 0 8px 0" }}>No weekly summaries yet</h3>
           <p className="muted" style={{ margin: 0, fontSize: 14, maxWidth: 440, marginLeft: "auto", marginRight: "auto" }}>
             Your first automated weekly health digest arrives next Monday at 8:00 AM once commercial records are logged.
@@ -139,7 +140,7 @@ export function ReportsPanel() {
                 }}
               >
                 <h4 style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--accent)" }}>
-                  📈 What Changed
+                  <Icon name="trend" size={15} inline />What Changed
                 </h4>
                 {r.changes.length ? (
                   <ul style={{ paddingLeft: 18, margin: 0, fontSize: 13, color: "var(--body)" }}>
@@ -166,7 +167,7 @@ export function ReportsPanel() {
                 }}
               >
                 <h4 style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--ink)" }}>
-                  📡 Data Freshness
+                  <Icon name="signal" size={15} inline />Data Freshness
                 </h4>
                 <p style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--body)" }}>
                   {r.freshness.latestRecordDate
@@ -189,7 +190,7 @@ export function ReportsPanel() {
                 }}
               >
                 <h4 style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--gold)" }}>
-                  ⚠️ Telemetry Gaps
+                  <Icon name="alert" size={15} inline />Telemetry Gaps
                 </h4>
                 {r.gaps.length > 0 ? (
                   <ul style={{ paddingLeft: 18, margin: 0, fontSize: 13, color: "var(--body)" }}>

@@ -5,6 +5,7 @@ import { createWorkspaceInput } from "../../shared/schemas";
 import { Logo } from "../../components/Logo";
 import { ThemeToggle } from "../../components/ThemeContext";
 import { COUNTRIES, CURRENCIES, TIMEZONES } from "./countriesAndTimezones";
+import { Icon } from "../../components/Icon";
 
 interface OnboardingProps {
   onDone: () => void;
@@ -16,37 +17,37 @@ const BUSINESS_TYPE_OPTIONS = [
     id: "product_seller",
     title: "Product seller",
     desc: "You sell physical goods via eCommerce, DTC storefront, or brand retail.",
-    icon: "📦",
+    icon: "box",
   },
   {
     id: "reseller",
     title: "Reseller / Retailer",
     desc: "You stock, curate, and distribute items from multiple manufacturers or brands.",
-    icon: "🔄",
+    icon: "refresh",
   },
   {
     id: "service_provider",
     title: "Service provider",
     desc: "Agencies, consultants, design firms, freelancers, and professional practices.",
-    icon: "💼",
+    icon: "briefcase",
   },
   {
     id: "restaurant_local",
     title: "Restaurant & Local",
     desc: "Hospitality venues, cafes, retail storefronts, salons, and local locations.",
-    icon: "🍽️",
+    icon: "utensils",
   },
   {
     id: "creator_individual",
     title: "Creator & Media",
     desc: "Creators, educators, digital product sellers, podcasts, and communities.",
-    icon: "🎨",
+    icon: "palette",
   },
   {
     id: "other",
     title: "Other business model",
     desc: "Hybrid commerce, custom operations, or specialized business structures.",
-    icon: "⚡",
+    icon: "bolt",
   },
 ] as const;
 
@@ -56,37 +57,37 @@ const OBJECTIVE_OPTIONS = [
     id: "profitability",
     title: "Profitability & Margin",
     desc: "Maximize blended ROAS and bottom-line margin on every dollar spent.",
-    icon: "📈",
+    icon: "trend",
   },
   {
     id: "qualified_enquiries",
     title: "Qualified Enquiries",
     desc: "Attract high-intent sales leads, inbound consultations, and quotes.",
-    icon: "🎯",
+    icon: "target",
   },
   {
     id: "orders",
     title: "Order Volume",
     desc: "Accelerate transaction velocity and total purchase volume.",
-    icon: "🛍️",
+    icon: "bag",
   },
   {
     id: "reduced_waste",
     title: "Cut Wasted Ad Spend",
     desc: "Uncover unprofitable channels, fatigue, and ad spend leakages.",
-    icon: "✂️",
+    icon: "scissors",
   },
   {
     id: "content_testing",
     title: "Content & Ad Testing",
     desc: "Identify winning creative angles, copy hooks, and content formats.",
-    icon: "🧪",
+    icon: "flask",
   },
   {
     id: "awareness",
     title: "Brand Awareness",
     desc: "Expand audience reach, impressions, mindshare, and brand lift.",
-    icon: "📢",
+    icon: "megaphone",
   },
 ] as const;
 
@@ -96,43 +97,43 @@ const BUYING_METHOD_OPTIONS = [
     id: "website",
     title: "Website / Online Store",
     desc: "Direct checkout on your website, Shopify store, or custom platform.",
-    icon: "🌐",
+    icon: "globe",
   },
   {
     id: "dm_whatsapp",
     title: "DM / WhatsApp / Chat",
     desc: "Sales finalized through messaging, WhatsApp, Instagram DMs, or chat.",
-    icon: "💬",
+    icon: "chat",
   },
   {
     id: "phone",
     title: "Phone Call / Sales Rep",
     desc: "Consultative conversations, inbound SDR, or direct calls.",
-    icon: "📞",
+    icon: "phone",
   },
   {
     id: "booking",
     title: "Booking / Appointment",
     desc: "Scheduled appointments, Calendly bookings, or consultation slots.",
-    icon: "📅",
+    icon: "calendar",
   },
   {
     id: "marketplace",
     title: "Marketplace",
     desc: "Third-party platforms: Amazon, Etsy, eBay, Faire, or App Store.",
-    icon: "🛒",
+    icon: "cart",
   },
   {
     id: "in_person",
     title: "In-Person Storefront",
     desc: "Physical register, point of sale, counter, or face-to-face service.",
-    icon: "🏬",
+    icon: "store",
   },
   {
     id: "other",
     title: "Other / Multi-channel",
     desc: "Bespoke checkout flow or a blend of multiple channels.",
-    icon: "🔌",
+    icon: "plug",
   },
 ] as const;
 
@@ -374,7 +375,7 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
                           </svg>
                         )}
                       </div>
-                      <div className="case-card-icon">{opt.icon}</div>
+                      <div className="case-card-icon"><Icon name={opt.icon} size={22} /></div>
                       <div className="case-card-title">{opt.title}</div>
                       <div className="case-card-desc">{opt.desc}</div>
                     </div>
@@ -417,7 +418,7 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
                           </svg>
                         )}
                       </div>
-                      <div className="case-card-icon">{opt.icon}</div>
+                      <div className="case-card-icon"><Icon name={opt.icon} size={22} /></div>
                       <div className="case-card-title">{opt.title}</div>
                       <div className="case-card-desc">{opt.desc}</div>
                     </div>
@@ -458,7 +459,7 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
                           </svg>
                         )}
                       </div>
-                      <div className="case-card-icon">{opt.icon}</div>
+                      <div className="case-card-icon"><Icon name={opt.icon} size={22} /></div>
                       <div className="case-card-title">{opt.title}</div>
                       <div className="case-card-desc">{opt.desc}</div>
                     </div>
@@ -614,16 +615,16 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 20 }}>
                 <h4 style={{ marginBottom: 12 }}>Workspace Summary</h4>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  <span className="badge badge-primary">🏢 {businessName || "My Business"}</span>
+                  <span className="badge badge-primary"><Icon name="building" size={14} inline />{businessName || "My Business"}</span>
                   <span className="badge">
-                    {BUSINESS_TYPE_OPTIONS.find((b) => b.id === businessType)?.icon}{" "}
+                    <Icon name={BUSINESS_TYPE_OPTIONS.find((b) => b.id === businessType)?.icon ?? "box"} size={14} inline />
                     {BUSINESS_TYPE_OPTIONS.find((b) => b.id === businessType)?.title}
                   </span>
                   {objectives.map((objId) => {
                     const opt = OBJECTIVE_OPTIONS.find((o) => o.id === objId);
                     return (
                       <span key={objId} className="badge">
-                        {opt?.icon} {opt?.title}
+                        {opt && <Icon name={opt.icon} size={14} inline />}{opt?.title}
                       </span>
                     );
                   })}
@@ -631,11 +632,11 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
                     const opt = BUYING_METHOD_OPTIONS.find((m) => m.id === bmId);
                     return (
                       <span key={bmId} className="badge">
-                        {opt?.icon} {opt?.title}
+                        {opt && <Icon name={opt.icon} size={14} inline />}{opt?.title}
                       </span>
                     );
                   })}
-                  <span className="badge">📍 {COUNTRIES.find((c) => c.code === country)?.flag} {country} · {currency}</span>
+                  <span className="badge"><Icon name="pin" size={14} inline />{COUNTRIES.find((c) => c.code === country)?.flag} {country} · {currency}</span>
                   <span className="badge">⏰ {timezone}</span>
                 </div>
               </div>
@@ -694,7 +695,7 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
                 color: "var(--on-accent)",
               }}
             >
-              {busy ? "Creating your workspace…" : step === totalSteps ? "Launch 7Captur 🚀" : "Continue →"}
+              {busy ? "Creating your workspace…" : step === totalSteps ? "Launch 7Captur" : "Continue →"}
             </button>
           </div>
         </div>

@@ -355,9 +355,9 @@ p.card.error {
 }
 
 .case-card.selected {
-  border-color: var(--accent-fill);
+  border-color: var(--accent-line);
   background: var(--accent-soft);
-  box-shadow: 0 0 0 2px var(--accent-fill), var(--shadow);
+  box-shadow: 0 0 0 1px var(--accent-line), 0 24px 60px -28px var(--glow);
 }
 
 .case-card-icon {
@@ -369,7 +369,7 @@ p.card.error {
   border-radius: 10px;
   background: var(--bg2);
   border: 1px solid var(--line-strong);
-  font-size: 22px;
+  color: var(--accent);
   margin-bottom: 14px;
   transition: all 0.2s ease;
 }
@@ -613,7 +613,7 @@ tr:hover td {
   padding: 26px 28px;
   max-width: 440px;
   width: 100%;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: var(--shadow), 0 0 0 1px var(--line);
   animation: scaleInModal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -833,3 +833,42 @@ tr:hover td {
   .modal-box { max-height: 86dvh; overflow-y: auto; width: min(92vw, 460px); }
 }
 @media (max-width: 380px) { .mobile-tab-icon { width: 44px; } }
+
+
+/* ============================================================
+   Site parity layer. Mirrors the 7captur.com hero: ambient lime
+   glow, dot grid, translucent chrome, lit cards. Tokens are shared,
+   so light and dark both follow the site.
+   ============================================================ */
+body { background-color: transparent; }
+#root { position: relative; z-index: 1; }
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 78% 0%, var(--glow), transparent 62%),
+    radial-gradient(45% 40% at 6% 100%, color-mix(in srgb, var(--glow) 55%, transparent), transparent 70%),
+    radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0 / 28px 28px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 45%, transparent 100%);
+          mask-image: linear-gradient(180deg, #000 0%, #000 45%, transparent 100%);
+}
+
+/* The shell used to paint an opaque background, which hid the glow and made the
+   translucent top bar pointless. Let the light show through the chrome. */
+.app-shell { background: transparent; }
+.app-sidebar {
+  background: color-mix(in srgb, var(--bg2) 72%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+          backdrop-filter: blur(16px) saturate(140%);
+}
+
+.card:hover { box-shadow: var(--shadow), 0 20px 50px -28px var(--glow); }
+.card.is-lit { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line), 0 24px 60px -28px var(--glow); }
+.nav-item.active { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.badge-primary, .badge-live { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* Icons */
+.ui-icon { flex: none; }
+.ui-icon.inline { display: inline-block; vertical-align: -0.2em; margin-right: 0.45em; }
+.ui-icon.accent { color: var(--accent); }
+.dashboard-hub-btn .ui-icon { margin-right: 2px; }
+.empty-icon { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 18px; margin-bottom: 14px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); box-shadow: 0 0 0 6px var(--accent-soft), 0 18px 40px -20px var(--glow); }
