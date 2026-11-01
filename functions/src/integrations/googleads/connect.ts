@@ -39,7 +39,7 @@ export const startGoogleAdsConnect = onCall(async (request) => {
   if (!(await db.doc(`workspaces/${workspaceId}/businesses/${businessId}`).get()).exists) throw new HttpsError("not-found", "Business not found.");
   const reconnecting = (await db.collection(`workspaces/${workspaceId}/connections`).where("status", "==", "needs_reconnect").get()).docs.some((d) => d.data().provider === "google_ads");
   const limit = getPlan(ws.plan).maxConnections;
-  if (!reconnecting && (await activeCount(workspaceId)) >= limit) throw new HttpsError("resource-exhausted", `Your plan allows ${limit} direct connection${limit === 1 ? "" : "s"}. Disconnect one or upgrade.`);
+  if (!reconnecting && (await activeCount(workspaceId)) >= limit) throw new HttpsError("resource-exhausted", `Your plan allows ${limit} connected platform${limit === 1 ? "" : "s"}. Disconnect one or upgrade.`);
 
   const nonce = randomBytes(24).toString("base64url");
   await db.doc(`oauthStates/${nonce}`).set({ provider: "google_ads", workspaceId, businessId, uid, expiresAt: Timestamp.fromMillis(Date.now() + STATE_TTL_MS) });

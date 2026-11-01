@@ -78,7 +78,7 @@ export function BillingPanel() {
         {ws.pendingBand && <p role="status">Your price band changes to {PLANS[ws.pendingBand.to].name} ({price(ws.pendingBand.to)}) on {fmtDate(ws.pendingBand.effectiveMs)}. Nothing changes before then.</p>}
         {status === "canceling" && <p role="status">Your subscription ends on {fmtDate(ws.restrictAtMs)}. You keep your plan until then, then move to Free. Your data stays.</p>}
         {(status === "restricted" || status === "canceled" || status === "paused") && <p role="status">You are on the Free plan. Your history and records are kept.</p>}
-        <p className="muted">This week: {usage.week} of {plan.recommendations.weekly} recommendations · This month: {usage.imports} of {plan.importsPerMonth} imports · Direct connections: up to {plan.maxConnections}</p>
+        <p className="muted">This week: {usage.week} of {plan.recommendations.weekly} recommendations · This month: {usage.imports} of {plan.importsPerMonth} imports · Connected platforms: up to {plan.maxConnections}</p>
         <p className="muted">Allowances reset every Monday in {ws.timezone}. Same recommendation engine on every plan; plans differ in capacity and history.</p>
         {ws.hasSubscription && isOwner && <button type="button" disabled={!!busy} onClick={portal}>Manage payment method, invoices and cancellation</button>}
         <div role="alert" className="error">{error}</div>

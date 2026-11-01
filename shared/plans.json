@@ -2,7 +2,7 @@
   "version": 2,
   "currency": "USD",
   "billingCadence": "monthly",
-  "notes": "Weekly recommendation allowances locked 2026-10-29 for Free, Starter, Growth and the three Pro bands. No monthly caps set (null) until decided. Custom is negotiated; its values and import/history/business limits for all paid plans are still provisional placeholders.",
+  "notes": "Weekly recommendation allowances locked 2026-10-29 for Free, Starter, Growth and the three Pro bands. No monthly caps set (null) until decided. Custom is negotiated; its values and import/history/business limits for all paid plans are still provisional placeholders. Connections are counted per account (workspace), across all businesses, and e-commerce and ad accounts share one pool. An import is any CSV, screenshot or document brought into the app.",
   "plans": {
     "free": {
       "name": "Free",
@@ -14,7 +14,7 @@
         "weekly": 3,
         "monthly": null
       },
-      "importsPerMonth": 3,
+      "importsPerMonth": 5,
       "historyDays": 30
     },
     "starter": {
@@ -34,7 +34,7 @@
       "name": "Growth",
       "priceMonthly": 39,
       "provisional": true,
-      "maxConnections": 1,
+      "maxConnections": 2,
       "maxBusinesses": 2,
       "recommendations": {
         "weekly": 25,

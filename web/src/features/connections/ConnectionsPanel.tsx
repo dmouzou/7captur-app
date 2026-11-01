@@ -9,8 +9,8 @@ interface Account { customerId: string; name: string; currency: string }
 interface Conn { id: string; provider: string; shop: string; label: string; accounts: Account[]; status: string; lastSyncedMs: number | null; lastError: string | null; partial: boolean }
 
 const CATALOG: [string, string][] = [
-  ["Shopify orders", "Direct connection available"],
-  ["Google Ads (spend, clicks, impressions)", "Direct connection available"],
+  ["Shopify orders", "Connected platform available"],
+  ["Google Ads (spend, clicks, impressions)", "Connected platform available"],
   ["Meta Ads (Facebook, Instagram)", "Import supported (Ads Manager CSV export)"],
   ["TikTok Ads", "Import supported (CSV)"],
   ["Organic posts (Instagram, Facebook, TikTok)", "Manual tracking supported"],
@@ -98,7 +98,7 @@ export function ConnectionsPanel() {
     <section>
       <div className="card">
         <h2>Connections</h2>
-        <p className="muted">Direct connections are read-only. 7Captur reads orders and never changes your store or your ads. We do not store customer names, emails or addresses. Your plan allows up to {limit} direct connection{limit === 1 ? "" : "s"}.</p>
+        <p className="muted">Connected platforms are read-only. 7Captur reads orders and never changes your store or your ads. We do not store customer names, emails or addresses. Your plan allows up to {limit} connected platform{limit === 1 ? "" : "s"}.</p>
         <ul style={{ listStyle: "none", padding: 0 }}>
           {conns.filter((c) => c.status === "pending_account").map((c) => (
             <li key={c.id} className="card" style={{ margin: "12px 0" }}>
