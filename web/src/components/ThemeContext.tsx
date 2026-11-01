@@ -19,7 +19,7 @@ export const useTheme = () => useContext(ThemeContext);
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     try {
-      const saved = localStorage.getItem("7captur-theme");
+      const saved = localStorage.getItem("theme") || localStorage.getItem("7captur-theme");
       if (saved === "light" || saved === "dark") return saved;
     } catch {
       // ignore
@@ -39,11 +39,34 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       root.classList.remove("dark");
     }
     try {
+      localStorage.setItem("theme", theme);
       localStorage.setItem("7captur-theme", theme);
     } catch {
       // ignore
     }
   }, [theme]);
+
+  // Condensed light: a soft highlight follows the pointer across glass surfaces (parity with 7captur.com)
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia("(hover: hover)").matches) return;
+    let busy = false;
+    const sel = ".card, .panel, .dashboard-hub-btn, .adm-card, .btn";
+    const onPointerMove = (e: PointerEvent) => {
+      const target = (e.target as HTMLElement | null)?.closest?.(sel) as HTMLElement | null;
+      if (!target || busy) return;
+      busy = true;
+      const x = e.clientX;
+      const y = e.clientY;
+      requestAnimationFrame(() => {
+        const r = target.getBoundingClientRect();
+        target.style.setProperty("--mx", `${x - r.left}px`);
+        target.style.setProperty("--my", `${y - r.top}px`);
+        busy = false;
+      });
+    };
+    document.addEventListener("pointermove", onPointerMove, { passive: true });
+    return () => document.removeEventListener("pointermove", onPointerMove);
+  }, []);
 
   const toggleTheme = () => {
     setThemeState((prev) => (prev === "dark" ? "light" : "dark"));

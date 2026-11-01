@@ -145,6 +145,7 @@ function Overview({ go }: { go: (tab: string) => void }) {
     const attention: [string, number, string][] = [
       ["Past due payments", n("pastDue"), "billing"], ["Connections to reconnect", n("needsReconnect"), "integrations"],
       ["Failed recommendations (7 days)", n("recsFailed7"), "recs"], ["Pending deletion requests", n("pendingDeletions"), "jobs"], ["Suspended workspaces", n("suspended"), "workspaces"],
+      ["Open support & feedback", n("openFeedback"), "feedback"],
     ];
     const open = attention.filter(([, v]) => v > 0);
     return (
@@ -152,6 +153,7 @@ function Overview({ go }: { go: (tab: string) => void }) {
         <div className="adm-kpis">
           <Kpi label="Workspaces" value={n("workspaces")} hint={`${n("new30")} new in 30 days`} />
           <Kpi label="Recommendations (7d)" value={n("recs7")} hint={`${failRate}% failed`} tone={failRate >= 10 ? "bad" : undefined} />
+          <Kpi label="Open tickets" value={n("openFeedback")} tone={n("openFeedback") > 0 ? "warn" : undefined} />
           <Kpi label="Past due" value={n("pastDue")} tone={n("pastDue") > 0 ? "bad" : undefined} />
           <Kpi label="Canceling" value={n("canceling")} tone={n("canceling") > 0 ? "warn" : undefined} />
           <Kpi label="Needs reconnect" value={n("needsReconnect")} tone={n("needsReconnect") > 0 ? "warn" : undefined} />
@@ -299,9 +301,152 @@ function Admins() {
   );
 }
 
+function Feedback() {
+  const [status, setStatus] = useState("");
+  const [type, setType] = useState("");
+  const [sel, setSel] = useState<Row | null>(null);
+  const [newStatus, setNewStatus] = useState("in_progress");
+  const [internalNote, setInternalNote] = useState("");
+  const [updating, setUpdating] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const r = useCallable<{ items: Row[] }>("adminListFeedback", {
+    status: status || undefined,
+    type: type || undefined,
+  });
+
+  async function updateTicket() {
+    if (!sel) return;
+    setUpdating(true);
+    setMsg("");
+    try {
+      await call("adminUpdateFeedback", {
+        ticketId: sel.id,
+        status: newStatus,
+        internalNote: internalNote.trim() || undefined,
+      });
+      setMsg("Ticket updated successfully.");
+      setInternalNote("");
+      r.reload();
+    } catch (e) {
+      setMsg((e as { message?: string }).message ?? "Update failed.");
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  return (
+    <div className="adm-card">
+      <div className="adm-card-head">
+        <h3>Customer Feedback & Support (Spec 10.2)</h3>
+        <button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button>
+      </div>
+      <div className="adm-tools">
+        <label>
+          Filter Status
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="dismissed">Dismissed</option>
+          </select>
+        </label>
+        <label>
+          Filter Type
+          <select value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">All types</option>
+            <option value="bad_recommendation">Bad Recommendation</option>
+            <option value="support_request">Support Request</option>
+            <option value="product_feedback">Product Feedback</option>
+          </select>
+        </label>
+      </div>
+      <Async r={r}>
+        {(x) => (
+          <Table
+            rows={x.items}
+            cols={["createdAt", "type", "status", "subject", "userEmail", "workspaceId", "recommendationId"]}
+            onRow={(row) => {
+              setSel(row);
+              setNewStatus(String(row.status ?? "in_progress"));
+              setMsg("");
+            }}
+          />
+        )}
+      </Async>
+
+      {sel && (
+        <div style={{ marginTop: 24, padding: "18px 20px", background: "var(--surface-subtle)", borderRadius: 10, border: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{String(sel.subject)}</h4>
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                Ticket ID: {String(sel.id)} · User: {String(sel.userEmail ?? "anonymous")} · Workspace: {String(sel.workspaceId)}
+              </p>
+            </div>
+            <button type="button" className="btn-secondary" onClick={() => setSel(null)}>Close</button>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)" }}>User Message</span>
+            <p style={{ margin: "6px 0 0", fontSize: 14, whiteSpace: "pre-wrap", color: "var(--ink)", background: "var(--surface)", padding: 12, borderRadius: 8 }}>
+              {String(sel.message)}
+            </p>
+          </div>
+
+          {Boolean(sel.recContext) && (
+            <div style={{ marginBottom: 16 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--accent)" }}>Attached Recommendation Context</span>
+              <pre className="adm-json" style={{ marginTop: 6 }}>{JSON.stringify(sel.recContext, null, 2)}</pre>
+            </div>
+          )}
+
+          {Array.isArray(sel.internalNotes) && sel.internalNotes.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)" }}>Previous Internal Notes</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                {(sel.internalNotes as { by: string; note: string; at: string }[]).map((n, i) => (
+                  <div key={i} style={{ fontSize: 13, background: "var(--surface)", padding: "8px 12px", borderRadius: 6 }}>
+                    <strong>{n.by}</strong> <span className="muted">({new Date(n.at).toLocaleString()}):</span> {n.note}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ margin: 0 }}>
+                Set Status:
+                <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)} style={{ marginLeft: 8 }}>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="dismissed">Dismissed</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              Add Operational / Resolution Note:
+              <textarea rows={3} value={internalNote} onChange={(e) => setInternalNote(e.target.value)} placeholder="Type internal note or resolution response visible to customer..." style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <button type="button" onClick={updateTicket} disabled={updating}>
+                {updating ? "Saving…" : "Save Ticket Updates"}
+              </button>
+              {msg && <span style={{ fontSize: 13, color: "var(--accent)" }}>{msg}</span>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NAV: { title: string; items: [string, string][] }[] = [
   { title: "Monitor", items: [["overview", "Overview"], ["jobs", "Jobs"]] },
-  { title: "Customers", items: [["workspaces", "Workspaces"], ["recs", "Recommendations"], ["imports", "Imports"], ["integrations", "Integrations"], ["billing", "Billing"]] },
+  { title: "Customers", items: [["workspaces", "Workspaces"], ["recs", "Recommendations"], ["imports", "Imports"], ["integrations", "Integrations"], ["billing", "Billing"], ["feedback", "Feedback & Support"]] },
   { title: "System", items: [["plans", "Plans"], ["audit", "Audit log"], ["admins", "Admins"]] },
 ];
 
@@ -321,7 +466,7 @@ export default function AdminApp() {
 
   const screens: Record<string, () => ReactNode> = {
     overview: () => <Overview go={setTab} />, workspaces: () => <Workspaces />, recs: () => <Recommendations />, imports: () => <Imports />, integrations: () => <Integrations />,
-    jobs: () => <Jobs />, billing: () => <Billing />, plans: () => <Plans />, audit: () => <Audit />, admins: () => <Admins />,
+    billing: () => <Billing />, feedback: () => <Feedback />, jobs: () => <Jobs />, plans: () => <Plans />, audit: () => <Audit />, admins: () => <Admins />,
   };
   const title = NAV.flatMap((g) => g.items).find(([id]) => id === tab)?.[1] ?? "";
 

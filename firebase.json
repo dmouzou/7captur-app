@@ -13,6 +13,7 @@
     {
       "target": "app",
       "public": "web/dist",
+      "predeploy": ["node \"$PROJECT_DIR/scripts/build-web.mjs\""],
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{ "source": "**", "destination": "/index.html" }],
       "headers": [
@@ -29,6 +30,7 @@
     {
       "target": "admin",
       "public": "web/dist",
+      "predeploy": ["node \"$PROJECT_DIR/scripts/build-web.mjs\""],
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{ "source": "**", "destination": "/index.html" }],
       "headers": [

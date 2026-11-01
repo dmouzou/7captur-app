@@ -169,9 +169,6 @@ export function AuthPage() {
             width: "100%",
             maxWidth: 440,
             padding: "36px 32px",
-            boxShadow: "var(--shadow-lg)",
-            border: "1px solid var(--border)",
-            borderRadius: 18,
           }}
         >
           {/* Header */}

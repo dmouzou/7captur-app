@@ -144,6 +144,12 @@ service cloud.firestore {
         allow read: if isMember(wid) && memberDoc(wid).data.role == 'owner';
         allow write: if false;
       }
+
+      // Feedback & support tickets are written via Functions callable submitFeedback.
+      match /feedback/{id} {
+        allow read: if isMember(wid);
+        allow write: if false;
+      }
     }
 
     match /auditEvents/{id} {

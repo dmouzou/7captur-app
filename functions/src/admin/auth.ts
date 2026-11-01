@@ -6,14 +6,19 @@ export const ADMIN_ROLES = ["super_admin", "ops", "billing", "support"] as const
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 export type Permission =
   | "read_overview" | "read_workspaces" | "read_recommendations" | "read_imports" | "read_integrations" | "read_jobs"
-  | "read_billing" | "read_plans" | "read_audit" | "suspend_workspace" | "change_plan" | "manage_admins";
+  | "read_billing" | "read_plans" | "read_audit" | "suspend_workspace" | "change_plan" | "manage_admins"
+  | "read_feedback" | "update_feedback";
 
-const ALL: Permission[] = ["read_overview", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs", "read_billing", "read_plans", "read_audit", "suspend_workspace", "change_plan", "manage_admins"];
+const ALL: Permission[] = [
+  "read_overview", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs",
+  "read_billing", "read_plans", "read_audit", "suspend_workspace", "change_plan", "manage_admins",
+  "read_feedback", "update_feedback",
+];
 export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
   super_admin: ALL,
-  ops: ["read_overview", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs", "read_plans", "suspend_workspace"],
+  ops: ["read_overview", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs", "read_plans", "suspend_workspace", "read_feedback", "update_feedback"],
   billing: ["read_overview", "read_workspaces", "read_billing", "read_plans"],
-  support: ["read_workspaces", "read_recommendations", "read_imports", "read_integrations"],
+  support: ["read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_feedback", "update_feedback"],
 };
 /** Actions that change state need a login from the last 5 minutes. */
 const FRESH_LOGIN_SECONDS = 300;

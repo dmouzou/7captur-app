@@ -23,6 +23,7 @@ export { syncShopifyNow, syncShopifyScheduled } from "./integrations/shopify/syn
 export { startGoogleAdsConnect, googleAdsCallback, selectGoogleAdsAccount } from "./integrations/googleads/connect";
 export { syncGoogleAdsNow, syncGoogleAdsScheduled } from "./integrations/googleads/sync";
 export { shopifyWebhook } from "./integrations/shopify/webhook";
+export { submitFeedback } from "./feedback/submit";
 export * from "./admin/callables";
 
 export const health = onRequest((_req, res) => {

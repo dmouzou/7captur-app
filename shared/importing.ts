@@ -96,10 +96,14 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
     dateField("publishedAt", "Published on", ["date", "published", "post_date", "posted", "posted_on"]),
     { name: "format", label: "Format", kind: "text", aliases: ["format", "type", "media_type", "post_type"] },
     { name: "topic", label: "Topic", kind: "text", aliases: ["topic", "theme", "tag", "subject"] },
+    { name: "externalId", label: "External Post ID", kind: "text", aliases: ["external_id", "post_id", "id"] },
+    { name: "permalink", label: "Post URL / Link", kind: "text", aliases: ["permalink", "url", "link"] },
+    { name: "promoted", label: "Promoted / Boosted", kind: "bool", aliases: ["promoted", "is_promoted", "boosted"] },
     count("reach", "Reach", ["accounts_reached"]),
     count("views", "Views", ["video_views", "plays"]),
     count("likes", "Likes", ["reactions"]),
     count("comments", "Comments"), count("shares", "Shares", ["reposts"]), count("saves", "Saves", ["bookmarks"]),
+    count("profileVisits", "Profile visits", ["profile_views"]), count("clicks", "Clicks", ["link_clicks"]),
     notes,
   ],
   promotions: [
@@ -107,6 +111,7 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
     dateField("startDate", "Start date", ["start", "date", "from", "begin", "reporting_starts"]),
     dateField("endDate", "End date", ["end", "to", "stop", "reporting_ends"], false),
     { name: "spend", label: "Spend", kind: "number", required: true, aliases: ["spend", "cost", "amount_spent", "campaign_spend", "ad_spend", "budget_spent"] },
+    { name: "budget", label: "Budget", kind: "number", aliases: ["budget", "target_budget"] },
     currencyField,
     {
       name: "objective", label: "Objective", kind: "enum", enumValues: OBJECTIVES, aliases: ["objective", "goal"],
@@ -118,6 +123,7 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
   ],
   leads: [
     dateField("date", "Date", ["created", "enquiry_date", "received"]),
+    { name: "source", label: "Source / Channel", kind: "text", aliases: ["source", "channel", "origin", "platform"] },
     { name: "qualified", label: "Qualified", kind: "bool", aliases: ["qualified", "is_qualified", "qualified_lead"], default: () => false, defaultLabel: () => "qualified = no" },
     {
       name: "status", label: "Status", kind: "enum", enumValues: ["new", "in_conversation", "won", "lost"], aliases: ["status", "stage"],
@@ -129,7 +135,9 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
   ],
   sales: [
     dateField("date", "Date", ["order_date", "sold_on", "created"]),
+    { name: "orderNumber", label: "Order / Invoice #", kind: "text", aliases: ["order_number", "order_id", "order_no", "invoice"] },
     { name: "amount", label: "Amount", kind: "number", required: true, aliases: ["amount", "total", "revenue", "order_total", "price", "gross"] },
+    { name: "quantity", label: "Quantity", kind: "int", aliases: ["quantity", "qty", "count", "items"] },
     currencyField,
     {
       name: "status", label: "Status", kind: "enum", enumValues: ["confirmed", "pending", "partially_refunded", "refunded"], aliases: ["status", "order_status"],
@@ -154,6 +162,10 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
       name: "kind", label: "Amount or percentage", kind: "enum", enumValues: ["amount", "percentage"], aliases: ["kind", "unit", "amount_type"],
       enumAliases: { percent: "percentage", pct: "percentage", "%": "percentage", fixed: "amount", flat: "amount" },
       default: () => "amount", defaultLabel: () => "type = amount",
+    },
+    {
+      name: "scope", label: "Cost scope", kind: "enum", enumValues: ["business_level", "per_order", "per_unit"], aliases: ["scope", "level", "cost_scope"],
+      enumAliases: { business: "business_level", general: "business_level", order: "per_order", unit: "per_unit", per_item: "per_unit" },
     },
     { name: "amount", label: "Value", kind: "number", required: true, aliases: ["amount", "value", "cost"] },
     currencyField,

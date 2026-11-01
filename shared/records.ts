@@ -19,16 +19,23 @@ export const postSchema = z.object({
   publishedAt: date,
   format: z.string().trim().max(40).optional(),
   topic: z.string().trim().max(60).optional(),
+  externalId: ref,
+  permalink: z.string().trim().max(300).optional(),
+  promoted: z.boolean().optional(),
   reach: count, views: count, likes: count, comments: count, shares: count, saves: count,
+  profileVisits: count, clicks: count,
   notes: note,
 });
 
 export const promotionSchema = z.object({
   platform: z.enum(PLATFORMS),
   postId: ref,
+  campaignId: ref,
+  adId: ref,
   startDate: date,
   endDate: date.optional(),
   spend: money,
+  budget: money.optional(),
   currency,
   objective: z.enum(OBJECTIVES),
   impressions: count, clicks: count, reach: count,
@@ -37,6 +44,7 @@ export const promotionSchema = z.object({
 
 export const leadSchema = z.object({
   date,
+  source: z.string().trim().max(60).optional(),
   postId: ref,
   promotionId: ref,
   qualified: z.boolean(),
@@ -49,6 +57,8 @@ export const leadSchema = z.object({
 export const SALE_STATUS = ["confirmed", "pending", "partially_refunded", "refunded"] as const;
 export const saleSchema = z.object({
   date,
+  orderNumber: z.string().trim().max(80).optional(),
+  quantity: z.number().int().positive().max(1e6).optional(),
   amount: money,
   currency,
   status: z.enum(SALE_STATUS),
@@ -65,6 +75,7 @@ export const costSchema = z
   .object({
     category: z.enum(["cogs", "fees", "shipping", "returns", "other"]),
     kind: z.enum(["amount", "percentage"]),
+    scope: z.enum(["business_level", "per_order", "per_unit"]).optional(),
     amount: money,
     currency: currency.optional(),
     effectiveDate: date,

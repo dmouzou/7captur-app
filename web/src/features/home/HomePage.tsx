@@ -12,6 +12,7 @@ import { NotificationsPanel, useUnreadCount } from "../notifications/Notificatio
 import { ConnectionsPanel } from "../connections/ConnectionsPanel";
 import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { DecisionCenter } from "../decisions/DecisionCenter";
+import { HelpFeedbackPanel } from "../help/HelpFeedbackPanel";
 import { MobileTabBar } from "./MobileTabBar";
 import { Icon } from "../../components/Icon";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
@@ -49,7 +50,8 @@ type Tab =
   | "screenshot"
   | "notifications"
   | "billing"
-  | "settings";
+  | "settings"
+  | "help";
 
 interface NavGroup {
   title: string;
@@ -71,6 +73,7 @@ export function HomePage() {
   });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [helpRecId, setHelpRecId] = useState<string | undefined>();
   const unread = useUnreadCount();
   const leadsCount = useCollectionCount("leads");
   const salesCount = useCollectionCount("sales");
@@ -251,6 +254,11 @@ export function HomePage() {
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
           ),
+        },
+        {
+          id: "help",
+          name: "Help & Feedback",
+          icon: <Icon name="help" size={18} />,
         },
       ],
     },
@@ -837,7 +845,14 @@ export function HomePage() {
           )}
 
           {/* Detailed Section Panels */}
-          {tab === "recommendations" && <RecommendationsPanel />}
+          {tab === "recommendations" && (
+            <RecommendationsPanel
+              onReportIssue={(recId) => {
+                setHelpRecId(recId);
+                setTab("help");
+              }}
+            />
+          )}
           {tab === "decisions" && <DecisionCenter />}
           {tab === "reports" && <ReportsPanel />}
           {tab === "leads" && <RecordsPanel coll="leads" />}
@@ -851,6 +866,7 @@ export function HomePage() {
           {tab === "notifications" && <NotificationsPanel />}
           {tab === "billing" && <BillingPanel />}
           {tab === "settings" && <SettingsPanel />}
+          {tab === "help" && <HelpFeedbackPanel initialRecommendationId={helpRecId} />}
         </main>
       </div>
 

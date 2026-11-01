@@ -98,7 +98,7 @@ export function BillingPanel() {
           <ul style={{ listStyle: "none", padding: 0 }}>
             {choices.map((id) => (
               <li key={id} style={{ margin: "12px 0", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <span><strong>{PLANS[id].name}</strong> · {price(id)}<br /><span className="muted">{PLANS[id].recommendations.weekly} recommendations/week · {PLANS[id].importsPerMonth} imports/month · up to {PLANS[id].maxConnections} connection(s)</span></span>
+                <span><strong>{PLANS[id].name}</strong> · {price(id)}<br /><span className="muted">{PLANS[id].recommendations.weekly} recommendations/week · {PLANS[id].importsPerMonth} imports/month · up to {PLANS[id].maxConnections} connected platform{PLANS[id].maxConnections === 1 ? "" : "s"} · {PLANS[id].maxBusinesses} business workspace{PLANS[id].maxBusinesses === 1 ? "" : "s"}</span></span>
                 {ws.plan === id ? <span className="muted">Current plan</span>
                   : !priceIds[id] ? <span className="muted">Not available yet</span>
                   : subscribed(status) && ws.hasSubscription ? <button type="button" style={{ margin: 0 }} disabled={!!busy || status === "past_due"} onClick={() => change(id)}>Switch</button>

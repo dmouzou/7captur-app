@@ -1,6 +1,6 @@
 /* Admin console. Uses the same tokens and component language as 7captur.com. */
-.adm { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; background: var(--bg); }
-.adm-side { position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh; overflow-y: auto; background: var(--bg2); border-right: 1px solid var(--line); padding: 18px 12px 20px; display: flex; flex-direction: column; gap: 18px; }
+.adm { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; background: transparent; }
+.adm-side { position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh; overflow-y: auto; background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border-right: 1px solid var(--glass-edge); padding: 18px 12px 20px; display: flex; flex-direction: column; gap: 18px; }
 .adm-group { display: grid; gap: 2px; }
 .adm-group-title { font: 600 11px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 12px 8px; }
 .adm-nav { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: flex-start; text-align: left; margin: 0; padding: 9px 12px; min-height: 40px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--body); box-shadow: none; font: 600 14px var(--font-head); }
@@ -13,7 +13,7 @@
 .adm-user { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 
 .adm-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; margin-bottom: 20px; }
-.adm-kpi { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 14px; padding: 16px 18px; }
+.adm-kpi { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow); border-radius: 14px; padding: 16px 18px; }
 .adm-kpi-label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
 .adm-kpi-value { font: 600 30px/1.1 var(--font-mono); color: var(--ink); margin-top: 6px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .adm-kpi-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
@@ -21,7 +21,7 @@
 .adm-kpi.is-bad .adm-kpi-value { color: var(--red); }
 
 .adm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px; }
-.adm-card { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 16px; padding: 20px; margin-bottom: 16px; min-width: 0; }
+.adm-card { background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow); border-radius: 16px; padding: 20px; margin-bottom: 16px; min-width: 0; }
 .adm-grid > .adm-card { margin-bottom: 0; }
 .adm-card h2, .adm-card h3 { margin: 0 0 12px; font-size: 1.05rem; }
 .adm-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }

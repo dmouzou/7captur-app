@@ -6,6 +6,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { SCREENSHOT_LIMITS, analyzeRows, importRecordsInput } from "../shared/importing";
 import { requireMember } from "../workspaces/access";
 import { confirmImport, releaseImport, reserveImport } from "../recommendations/usage";
+import { addNotification } from "../notify/inapp";
 
 const MAX_ERRORS_STORED = 100;
 const BATCH = 400;
@@ -74,6 +75,14 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
     const status = a.invalid.length > 0 ? "failed" : "completed";
     const job = { ...report, status, collection: inp.collection, fileName: inp.fileName, createdBy: uid, createdAt: FieldValue.serverTimestamp() };
     await jobRef.set(job);
+    if (status === "failed") {
+      await addNotification(db, inp.workspaceId, {
+        kind: "import_failed",
+        title: "Import file has row errors",
+        body: `File "${inp.fileName}" could not import records: ${a.invalid.length} row(s) had formatting errors. Review errors and retry.`,
+        priority: "normal",
+      }, `imp_fail_${inp.requestId}`).catch(() => undefined);
+    }
     return { ...report, status };
   }
 
@@ -102,10 +111,25 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
     });
     await confirmImport(db, inp.workspaceId, inp.requestId);
     if (isShot) await getStorage().bucket().file(inp.uploadPath!).delete({ ignoreNotFound: true }).catch(() => undefined);
+
+    if (status === "partial") {
+      await addNotification(db, inp.workspaceId, {
+        kind: "import_failed",
+        title: "Import completed with row errors",
+        body: `File "${inp.fileName}": ${counts.imported} records imported, but ${a.invalid.length} row(s) had errors and were skipped.`,
+        priority: "normal",
+      }, `imp_part_${inp.requestId}`).catch(() => undefined);
+    }
     return { ...report, counts, status };
   } catch (err) {
     logger.error("importRecords failed", { workspaceId: inp.workspaceId, requestId: inp.requestId, imported: counts.imported, err: String(err) });
     await releaseImport(db, inp.workspaceId, inp.requestId);
+    await addNotification(db, inp.workspaceId, {
+      kind: "import_failed",
+      title: "Import interrupted",
+      body: `File "${inp.fileName}" failed part-way through importing. Saved rows will be safely deduplicated on retry.`,
+      priority: "high",
+    }, `imp_err_${inp.requestId}`).catch(() => undefined);
     throw new HttpsError("internal", "Import failed part-way. Re-upload the same file: rows already saved are skipped as duplicates.");
   }
 });

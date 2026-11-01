@@ -8,6 +8,7 @@ import { runEngine, ENGINE_VERSION } from "./engine";
 import { explainWithAI } from "./explain";
 import { ANTHROPIC_API_KEY } from "../config";
 import { confirmReservation, localToday, releaseReservation, reserveRecommendation } from "./usage";
+import { addNotification } from "../notify/inapp";
 
 const MAX_DOCS = 500;
 
@@ -47,6 +48,18 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
 
   const reservation = await reserveRecommendation(db, workspaceId, requestId);
   if (!reservation.ok) {
+    await addNotification(
+      db,
+      workspaceId,
+      {
+        kind: "limit_reached",
+        title: "Weekly recommendation limit reached",
+        body: `You've used your recommendation allowance for this cycle. Credits reset on ${reservation.resetsOn}. You can upgrade your plan anytime for higher allowances.`,
+        priority: "normal",
+      },
+      `limit_${workspaceId}_${reservation.resetsOn}`
+    ).catch(() => undefined);
+
     throw new HttpsError("resource-exhausted", "Recommendation limit reached.", {
       reason: reservation.reason, resetsOn: reservation.resetsOn,
     });

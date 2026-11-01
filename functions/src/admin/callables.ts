@@ -24,7 +24,7 @@ export const adminOverview = onCall(async (request) => {
   const since7 = Timestamp.fromMillis(now - 7 * 86400000), since30 = Timestamp.fromMillis(now - 30 * 86400000);
   const byPlan: Record<string, number> = {};
   await Promise.all(PLAN_IDS.map(async (p) => { byPlan[p] = await count(db().collection("workspaces").where("plan", "==", p)); }));
-  const [workspaces, new30, recs7, recsFailed7, pastDue, canceling, needsReconnect, pendingDeletions, suspended] = await Promise.all([
+  const [workspaces, new30, recs7, recsFailed7, pastDue, canceling, needsReconnect, pendingDeletions, suspended, openFeedback] = await Promise.all([
     count(db().collection("workspaces")),
     count(db().collection("workspaces").where("createdAt", ">=", since30)),
     count(db().collectionGroup("recommendations").where("createdAt", ">=", since7)),
@@ -34,6 +34,7 @@ export const adminOverview = onCall(async (request) => {
     count(db().collectionGroup("connections").where("status", "==", "needs_reconnect")),
     count(db().collection("deletionRequests").where("status", "==", "pending")),
     count(db().collection("workspaces").where("suspended", "==", true)),
+    count(db().collection("supportTickets").where("status", "==", "open")),
   ]);
   // Activation sample: of the 50 newest workspaces, how many saved any record / got a recommendation.
   const recent = await db().collection("workspaces").orderBy("createdAt", "desc").limit(50).get();
@@ -46,7 +47,7 @@ export const adminOverview = onCall(async (request) => {
     if (!p.empty || !s.empty || !r.empty) withRecord++;
   }));
   await audit(admin, "view_overview", "system");
-  return { workspaces, new30, byPlan, recs7, recsFailed7, pastDue, canceling, needsReconnect, pendingDeletions, suspended, activation: { sample: recent.size, withRecord, withRecommendation: withRec } };
+  return { workspaces, new30, byPlan, recs7, recsFailed7, pastDue, canceling, needsReconnect, pendingDeletions, suspended, openFeedback, activation: { sample: recent.size, withRecord, withRecommendation: withRec } };
 });
 
 async function summarize(id: string, d: FirebaseFirestore.DocumentData) {
@@ -232,3 +233,67 @@ export const adminSetRole = onCall(async (request) => {
   await audit(admin, "set_admin_role", user.uid, { reason: p.data.reason, before: { role: before }, after: { role: p.data.role === "none" ? null : p.data.role }, meta: { email: p.data.email } });
   return { ok: true };
 });
+
+export const adminListFeedback = onCall(async (request) => {
+  const admin = requireAdmin(request, "read_feedback");
+  const p = z.object({
+    status: z.string().max(40).optional(),
+    type: z.string().max(40).optional(),
+    workspaceId: z.string().max(160).optional(),
+  }).safeParse(request.data ?? {});
+  if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
+
+  let q: FirebaseFirestore.Query = db().collection("supportTickets");
+  if (p.data.status) q = q.where("status", "==", p.data.status);
+  if (p.data.type) q = q.where("type", "==", p.data.type);
+  if (p.data.workspaceId) q = q.where("workspaceId", "==", p.data.workspaceId);
+
+  const snap = await q.orderBy("createdAt", "desc").limit(LIMIT).get();
+  await audit(admin, "list_feedback", p.data.workspaceId ?? "all");
+  return {
+    items: snap.docs.map((d) => plain({ id: d.id, ...d.data() })),
+  };
+});
+
+export const adminUpdateFeedback = onCall(async (request) => {
+  const admin = requireAdmin(request, "update_feedback");
+  const p = z.object({
+    ticketId: z.string().min(1).max(160),
+    status: z.enum(["open", "in_progress", "resolved", "dismissed"]),
+    internalNote: z.string().trim().max(1000).optional(),
+  }).safeParse(request.data);
+  if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
+
+  const ticketRef = db().doc(`supportTickets/${p.data.ticketId}`);
+  const snap = await ticketRef.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Ticket not found.");
+
+  const current = snap.data()!;
+  const noteEntry = p.data.internalNote ? {
+    by: admin.email || admin.uid,
+    note: p.data.internalNote,
+    at: new Date().toISOString(),
+  } : null;
+
+  const updates: Record<string, unknown> = {
+    status: p.data.status,
+    updatedAt: FieldValue.serverTimestamp(),
+    ...(noteEntry ? { internalNotes: FieldValue.arrayUnion(noteEntry) } : {}),
+  };
+
+  const batch = db().batch();
+  batch.update(ticketRef, updates);
+  if (current.workspaceId) {
+    const wsTicketRef = db().doc(`workspaces/${current.workspaceId}/feedback/${p.data.ticketId}`);
+    batch.update(wsTicketRef, updates);
+  }
+  await batch.commit();
+
+  await audit(admin, "update_feedback", p.data.ticketId, {
+    before: { status: current.status },
+    after: { status: p.data.status, note: p.data.internalNote ?? null },
+  });
+
+  return { ok: true };
+});
+

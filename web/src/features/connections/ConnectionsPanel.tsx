@@ -115,7 +115,7 @@ export function ConnectionsPanel() {
               <div className="muted">{c.lastSyncedMs ? `Last synced ${new Date(c.lastSyncedMs).toLocaleString()}` : "Not synced yet"}{c.partial ? " · more history is still being read" : ""}</div>
               {c.lastError && <div className="error">{c.lastError}</div>}
               {c.status === "connected" && <button type="button" disabled={!!busy} onClick={() => sync(c.id)}>Sync now</button>}{" "}
-              <button type="button" disabled={!!busy} onClick={() => disconnect(c)} style={{ background: "transparent", color: "var(--text)", border: "1px solid var(--border)" }}>Disconnect</button>
+              <button type="button" className="btn-secondary" disabled={!!busy} onClick={() => disconnect(c)}>Disconnect</button>
             </li>
           ))}
         </ul>
