@@ -5,14 +5,13 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineString } from "firebase-functions/params";
 import { z } from "zod";
 import { PADDLE_API_KEY } from "../config";
-import { PLAN_IDS } from "../shared/plans";
 import { requireMember } from "../workspaces/access";
 import { PADDLE_PRICE_MAP, notifyOwner } from "./webhook";
 import { cancelAtPeriodEnd, changeMode, changeSubscriptionPrice, createPortalSession, parsePriceMap } from "./paddle";
 
 const PADDLE_ENV = defineString("PADDLE_ENV", { default: "sandbox" });
 const wsInput = z.object({ workspaceId: z.string().min(1).max(128) });
-const changeInput = wsInput.extend({ targetPlan: z.enum(PLAN_IDS as [string, ...string[]]) });
+const changeInput = wsInput.extend({ targetPlan: z.enum(["starter", "growth", "custom", "free", "cancel"]) });
 
 async function ownerBilling(uid: string, workspaceId: string) {
   const db = getFirestore();
@@ -48,7 +47,7 @@ export const changeSubscriptionPlan = onCall({ secrets: [PADDLE_API_KEY] }, asyn
   const { ws, billing } = await ownerBilling(uid, p.data.workspaceId);
   if (!billing?.subscriptionId) throw new HttpsError("failed-precondition", "Subscribe first.");
   if (ws.billingStatus === "past_due") throw new HttpsError("failed-precondition", "Fix your payment issue before changing plan.");
-  if (p.data.targetPlan === "free") {
+  if (p.data.targetPlan === "free" || p.data.targetPlan === "cancel") {
     const ok = await cancelAtPeriodEnd(PADDLE_ENV.value(), PADDLE_API_KEY.value(), billing.subscriptionId);
     if (!ok) throw new HttpsError("unavailable", "Could not schedule the cancellation. Try again.");
     return { ok: true, effective: "end_of_period" };
@@ -69,8 +68,8 @@ export const enforceBilling = onSchedule("every day 03:30", async () => {
   for (const doc of due.docs) {
     try {
       const status = doc.data().billingStatus === "past_due" ? "restricted" : "canceled";
-      await doc.ref.update({ plan: "free", billingStatus: status, restrictAt: null });
-      await db.doc(`workspaces/${doc.id}/billing/subscription`).set({ restrictedAt: FieldValue.serverTimestamp(), plan: "free" }, { merge: true });
+      await doc.ref.update({ billingStatus: status, restrictAt: null });
+      await db.doc(`workspaces/${doc.id}/billing/subscription`).set({ restrictedAt: FieldValue.serverTimestamp() }, { merge: true });
       // A scheduled cancellation also gets Paddle's own subscription.canceled event, which sends the email.
       if (status === "restricted") await notifyOwner(doc.id, "subscription_ended", `${doc.id}_restrict_${doc.data().paddleSubscriptionId ?? ""}`);
     } catch (err) { logger.error("enforceBilling failed", { workspaceId: doc.id, err: String(err) }); }

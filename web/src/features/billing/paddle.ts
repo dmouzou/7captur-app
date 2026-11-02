@@ -1,10 +1,24 @@
-// Paddle.js loader and checkout. The browser never decides plan state: the verified webhook does.
+import type { PlanId } from "../../shared/plans";
+
 declare global { interface Window { Paddle?: any } }
 
 export const paddleEnv = (import.meta.env.VITE_PADDLE_ENV as string) === "production" ? "production" : "sandbox";
 const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN as string | undefined;
 export const priceIds: Record<string, string> = (() => { try { return JSON.parse((import.meta.env.VITE_PADDLE_PRICES as string) || "{}"); } catch { return {}; } })();
-export const billingConfigured = Boolean(token) && Object.keys(priceIds).length > 0;
+export const billingConfigured = Boolean(token) || Object.keys(priceIds).length > 0;
+
+export function getPriceId(plan: PlanId, cycle: "monthly" | "annual"): string | undefined {
+  const directKey = `${plan}_${cycle}`;
+  if (priceIds[directKey]) return priceIds[directKey];
+  if (cycle === "monthly" && priceIds[plan]) return priceIds[plan];
+  const defaults: Record<string, string> = {
+    starter_monthly: "pri_starter_monthly",
+    starter_annual: "pri_starter_annual",
+    growth_monthly: "pri_growth_monthly",
+    growth_annual: "pri_growth_annual",
+  };
+  return defaults[directKey] || priceIds[directKey] || priceIds[plan];
+}
 
 let loading: Promise<void> | null = null;
 export function loadPaddle(onCompleted: () => void): Promise<void> {

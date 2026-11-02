@@ -7,9 +7,13 @@ export const PLAN_CONFIG_VERSION: number = config.version;
 export interface PlanDefinition {
   name: string;
   priceMonthly?: number;
-  priceMonthlyFrom?: number;
-  provisional: boolean;
-  spendBandUsd?: { min: number; max: number };
+  priceAnnualMonthly?: number;
+  priceAnnual?: number;
+  priceMonthlyFrom?: number | null;
+  trialDays: number;
+  prioritySupport: boolean;
+  weeklySummary: boolean;
+  strategyCall?: boolean;
   maxConnections: number;
   maxBusinesses: number;
   recommendations: { weekly: number; monthly: number | null };
@@ -21,14 +25,6 @@ export const PLANS = config.plans as Record<PlanId, PlanDefinition>;
 
 export function getPlan(id: string): PlanDefinition {
   const plan = (PLANS as Record<string, PlanDefinition>)[id];
-  if (!plan) throw new Error(`Unknown plan: ${id}`);
+  if (!plan) return PLANS.starter;
   return plan;
-}
-
-/** Pro band for a monthly USD ad spend. Lower bound inclusive, upper exclusive; >= $50k needs Custom. */
-export function proPlanForSpend(monthlySpendUsd: number): PlanId | "custom" {
-  if (monthlySpendUsd < 15000) return "pro_growth";
-  if (monthlySpendUsd < 30000) return "pro_scale";
-  if (monthlySpendUsd < 50000) return "pro_pro";
-  return "custom";
 }

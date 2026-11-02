@@ -52,7 +52,7 @@ const addDaysIso = (iso: string, n: number) => new Date(Date.parse(iso) + n * 86
 export function parsePriceMap(json: string): Record<string, string> {
   try {
     const raw = JSON.parse(json) as Record<string, string>;
-    return Object.fromEntries(Object.entries(raw).filter(([, plan]) => (PLAN_IDS as string[]).includes(plan) && plan !== "free"));
+    return Object.fromEntries(Object.entries(raw).filter(([, plan]) => (PLAN_IDS as string[]).includes(plan)));
   } catch { return {}; }
 }
 
@@ -93,8 +93,8 @@ export function reducePaddleEvent(ev: PaddleEvent, prev: PrevBilling, cfg: Reduc
     const restrictAt = prev.pastDueSince && prev.restrictAt ? prev.restrictAt : addDaysIso(ev.occurred_at, cfg.graceDays);
     return { action: "apply", workspace: ws(mapped, "past_due", restrictAt, since), billing };
   }
-  if (status === "paused") return { action: "apply", workspace: ws("free", "paused", null, null), billing };
-  if (status === "canceled") return { action: "apply", notify: "subscription_ended", workspace: ws("free", "canceled", null, null), billing };
+  if (status === "paused") return { action: "apply", workspace: ws("starter", "paused", null, null), billing };
+  if (status === "canceled") return { action: "apply", notify: "subscription_ended", workspace: ws("starter", "canceled", null, null), billing };
   return { action: "ignore", reason: `unknown_status_${status}` };
 }
 

@@ -18,7 +18,7 @@ const EVIDENCE_LABEL = {
 
 export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId: string) => void }) {
   const ws = useWorkspace();
-  const plan = PLANS[ws.plan];
+  const plan = PLANS[ws.plan] ?? PLANS.starter;
   const [recs, setRecs] = useState<Rec[]>([]);
   const [used, setUsed] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -140,41 +140,18 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
 
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {/* Progressive Disclosure Toggle (Spec 5.3) */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              background: "var(--surface-subtle)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: 2,
-            }}
-          >
+          <div className="segmented-control">
             <button
               type="button"
-              className={viewMode === "beginner" ? "" : "btn-secondary"}
+              className={viewMode === "beginner" ? "active" : ""}
               onClick={() => setViewMode("beginner")}
-              style={{
-                padding: "6px 12px",
-                fontSize: 12.5,
-                margin: 0,
-                borderRadius: 6,
-                border: "none",
-              }}
             >
               Beginner View
             </button>
             <button
               type="button"
-              className={viewMode === "advanced" ? "" : "btn-secondary"}
+              className={viewMode === "advanced" ? "active" : ""}
               onClick={() => setViewMode("advanced")}
-              style={{
-                padding: "6px 12px",
-                fontSize: 12.5,
-                margin: 0,
-                borderRadius: 6,
-                border: "none",
-              }}
             >
               Advanced Telemetry
             </button>

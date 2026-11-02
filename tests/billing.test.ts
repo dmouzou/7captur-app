@@ -31,7 +31,7 @@ describe("verifyPaddleSignature", () => {
   });
 });
 
-const cfg = { priceMap: parsePriceMap('{"pri_s":"starter","pri_g":"growth","pri_p":"pro_scale","pri_bad":"nonsense","pri_free":"free"}'), graceDays: 7 };
+const cfg = { priceMap: parsePriceMap('{"pri_s":"starter","pri_g":"growth","pri_bad":"nonsense","pri_free":"free"}'), graceDays: 7 };
 const ev = (type: string, status: string, at: string, o: Partial<PaddleEvent["data"]> = {}): PaddleEvent => ({
   event_id: "evt_" + Math.random(), event_type: type, occurred_at: at,
   data: { id: "sub_1", status, customer_id: "ctm_1", custom_data: { workspaceId: "ws1" }, items: [{ price: { id: "pri_g" } }], ...o },
@@ -39,7 +39,7 @@ const ev = (type: string, status: string, at: string, o: Partial<PaddleEvent["da
 
 describe("parsePriceMap", () => {
   it("keeps only known paid plans and survives bad JSON", () => {
-    expect(cfg.priceMap).toEqual({ pri_s: "starter", pri_g: "growth", pri_p: "pro_scale" });
+    expect(cfg.priceMap).toEqual({ pri_s: "starter", pri_g: "growth" });
     expect(parsePriceMap("not json")).toEqual({});
   });
 });
@@ -71,9 +71,9 @@ describe("reducePaddleEvent", () => {
     const r = reducePaddleEvent(ev("subscription.updated", "active", "2026-11-01T00:00:00Z", { scheduled_change: { action: "cancel", effective_at: "2026-12-01T00:00:00Z" } }), {}, cfg);
     expect(r).toMatchObject({ notify: "subscription_ending", workspace: { plan: "growth", billingStatus: "canceling", restrictAt: "2026-12-01T00:00:00Z" } });
   });
-  it("canceled and paused drop to free, data untouched", () => {
-    expect(reducePaddleEvent(ev("subscription.canceled", "canceled", "2026-12-01T00:00:00Z"), {}, cfg)).toMatchObject({ notify: "subscription_ended", workspace: { plan: "free", billingStatus: "canceled" } });
-    expect(reducePaddleEvent(ev("subscription.paused", "paused", "2026-12-01T00:00:00Z"), {}, cfg)).toMatchObject({ workspace: { plan: "free", billingStatus: "paused" } });
+  it("canceled and paused drop to starter, data untouched", () => {
+    expect(reducePaddleEvent(ev("subscription.canceled", "canceled", "2026-12-01T00:00:00Z"), {}, cfg)).toMatchObject({ notify: "subscription_ended", workspace: { plan: "starter", billingStatus: "canceled" } });
+    expect(reducePaddleEvent(ev("subscription.paused", "paused", "2026-12-01T00:00:00Z"), {}, cfg)).toMatchObject({ workspace: { plan: "starter", billingStatus: "paused" } });
   });
   it("payment failure notifies; other events are ignored", () => {
     expect(reducePaddleEvent(ev("transaction.payment_failed", "", "2026-11-01T00:00:00Z"), {}, cfg)).toEqual({ action: "notify_only", notify: "payment_failed" });
@@ -85,7 +85,6 @@ describe("plan change mode", () => {
   it("upgrade prorates now, downgrade bills the new price next period", () => {
     expect(changeMode("starter", "growth")).toBe("prorated_immediately");
     expect(changeMode("growth", "starter")).toBe("full_next_billing_period");
-    expect(changeMode("pro_growth", "pro_scale")).toBe("prorated_immediately");
   });
 });
 

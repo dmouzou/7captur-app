@@ -3,11 +3,13 @@ import { getAuth } from "firebase-admin/auth";
 import { logger } from "firebase-functions/v2";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { recordSchemas, type RecordCollection } from "../shared/records";
+import { getPlan } from "../shared/plans";
 import { enqueueMail, weeklyEmail } from "../notify/mail";
 import { addNotification } from "../notify/inapp";
 import { localToday, periodIds } from "../recommendations/usage";
 import { buildWeeklyReport, type RecEvent } from "./buildReport";
 import { addDays, nextWeeklyRun } from "./time";
+import type { DecisionForReview } from "../decisions/sufficiency";
 
 const MAX_ATTEMPTS = 3;
 const MAX_DOCS = 2000;
@@ -27,6 +29,11 @@ export async function runWeeklyForWorkspace(db: Firestore, wid: string, now = ne
   const wsSnap = await db.doc(`workspaces/${wid}`).get();
   const ws = wsSnap.data()!;
   if (ws.deletionScheduledFor) return "suppressed";
+
+  // Gate by plan: Growth and above only. Starter users see no weekly summary.
+  const plan = getPlan(ws.plan);
+  if (!plan.weeklySummary) return "suppressed";
+
   const tz = ws.timezone as string;
   const bizSnap = await db.collection(`workspaces/${wid}/businesses`).limit(1).get();
   const biz = bizSnap.docs[0];
@@ -48,10 +55,30 @@ export async function runWeeklyForWorkspace(db: Firestore, wid: string, now = ne
   const evSnap = await db.collection(`workspaces/${wid}/recommendationEvents`).orderBy("createdAt", "desc").limit(500).get();
   const events: RecEvent[] = evSnap.docs.map((d) => ({ type: d.data().type as string, date: dateOf(d.data().createdAt, tz) }));
 
+  const decSnap = await db.collection(`workspaces/${wid}/decisions`).limit(300).get();
+  const decisions: DecisionForReview[] = decSnap.docs.map((d) => {
+    const x = d.data();
+    return {
+      id: d.id,
+      decision: String(x.decision ?? ""),
+      headline: String(x.headline ?? ""),
+      reviewOn: String(x.reviewOn ?? "1970-01-01"),
+      evidenceUsed: x.evidenceUsed ?? { windowStart: "1970-01-01", windowEnd: "1970-01-01" },
+      expectedOutcome: x.expectedOutcome,
+      outcome: x.outcome ?? null,
+    };
+  });
+
   const report = buildWeeklyReport({
     records: { posts, promotions, leads, sales, costs } as never,
     recommendations: recSnap.docs.map((d) => ({ id: d.id, action: d.data().action as string, status: d.data().status as string, createdDate: dateOf(d.data().createdAt, tz) })),
-    events, currency: biz.data().currency, today, weekId, statusOnly: prefs.weeklyStatusOnly === true,
+    events,
+    decisions,
+    historyDays: plan.historyDays,
+    currency: biz.data().currency,
+    today,
+    weekId,
+    statusOnly: prefs.weeklyStatusOnly === true,
   });
   if (!report) return "suppressed";
 
@@ -63,6 +90,22 @@ export async function runWeeklyForWorkspace(db: Firestore, wid: string, now = ne
   }
 
   await addNotification(db, wid, { kind: "weekly_report", title: "Your weekly summary is ready", body: "See what changed last week, what is missing and what to focus on next." }, `weekly_${weekId}`);
+
+  // Emit outcome_followup notification for decisions that are ready for review (once per decision)
+  if (report.reviews?.ready && report.reviews.ready.length > 0) {
+    for (const r of report.reviews.ready) {
+      await addNotification(
+        db,
+        wid,
+        {
+          kind: "outcome_followup",
+          title: "Decision ready for outcome review",
+          body: r.prompt,
+        },
+        `followup_${r.id}`
+      );
+    }
+  }
 
   // Email: preference-controlled, verified address only, idempotent per workspace and week.
   if (prefs.weeklyEmail !== false) {

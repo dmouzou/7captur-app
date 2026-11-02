@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import type { DecisionContent, CustomerResponse, ExecutionState } from "../../shared/decision";
 import { CUSTOMER_RESPONSES, EXECUTION_STATES, FOLLOW_THROUGH, OUTCOME_LABELS } from "../../shared/decision";
+import { checkDecisionSufficiency, computeTrackRecord, type ReviewRecords } from "../../shared/sufficiency";
+import { localToday } from "../../shared/periods";
+import { PLANS } from "../../shared/plans";
 
 type Decision = DecisionContent & {
-  id: string; recommendationId: string; response: CustomerResponse | "pending"; executionState: ExecutionState;
-  outcome: { followThrough: string; outcome: string; note: string | null } | null;
+  id: string;
+  recommendationId: string;
+  response: CustomerResponse | "pending";
+  executionState: ExecutionState;
+  suggestedOutcome?: string | null;
+  outcome: { followThrough: string; outcome: string; suggestedOutcome?: string | null; note: string | null } | null;
 };
 type RecStub = { id: string; action: string; mode: string; status: string };
 
@@ -28,10 +35,14 @@ const QUALITY_BADGE = { sufficient: "badge badge-primary", partial: "badge badge
 
 export function DecisionCenter() {
   const ws = useWorkspace();
+  const plan = PLANS[ws.plan] ?? PLANS.starter;
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [recs, setRecs] = useState<RecStub[]>([]);
+  const [records, setRecords] = useState<ReviewRecords>({ posts: [], promotions: [], leads: [], sales: [], costs: [] });
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+
+  const today = useMemo(() => localToday(new Date(), ws.timezone), [ws.timezone]);
 
   useEffect(() => onSnapshot(
     query(collection(db, `workspaces/${ws.workspaceId}/decisions`), orderBy("createdAt", "desc"), limit(50)),
@@ -42,6 +53,28 @@ export function DecisionCenter() {
     query(collection(db, `workspaces/${ws.workspaceId}/recommendations`), orderBy("createdAt", "desc"), limit(20)),
     (s) => setRecs(s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<RecStub, "id">) }))),
   ), [ws.workspaceId]);
+
+  // Load records to evaluate sufficiency
+  useEffect(() => {
+    if (!ws.workspaceId || !ws.businessId) return;
+    const bid = ws.businessId;
+    const unsubPosts = onSnapshot(query(collection(db, `workspaces/${ws.workspaceId}/posts`), where("businessId", "==", bid), limit(200)), (s) => {
+      setRecords((r) => ({ ...r, posts: s.docs.map((d) => d.data() as any) }));
+    });
+    const unsubPromos = onSnapshot(query(collection(db, `workspaces/${ws.workspaceId}/promotions`), where("businessId", "==", bid), limit(200)), (s) => {
+      setRecords((r) => ({ ...r, promotions: s.docs.map((d) => d.data() as any) }));
+    });
+    const unsubLeads = onSnapshot(query(collection(db, `workspaces/${ws.workspaceId}/leads`), where("businessId", "==", bid), limit(200)), (s) => {
+      setRecords((r) => ({ ...r, leads: s.docs.map((d) => d.data() as any) }));
+    });
+    const unsubSales = onSnapshot(query(collection(db, `workspaces/${ws.workspaceId}/sales`), where("businessId", "==", bid), limit(200)), (s) => {
+      setRecords((r) => ({ ...r, sales: s.docs.map((d) => d.data() as any) }));
+    });
+    const unsubCosts = onSnapshot(query(collection(db, `workspaces/${ws.workspaceId}/costs`), where("businessId", "==", bid), limit(100)), (s) => {
+      setRecords((r) => ({ ...r, costs: s.docs.map((d) => d.data() as any) }));
+    });
+    return () => { unsubPosts(); unsubPromos(); unsubLeads(); unsubSales(); unsubCosts(); };
+  }, [ws.workspaceId, ws.businessId]);
 
   const pending = useMemo(() => {
     const have = new Set(decisions.map((d) => d.recommendationId));
@@ -55,6 +88,10 @@ export function DecisionCenter() {
     return by;
   }, [decisions]);
 
+  const trackRecord = useMemo(() => {
+    return computeTrackRecord(decisions, plan?.historyDays ?? 30, today);
+  }, [decisions, plan?.historyDays, today]);
+
   async function call(name: string, payload: object, key: string) {
     setError(""); setBusy(key);
     try { await httpsCallable(functions, name)({ workspaceId: ws.workspaceId, ...payload }); }
@@ -65,11 +102,19 @@ export function DecisionCenter() {
   return (
     <section>
       <div className="card" style={{ marginBottom: 20 }}>
-        <h1 style={{ marginBottom: 6 }}>Decision Center</h1>
-        <p className="muted">
-          Each decision compares your options, states what is unknown and sets a review date. Nothing here changes an ad account.
-          You decide, and you do the work yourself.
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
+          <div>
+            <h1 style={{ marginBottom: 6 }}>Decision Center</h1>
+            <p className="muted" style={{ margin: 0, maxWidth: 640 }}>
+              Each decision compares your options, states what is unknown and sets a review date. Nothing here changes an ad account.
+              You decide, and you do the work yourself. 7Captur records and reviews outcomes.
+            </p>
+          </div>
+          <div style={{ padding: "8px 14px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)", fontSize: 13 }}>
+            <span style={{ color: "var(--accent)", fontWeight: 600 }}>Track Record ({plan?.historyDays ?? 30}d):</span>{" "}
+            <span style={{ color: "var(--ink)", fontWeight: 500 }}>{trackRecord}</span>
+          </div>
+        </div>
       </div>
 
       {error && <p className="card error">{error}</p>}
@@ -98,7 +143,17 @@ export function DecisionCenter() {
           <h2 style={{ marginBottom: 2 }}>{QUEUE_TITLE[k]} <span className="muted">({groups[k].length})</span></h2>
           <p className="muted" style={{ marginBottom: 12 }}>{QUEUE_HINT[k]}</p>
           <div style={{ display: "grid", gap: 14 }}>
-            {groups[k].map((d) => <DecisionCard key={d.id} d={d} busy={busy} call={call} />)}
+            {groups[k].map((d) => (
+              <DecisionCard
+                key={d.id}
+                d={d}
+                records={records}
+                today={today}
+                currency={ws.currency}
+                busy={busy}
+                call={call}
+              />
+            ))}
           </div>
         </div>
       ))}
@@ -106,12 +161,52 @@ export function DecisionCenter() {
   );
 }
 
-function DecisionCard({ d, busy, call }: { d: Decision; busy: string; call: (n: string, p: object, k: string) => Promise<void> }) {
+function DecisionCard({
+  d,
+  records,
+  today,
+  currency,
+  busy,
+  call,
+}: {
+  d: Decision;
+  records: ReviewRecords;
+  today: string;
+  currency: string;
+  busy: string;
+  call: (n: string, p: object, k: string) => Promise<void>;
+}) {
   const [follow, setFollow] = useState("followed_fully");
-  const [outcome, setOutcome] = useState("too_early");
   const [note, setNote] = useState("");
   const base = { decisionId: d.id };
   const accepted = d.response === "accepted" || d.response === "modified";
+
+  const sufficiency = useMemo(() => {
+    return checkDecisionSufficiency(
+      {
+        id: d.id,
+        decision: d.decision,
+        headline: d.headline,
+        reviewOn: d.reviewOn,
+        evidenceUsed: d.evidenceUsed,
+        expectedOutcome: d.expectedOutcome,
+        outcome: d.outcome,
+      },
+      today,
+      records,
+      currency
+    );
+  }, [d, today, records, currency]);
+
+  // Pre-select suggested outcome when ready
+  const defaultOutcome = sufficiency.status === "ready" ? sufficiency.suggestedOutcome : "as_expected";
+  const [outcome, setOutcome] = useState(defaultOutcome);
+
+  useEffect(() => {
+    if (sufficiency.status === "ready") {
+      setOutcome(sufficiency.suggestedOutcome);
+    }
+  }, [sufficiency]);
 
   return (
     <article className="card">
@@ -184,29 +279,61 @@ function DecisionCard({ d, busy, call }: { d: Decision; busy: string; call: (n: 
         </div>
       )}
 
+      {/* Review Section: Never prompt on a decision that is not ready */}
       {d.response !== "pending" && !d.outcome && (
-        <details style={{ marginTop: 14 }}>
-          <summary style={{ cursor: "pointer", color: "var(--accent)", fontWeight: 600 }}>Share how it went (optional)</summary>
-          <label htmlFor={`ft-${d.id}`}>What did you do?</label>
-          <select id={`ft-${d.id}`} value={follow} onChange={(e) => setFollow(e.target.value)}>
-            {FOLLOW_THROUGH.map((s) => <option key={s} value={s}>{LABEL[s]}</option>)}
-          </select>
-          <label htmlFor={`oc-${d.id}`}>How did it go?</label>
-          <select id={`oc-${d.id}`} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
-            {OUTCOME_LABELS.map((s) => <option key={s} value={s}>{LABEL[s]}</option>)}
-          </select>
-          <label htmlFor={`nt-${d.id}`}>Anything else (optional)</label>
-          <textarea id={`nt-${d.id}`} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} rows={2} />
-          <p className="muted" style={{ margin: "8px 0" }}>Saved as your report. It is not proof that the decision caused the result.</p>
-          <button type="button" disabled={busy === `${d.id}:oc`}
-            onClick={() => call("recordDecisionUpdate", { ...base, type: "outcome", followThrough: follow, outcome, note: note || undefined }, `${d.id}:oc`)}>
-            Save
-          </button>
-        </details>
+        <div style={{ marginTop: 16 }}>
+          {sufficiency.status === "too_early" && (
+            <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <span className="badge" style={{ fontSize: 11 }}>Too early for outcome review</span>
+                <span className="muted" style={{ fontSize: 12 }}>Review scheduled for {sufficiency.readyOn}</span>
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>{sufficiency.reason}</p>
+            </div>
+          )}
+
+          {sufficiency.status === "not_enough_data" && (
+            <div style={{ padding: "10px 14px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <span className="badge badge-warning" style={{ fontSize: 11 }}>Not enough data for review</span>
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>{sufficiency.whatToAdd}</p>
+            </div>
+          )}
+
+          {sufficiency.status === "ready" && (
+            <details open style={{ padding: "14px 16px", borderRadius: 10, background: "var(--surface-subtle)", border: "1px solid var(--accent-line)" }}>
+              <summary style={{ cursor: "pointer", color: "var(--accent)", fontWeight: 600 }}>
+                Ready to review outcome · Suggested: {LABEL[sufficiency.suggestedOutcome]}
+              </summary>
+              <div style={{ margin: "10px 0 12px", fontSize: 13, color: "var(--ink)" }}>
+                {sufficiency.prompt}
+              </div>
+              <label htmlFor={`ft-${d.id}`}>What did you do?</label>
+              <select id={`ft-${d.id}`} value={follow} onChange={(e) => setFollow(e.target.value)}>
+                {FOLLOW_THROUGH.map((s) => <option key={s} value={s}>{LABEL[s]}</option>)}
+              </select>
+              <label htmlFor={`oc-${d.id}`}>How did it go? (pre-selected based on recorded data)</label>
+              <select id={`oc-${d.id}`} value={outcome} onChange={(e) => setOutcome(e.target.value as "better" | "as_expected" | "worse")}>
+                {OUTCOME_LABELS.map((s) => <option key={s} value={s}>{LABEL[s]}</option>)}
+              </select>
+              <label htmlFor={`nt-${d.id}`}>Anything else (optional)</label>
+              <textarea id={`nt-${d.id}`} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} rows={2} />
+              <p className="muted" style={{ margin: "8px 0" }}>Records and reviews outcomes. It is not proof that the decision caused the result.</p>
+              <button type="button" disabled={busy === `${d.id}:oc`}
+                onClick={() => call("recordDecisionUpdate", { ...base, type: "outcome", followThrough: follow, outcome, suggestedOutcome: sufficiency.suggestedOutcome, note: note || undefined }, `${d.id}:oc`)}>
+                Save outcome
+              </button>
+            </details>
+          )}
+        </div>
       )}
+
       {d.outcome && (
         <p className="muted" style={{ marginTop: 14 }}>
-          You reported: {LABEL[d.outcome.followThrough]}, {LABEL[d.outcome.outcome].toLowerCase()}. Customer reported, not verified.
+          You reported: {LABEL[d.outcome.followThrough]}, {LABEL[d.outcome.outcome].toLowerCase()}.{" "}
+          {d.outcome.suggestedOutcome ? `(Engine suggested: ${LABEL[d.outcome.suggestedOutcome]}). ` : ""}
+          Customer reported, not verified.
         </p>
       )}
     </article>

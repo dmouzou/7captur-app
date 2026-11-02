@@ -1,8 +1,9 @@
 import type { CostRecord, LeadRecord, PostRecord, PromotionRecord, SaleRecord } from "../shared/records";
-import type { PeriodMetrics, WeeklyReport } from "../shared/report";
+import type { PeriodMetrics, WeeklyReport, DecisionReviewGroups } from "../shared/report";
 import { addDays, daysBetween } from "./time";
+import { groupDecisionsForReview, computeTrackRecord, type DecisionForReview } from "../decisions/sufficiency";
 
-export const REPORT_ENGINE_VERSION = "report-v1";
+export const REPORT_ENGINE_VERSION = "report-v2";
 export const STALE_AFTER_DAYS = 14;
 
 type Id<T> = T & { id: string };
@@ -13,6 +14,8 @@ export interface ReportInput {
   records: { posts: Id<PostRecord>[]; promotions: Id<PromotionRecord>[]; leads: Id<LeadRecord>[]; sales: Id<SaleRecord>[]; costs: Id<CostRecord>[] };
   recommendations: RecSummary[];
   events: RecEvent[];
+  decisions?: DecisionForReview[];
+  historyDays?: number;
   currency: string;
   today: string; // local date the report runs on
   weekId: string;
@@ -88,12 +91,28 @@ export function buildWeeklyReport(inp: ReportInput): WeeklyReport | null {
   const hasChange = changes.length > 0 || recActivity > 0;
   if (!hasChange && !inp.statusOnly) return null;
 
+  let reviews: DecisionReviewGroups | undefined;
+  if (inp.decisions && inp.decisions.length > 0) {
+    const grouped = groupDecisionsForReview(inp.decisions, inp.today, inp.records as any, inp.currency);
+    const trackRecord = computeTrackRecord(inp.decisions, inp.historyDays ?? 365, inp.today);
+    reviews = { ...grouped, trackRecord };
+  }
+
   let nextFocus = "Keep recording posts, enquiries and orders so the next recommendation has more to work with.";
-  if (recs.awaitingOutcome.length > 0) nextFocus = `Record how this went: ${recs.awaitingOutcome[0].action}`;
-  else if (gaps.length > 0) nextFocus = gaps[0];
+  if (reviews && reviews.ready.length > 0) {
+    nextFocus = `Record how this went: ${reviews.ready[0].action}`;
+  } else if (!reviews && recs.awaitingOutcome.length > 0) {
+    nextFocus = `Record how this went: ${recs.awaitingOutcome[0].action}`;
+  } else if (gaps.length > 0) {
+    nextFocus = gaps[0];
+  } else if (reviews && reviews.notEnoughData.length > 0) {
+    nextFocus = reviews.notEnoughData[0].whatToAdd;
+  } else if (reviews && reviews.tooEarly.length > 0) {
+    nextFocus = `Upcoming review on ${reviews.tooEarly[0].readyOn}: ${reviews.tooEarly[0].action}`;
+  }
 
   return {
     weekId: inp.weekId, kind: hasChange ? "update" : "status_only", periodStart, periodEnd, currency: inp.currency,
-    metrics: { current: cur, previous: prev }, changes, freshness, recommendations: recs, gaps, nextFocus, engineVersion: REPORT_ENGINE_VERSION,
+    metrics: { current: cur, previous: prev }, changes, freshness, recommendations: recs, reviews, gaps, nextFocus, engineVersion: REPORT_ENGINE_VERSION,
   };
 }

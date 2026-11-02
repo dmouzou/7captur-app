@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
 import { logger } from "firebase-functions/v2";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { SCREENSHOT_LIMITS, analyzeRows, importRecordsInput } from "../shared/importing";
+import { analyzeRows, importRecordsInput } from "../shared/importing";
 import { requireMember } from "../workspaces/access";
 import { confirmImport, releaseImport, reserveImport } from "../recommendations/usage";
 import { addNotification } from "../notify/inapp";
@@ -24,15 +23,6 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
   const parsed = importRecordsInput.safeParse(request.data);
   if (!parsed.success) throw new HttpsError("invalid-argument", "Invalid import request.");
   const inp = parsed.data;
-  const isShot = inp.source === "screenshot";
-  if (isShot) {
-    // AC-04: screenshot values become evidence only after the customer reviewed them.
-    if (inp.reviewConfirmed !== true) throw new HttpsError("failed-precondition", "Review and confirm the extracted values first.");
-    if (inp.rows.length > SCREENSHOT_LIMITS.maxRows) throw new HttpsError("invalid-argument", "Too many rows for a screenshot import.");
-    if (!inp.uploadPath?.startsWith(`workspaces/${inp.workspaceId}/uploads/`) || inp.uploadPath.includes("..")) {
-      throw new HttpsError("invalid-argument", "Missing or invalid upload reference.");
-    }
-  }
 
   const db = getFirestore();
   await requireMember(db, inp.workspaceId, uid, true);
@@ -97,8 +87,7 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
       for (const v of toWrite.slice(i, i + BATCH)) {
         batch.create(db.doc(`${colPath}/${v.id}`), {
           ...v.record, workspaceId: inp.workspaceId, businessId: inp.businessId, createdBy: uid,
-          createdAt: FieldValue.serverTimestamp(), provenance: isShot ? "screenshot_extracted" : "imported", importJobId: inp.requestId, sourceLine: v.line,
-          ...(isShot ? { reviewedBy: uid } : {}),
+          createdAt: FieldValue.serverTimestamp(), provenance: "imported", importJobId: inp.requestId, sourceLine: v.line,
         });
       }
       await batch.commit();
@@ -110,7 +99,6 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
       createdBy: uid, createdAt: FieldValue.serverTimestamp(),
     });
     await confirmImport(db, inp.workspaceId, inp.requestId);
-    if (isShot) await getStorage().bucket().file(inp.uploadPath!).delete({ ignoreNotFound: true }).catch(() => undefined);
 
     if (status === "partial") {
       await addNotification(db, inp.workspaceId, {

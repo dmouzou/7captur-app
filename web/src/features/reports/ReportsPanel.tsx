@@ -3,14 +3,16 @@ import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc } from "f
 import { db } from "../../services/firebase";
 import { useAuth } from "../auth/AuthProvider";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
+import { PLANS } from "../../shared/plans";
 import type { WeeklyReport } from "../../shared/report";
 import { Icon } from "../../components/Icon";
 
 interface Prefs { weeklyEmail?: boolean; weeklyStatusOnly?: boolean }
 
-export function ReportsPanel() {
+export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   const { user } = useAuth();
   const ws = useWorkspace();
+  const plan = PLANS[ws.plan] ?? PLANS.starter;
   const [reports, setReports] = useState<WeeklyReport[]>([]);
   const [prefs, setPrefs] = useState<Prefs>({});
   const [error, setError] = useState("");
@@ -25,6 +27,27 @@ export function ReportsPanel() {
     setError("");
     try { await updateDoc(doc(db, "users", user!.uid), { notificationPrefs: { ...prefs, ...p } }); }
     catch { setError("Could not save your preference."); }
+  }
+
+  if (!plan?.weeklySummary) {
+    return (
+      <section>
+        <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
+          <div className="empty-icon"><Icon name="trend" size={34} /></div>
+          <h2 style={{ margin: "0 0 10px 0" }}>Weekly Summary is available on Growth and above</h2>
+          <p className="muted" style={{ margin: "0 auto 20px", fontSize: 14, maxWidth: 500 }}>
+            Growth and Custom plans include automated weekly health summaries, intelligent decision outcome reviews (Ready to review, Too early, Not enough data), and historical track record reporting.
+          </p>
+          <button
+            type="button"
+            className="btn btn-lime"
+            onClick={() => onNavigate?.("billing")}
+          >
+            Upgrade to Growth
+          </button>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -207,6 +230,82 @@ export function ReportsPanel() {
                 )}
               </div>
             </div>
+
+            {/* Decision Reviews: Ready to review, Too early, Not enough data */}
+            {r.reviews && (
+              <div style={{ marginBottom: 20 }}>
+                <h4 style={{ margin: "0 0 12px 0", fontSize: 14, color: "var(--ink)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <span><Icon name="check" size={15} inline accent />Decision Outcomes Review (records and reviews outcomes)</span>
+                  {r.reviews.trackRecord && (
+                    <span className="badge badge-primary" style={{ fontWeight: 500, fontSize: 12 }}>
+                      Track Record: {r.reviews.trackRecord}
+                    </span>
+                  )}
+                </h4>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
+                  {/* Group 1: Ready to review */}
+                  <div style={{ padding: "14px 16px", borderRadius: 10, background: "var(--surface-subtle)", border: "1px solid var(--accent-line)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <span className="badge badge-primary" style={{ fontSize: 11 }}>Ready to review</span>
+                      <strong style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.ready.length})</strong>
+                    </div>
+                    {r.reviews.ready.length > 0 ? (
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--body)" }}>
+                        {r.reviews.ready.map((item) => (
+                          <li key={item.id} style={{ marginBottom: 8 }}>
+                            <strong>{item.action}</strong>
+                            <div className="muted" style={{ fontSize: 12 }}>{item.prompt}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions currently ready for outcome review.</p>
+                    )}
+                  </div>
+
+                  {/* Group 2: Too early */}
+                  <div style={{ padding: "14px 16px", borderRadius: 10, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <span className="badge" style={{ fontSize: 11 }}>Too early</span>
+                      <strong style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.tooEarly.length})</strong>
+                    </div>
+                    {r.reviews.tooEarly.length > 0 ? (
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--body)" }}>
+                        {r.reviews.tooEarly.map((item) => (
+                          <li key={item.id} style={{ marginBottom: 8 }}>
+                            <strong>{item.action}</strong>
+                            <div className="muted" style={{ fontSize: 12 }}>{item.reason} Review on {item.readyOn}.</div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions pending observation time.</p>
+                    )}
+                  </div>
+
+                  {/* Group 3: Not enough data */}
+                  <div style={{ padding: "14px 16px", borderRadius: 10, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <span className="badge badge-warning" style={{ fontSize: 11 }}>Not enough data</span>
+                      <strong style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.notEnoughData.length})</strong>
+                    </div>
+                    {r.reviews.notEnoughData.length > 0 ? (
+                      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--body)" }}>
+                        {r.reviews.notEnoughData.map((item) => (
+                          <li key={item.id} style={{ marginBottom: 8 }}>
+                            <strong>{item.action}</strong>
+                            <div className="muted" style={{ fontSize: 12 }}>{item.whatToAdd}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions missing required records.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Next Focus */}
             <div

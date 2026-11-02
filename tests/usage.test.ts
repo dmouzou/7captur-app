@@ -1,20 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { periodIds } from "../functions/src/recommendations/usage";
-import { PLANS, proPlanForSpend } from "../shared/plans";
-
-describe("pro spend bands", () => {
-  it.each([[0, "pro_growth"], [14999, "pro_growth"], [15000, "pro_scale"], [29999, "pro_scale"],
-    [30000, "pro_pro"], [49999, "pro_pro"], [50000, "custom"]])("%i -> %s", (spend, plan) => {
-    expect(proPlanForSpend(spend)).toBe(plan);
-  });
-});
+import { PLANS } from "../shared/plans";
 
 describe("plan config", () => {
-  it("matches spec prices and free allowance", () => {
-    expect(PLANS.free.recommendations.weekly).toBe(3);
-    expect([PLANS.starter, PLANS.growth, PLANS.pro_growth, PLANS.pro_scale, PLANS.pro_pro].map((p) => p.priceMonthly))
-      .toEqual([9, 39, 59, 79, 119]);
-    expect(PLANS.custom.priceMonthlyFrom).toBe(199);
+  it("matches pricing v3 specification", () => {
+    expect(PLANS.starter.priceMonthly).toBe(49);
+    expect(PLANS.starter.priceAnnualMonthly).toBe(39);
+    expect(PLANS.starter.priceAnnual).toBe(468);
+    expect(PLANS.starter.trialDays).toBe(14);
+    expect(PLANS.starter.maxConnections).toBe(2);
+    expect(PLANS.starter.maxBusinesses).toBe(1);
+    expect(PLANS.starter.importsPerMonth).toBe(5);
+    expect(PLANS.starter.historyDays).toBe(30);
+    expect(PLANS.starter.weeklySummary).toBe(false);
+    expect(PLANS.starter.prioritySupport).toBe(false);
+
+    expect(PLANS.growth.priceMonthly).toBe(199);
+    expect(PLANS.growth.priceAnnualMonthly).toBe(159);
+    expect(PLANS.growth.priceAnnual).toBe(1908);
+    expect(PLANS.growth.trialDays).toBe(14);
+    expect(PLANS.growth.maxConnections).toBe(5);
+    expect(PLANS.growth.maxBusinesses).toBe(2);
+    expect(PLANS.growth.importsPerMonth).toBe(50);
+    expect(PLANS.growth.historyDays).toBe(365);
+    expect(PLANS.growth.weeklySummary).toBe(true);
+    expect(PLANS.growth.prioritySupport).toBe(true);
+
+    expect(PLANS.custom.trialDays).toBe(14);
+    expect(PLANS.custom.prioritySupport).toBe(true);
+    expect(PLANS.custom.strategyCall).toBe(true);
   });
 });
 
@@ -35,8 +49,8 @@ describe("periodIds", () => {
 });
 
 describe("locked weekly allowances", () => {
-  it("Free 3, Starter 10, Growth 25, Pro bands 40/60/100", () => {
-    expect([PLANS.free, PLANS.starter, PLANS.growth, PLANS.pro_growth, PLANS.pro_scale, PLANS.pro_pro]
-      .map((p) => p.recommendations.weekly)).toEqual([3, 10, 25, 40, 60, 100]);
+  it("Starter 3, Growth 30, Custom 999", () => {
+    expect([PLANS.starter, PLANS.growth, PLANS.custom].map((p) => p.recommendations.weekly))
+      .toEqual([3, 30, 999]);
   });
 });

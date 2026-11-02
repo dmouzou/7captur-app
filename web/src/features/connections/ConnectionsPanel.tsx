@@ -26,7 +26,8 @@ export function ConnectionsPanel() {
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const autoSynced = useRef(false);
-  const limit = PLANS[ws.plan].maxConnections;
+  const plan = PLANS[ws.plan] ?? PLANS.starter;
+  const limit = plan.maxConnections;
 
   useEffect(() => onSnapshot(collection(db, `workspaces/${ws.workspaceId}/connections`), (s) => setConns(s.docs.map((d) => {
     const x = d.data();

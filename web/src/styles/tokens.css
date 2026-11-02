@@ -8,17 +8,17 @@
 html.dark,
 :root[data-theme="dark"] {
   --color-scheme: dark;
-  --bg:          #15171d;
-  --bg2:         #1b1e26;
-  --bg3:         #232733;
-  --surface:     #1b1e26;
-  --surface-hover: #232733;
-  --surface-subtle: #15171d;
-  --line:        rgba(255,255,255,.07);
-  --line-strong: rgba(255,255,255,.15);
-  --ink:         #f1ede4;
-  --body:        #aaa49b;
-  --muted:       #858078;
+  --bg:          #111318;
+  --bg2:         #181b23;
+  --bg3:         #1f232e;
+  --surface:     #1e222e;
+  --surface-hover: #262b3b;
+  --surface-subtle: #181b24;
+  --line:        rgba(255,255,255,.09);
+  --line-strong: rgba(255,255,255,.18);
+  --ink:         #f4f2ee;
+  --body:        #b5b0a7;
+  --muted:       #8e8981;
   --accent:      #8fce3a;           /* brand signature lime */
   --accent-fill: #8fce3a;           /* brand lime, used as fill */
   --on-accent:   #0e1206;           /* dark ink on lime */
@@ -30,18 +30,18 @@ html.dark,
   --shadow:      0 1px 2px rgba(0,0,0,.4), 0 24px 48px -16px rgba(0,0,0,.6);
   --glow:        rgba(143,206,58,.18);
 
-  /* Liquid Glass & Color Flow (7captur.com parity) */
-  --glass:        rgba(255,255,255,.055);
-  --glass-edge:   rgba(255,255,255,.16);
-  --glass-low:    rgba(0,0,0,.35);
-  --glass-hi:     rgba(255,255,255,.28);
-  --glass-shadow: 0 1px 0 rgba(255,255,255,.14) inset, 0 -1px 0 rgba(255,255,255,.03) inset, 0 28px 60px -28px rgba(0,0,0,.7);
+  /* Containers & Surface (Lighter dark card look from 7captur-site) */
+  --glass:        rgba(29, 33, 45, 0.96);
+  --glass-edge:   rgba(255,255,255,.12);
+  --glass-low:    rgba(0,0,0,.45);
+  --glass-hi:     rgba(255,255,255,.18);
+  --glass-shadow: 0 1px 0 rgba(255,255,255,.08) inset, 0 20px 48px -16px rgba(0,0,0,.7);
   --blur:         blur(22px) saturate(170%);
   --flow-a:       #8fce3a;
   --flow-b:       #1fbfae;
   --flow-c:       #7b61ff;
   --flow-d:       #ffb35c;
-  --flow-op:      .5;
+  --flow-op:      .4;
 
   /* App Aliases */
   --border:      rgba(255,255,255,.09);
@@ -273,6 +273,51 @@ button.btn-secondary:hover, .btn-secondary:hover {
 button.btn-lime {
   background: var(--accent-fill);
   color: var(--on-accent);
+}
+
+/* Segmented Pill Toggle / Control */
+.segmented-control {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface, #1e222e);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-edge, rgba(255, 255, 255, 0.12));
+  gap: 4px;
+}
+
+.segmented-control button {
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  box-shadow: none;
+  background: transparent;
+  color: var(--muted, #9ca3af);
+  cursor: pointer;
+  line-height: 1.2;
+  transition: all 0.15s ease;
+  transform: none;
+}
+
+.segmented-control button:hover {
+  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+  color: var(--ink, #ffffff);
+  transform: none;
+}
+
+.segmented-control button.active {
+  background: linear-gradient(180deg, #b4ef5d, #8fce3a);
+  color: var(--on-accent, #0e1208);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  font-weight: 650;
+}
+
+.segmented-control button.active:hover {
+  background: #a2e04b;
+  color: var(--on-accent, #0e1208);
+  transform: none;
 }
 
 button.link {
@@ -961,8 +1006,8 @@ body::before {
 }
 html.dark .card::after, :root[data-theme="dark"] .card::after,
 html.dark .modal-box::after, :root[data-theme="dark"] .modal-box::after {
-  opacity: .85; mix-blend-mode: normal;
-  background: linear-gradient(155deg, rgba(255,255,255,.10) 0%, transparent 30%, transparent 75%, rgba(255,255,255,.02) 100%);
+  opacity: .35; mix-blend-mode: normal;
+  background: linear-gradient(155deg, rgba(255,255,255,.08) 0%, transparent 30%, transparent 75%, rgba(255,255,255,.02) 100%);
 }
 
 .card:hover {

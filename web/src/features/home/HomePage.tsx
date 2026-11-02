@@ -4,7 +4,6 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { auth, db } from "../../services/firebase";
 import { RecordsPanel } from "../records/RecordsPanel";
 import { ImportPanel } from "../imports/ImportPanel";
-import { ScreenshotPanel } from "../imports/ScreenshotPanel";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import { ReportsPanel } from "../reports/ReportsPanel";
 import { BillingPanel } from "../billing/BillingPanel";
@@ -47,7 +46,6 @@ type Tab =
   | "costs"
   | "connections"
   | "import"
-  | "screenshot"
   | "notifications"
   | "billing"
   | "settings"
@@ -200,16 +198,6 @@ export function HomePage() {
           ),
         },
         {
-          id: "screenshot",
-          name: "AI Screenshot OCR",
-          icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-              <circle cx="12" cy="13" r="4" />
-            </svg>
-          ),
-        },
-        {
           id: "connections",
           name: "Connected Integrations",
           icon: (
@@ -306,7 +294,7 @@ export function HomePage() {
               Workspace
             </span>
             <span className="badge badge-primary">
-              {PLANS[ws.plan]?.name || "Free"} Plan
+              {PLANS[ws.plan]?.name || "Starter"} Plan
             </span>
           </div>
         </div>
@@ -496,6 +484,74 @@ export function HomePage() {
 
         {/* Content Area */}
         <main className="app-content">
+          {/* Trial & Read-Only Lifecycle Banners */}
+          {ws.isTrialing && (
+            <div
+              className="card"
+              style={{
+                background: "var(--surface)",
+                borderLeft: "4px solid #3b82f6",
+                padding: "12px 20px",
+                marginBottom: 20,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="badge badge-primary">Starter Trial</span>
+                <span style={{ fontSize: 13.5, fontWeight: 500 }}>
+                  {ws.trialEndsAtMs
+                    ? Math.max(0, Math.ceil((ws.trialEndsAtMs - Date.now()) / (24 * 60 * 60 * 1000)))
+                    : 14}{" "}
+                  days remaining in your 14-day free trial.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="primary"
+                style={{ margin: 0, padding: "6px 14px", fontSize: 13 }}
+                onClick={() => setTab("billing")}
+              >
+                Upgrade to Growth
+              </button>
+            </div>
+          )}
+
+          {ws.isTrialExpired && (
+            <div
+              className="card"
+              style={{
+                background: "var(--danger-bg)",
+                borderLeft: "4px solid #ef4444",
+                padding: "12px 20px",
+                marginBottom: 20,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+              role="alert"
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="badge badge-danger">Trial Expired</span>
+                <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--danger)" }}>
+                  Your trial has expired. Workspace is in read-only mode.
+                </span>
+              </div>
+              <button
+                type="button"
+                className="primary"
+                style={{ margin: 0, padding: "6px 14px", fontSize: 13 }}
+                onClick={() => setTab("billing")}
+              >
+                Subscribe to continue
+              </button>
+            </div>
+          )}
           {/* Critical Workspace Alerts */}
           {ws.billingStatus === "past_due" && tab !== "billing" && (
             <div
@@ -737,7 +793,7 @@ export function HomePage() {
                     </div>
                     <h3 style={{ fontSize: 16, marginBottom: 6 }}>Sync Sales & Ad Data</h3>
                     <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-                      Upload CSV exports or take screenshots of ad dashboards to extract metrics automatically.
+                      Upload CSV exports of orders, leads, ad metrics and creatives to extract metrics automatically.
                     </p>
                   </div>
                   <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -832,11 +888,11 @@ export function HomePage() {
                       <div className="muted" style={{ fontSize: 11.5 }}>Connect Shopify & Google Ads</div>
                     </div>
                   </button>
-                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("screenshot")}>
-                    <Icon name="camera" size={20} accent />
+                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("import")}>
+                    <Icon name="upload" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Screenshot OCR</div>
-                      <div className="muted" style={{ fontSize: 11.5 }}>Auto-extract ads & metrics</div>
+                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Import CSV Data</div>
+                      <div className="muted" style={{ fontSize: 11.5 }}>Bulk upload marketing & sales CSVs</div>
                     </div>
                   </button>
                 </div>
@@ -854,7 +910,7 @@ export function HomePage() {
             />
           )}
           {tab === "decisions" && <DecisionCenter />}
-          {tab === "reports" && <ReportsPanel />}
+          {tab === "reports" && <ReportsPanel onNavigate={(t) => setTab(t as Tab)} />}
           {tab === "leads" && <RecordsPanel coll="leads" />}
           {tab === "sales" && <RecordsPanel coll="sales" />}
           {tab === "costs" && <RecordsPanel coll="costs" />}
@@ -862,7 +918,6 @@ export function HomePage() {
           {tab === "promotions" && <RecordsPanel coll="promotions" />}
           {tab === "connections" && <ConnectionsPanel />}
           {tab === "import" && <ImportPanel />}
-          {tab === "screenshot" && <ScreenshotPanel />}
           {tab === "notifications" && <NotificationsPanel />}
           {tab === "billing" && <BillingPanel />}
           {tab === "settings" && <SettingsPanel />}

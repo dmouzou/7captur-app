@@ -2,12 +2,13 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { collection, doc, getDoc, getDocs, limit, onSnapshot, query } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { useAuth } from "../auth/AuthProvider";
-import type { PlanId } from "../../shared/plans";
+import { PLANS, type PlanId } from "../../shared/plans";
 
 export interface WorkspaceState {
   workspaceId: string; businessId: string; plan: PlanId; timezone: string; currency: string; objective: string;
-  ownerUid: string; billingStatus: string; restrictAtMs: number | null; hasSubscription: boolean;
-  deletionScheduledMs: number | null; reportedSpendUsd: number | null; pendingBand: { to: PlanId; effectiveMs: number } | null;
+  ownerUid: string; billingStatus: string; restrictAtMs: number | null; trialEndsAtMs: number | null;
+  isTrialing: boolean; isTrialExpired: boolean; isReadOnly: boolean; hasSubscription: boolean;
+  deletionScheduledMs: number | null;
 }
 const Ctx = createContext<WorkspaceState | null>(null);
 export const useWorkspace = () => {
@@ -35,14 +36,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         unsub = onSnapshot(doc(db, "workspaces", workspaceId), (w) => {
           const d = w.data();
           if (!d) return;
+          const billingStatus = d.billingStatus ?? "none";
+          const restrictAtMs = d.restrictAt?.toMillis?.() ?? null;
+          const trialEndsAtMs = d.trialEndsAt?.toMillis?.() ?? null;
+          const isTrialing = billingStatus === "trialing";
+          const isTrialExpired = billingStatus === "trial_expired";
+          const isRestricted = billingStatus === "restricted" || (restrictAtMs !== null && restrictAtMs <= Date.now());
+          const isReadOnly = isTrialExpired || isRestricted;
+
+          const rawPlan = d.plan as string | undefined;
+          const plan: PlanId = (rawPlan && rawPlan in PLANS) ? (rawPlan as PlanId) : "starter";
+
           setState({
-            workspaceId, businessId: b.id, plan: d.plan, timezone: d.timezone,
+            workspaceId, businessId: b.id, plan, timezone: d.timezone,
             currency: b.data().currency, objective: b.data().objective,
-            ownerUid: d.ownerUid, billingStatus: d.billingStatus ?? "none", hasSubscription: Boolean(d.paddleSubscriptionId),
-            restrictAtMs: d.restrictAt?.toMillis?.() ?? null,
+            ownerUid: d.ownerUid, billingStatus, hasSubscription: Boolean(d.paddleSubscriptionId),
+            restrictAtMs, trialEndsAtMs, isTrialing, isTrialExpired, isReadOnly,
             deletionScheduledMs: d.deletionScheduledFor?.toMillis?.() ?? null,
-            reportedSpendUsd: typeof d.reportedSpendUsd === "number" ? d.reportedSpendUsd : null,
-            pendingBand: d.pendingBandChange?.to ? { to: d.pendingBandChange.to, effectiveMs: d.pendingBandChange.effectiveAt?.toMillis?.() ?? 0 } : null,
           });
         });
       } catch { setError("Could not load your workspace."); }

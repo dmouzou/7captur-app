@@ -60,6 +60,15 @@ export interface DecisionContent {
   layerVersion: string;
 }
 
+export type SuggestedOutcome = "better" | "as_expected" | "worse";
+
+export type SufficiencyStatus = "ready" | "too_early" | "not_enough_data";
+
+export type SufficiencyResult =
+  | { status: "ready"; suggestedOutcome: SuggestedOutcome; prompt: string }
+  | { status: "too_early"; readyOn: string; reason: string }
+  | { status: "not_enough_data"; whatToAdd: string };
+
 export const respondInput = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("response"),
@@ -80,6 +89,7 @@ export const respondInput = z.discriminatedUnion("type", [
     decisionId: z.string().min(1).max(160),
     followThrough: z.enum(FOLLOW_THROUGH),
     outcome: z.enum(OUTCOME_LABELS),
+    suggestedOutcome: z.enum(["better", "as_expected", "worse"]).optional(),
     note: z.string().trim().max(1000).optional(),
   }),
 ]);

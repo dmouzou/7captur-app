@@ -121,9 +121,9 @@ export function HelpFeedbackPanel({ initialRecommendationId }: { initialRecommen
     },
     {
       name: "Instagram & TikTok Organic",
-      status: "Manual & Screenshot OCR",
+      status: "Manual & CSV Supported",
       badge: "badge-pop",
-      desc: "Upload post analytics screenshots for instant AI OCR extraction, or enter manually.",
+      desc: "Export analytics CSVs from social platforms, or enter metrics manually.",
     },
     {
       name: "WhatsApp, Phone & In-Person Enquiries",

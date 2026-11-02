@@ -96,3 +96,23 @@ describe("privilege escalation", () => {
     await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), "config/plans")));
   });
 });
+
+describe("read-only enforcement", () => {
+  it("blocks record writes when trial_expired", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), "workspaces/wsA"), { billingStatus: "trial_expired" });
+    });
+    const db = env.authenticatedContext("alice").firestore();
+    await assertSucceeds(getDoc(doc(db, "workspaces/wsA/posts/p1")));
+    await assertFails(setDoc(doc(db, "workspaces/wsA/posts/p_ro"), post("wsA", "alice")));
+  });
+
+  it("blocks record writes when restricted", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), "workspaces/wsA"), { billingStatus: "restricted" });
+    });
+    const db = env.authenticatedContext("alice").firestore();
+    await assertSucceeds(getDoc(doc(db, "workspaces/wsA/posts/p1")));
+    await assertFails(setDoc(doc(db, "workspaces/wsA/posts/p_ro"), post("wsA", "alice")));
+  });
+});

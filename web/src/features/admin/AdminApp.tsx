@@ -24,7 +24,7 @@ function fmt(v: unknown): string {
 }
 const GOOD = /^(active|ok|complete|completed|done|connected|generated|sent|paid|succeeded|delivered)$/i;
 const WARN = /^(pending|canceling|trialing|queued|processing|partial|deferred|viewed)$/i;
-const BAD = /^(failed|error|past_due|needs_reconnect|suspended|dead|cancelled|canceled|rejected)$/i;
+const BAD = /^(failed|error|past_due|needs_reconnect|suspended|dead|cancelled|canceled|rejected|trial_expired)$/i;
 const toneOf = (s: string) => (BAD.test(s) ? "is-bad" : WARN.test(s) ? "is-warn" : GOOD.test(s) ? "is-good" : "");
 const STATUS_COLS = /^(status|billingStatus|mode|role|plan|provider|suspended|category|actorRole)$/;
 
@@ -188,7 +188,7 @@ function Overview({ go }: { go: (tab: string) => void }) {
 function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
   const r = useCallable<Row>("adminWorkspaceDetail", { workspaceId: id });
   const plans = useCallable<{ plans: Record<string, unknown> }>("adminPlans");
-  const [plan, setPlan] = useState("free");
+  const [plan, setPlan] = useState("starter");
   const [sec, setSec] = useState("overview");
   return (
     <div>
@@ -219,7 +219,7 @@ function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
                 <Sensitive label="Change plan" onRun={async (reason) => { await call("adminChangePlan", { workspaceId: id, plan, reason }); r.reload(); }}>
                   <h3>Manual plan override</h3>
                   <p className="muted">Refused if the workspace has a paid subscription.</p>
-                  <select value={plan} onChange={(e) => setPlan(e.target.value)}>{Object.keys(plans.data?.plans ?? { free: 1 }).map((p) => <option key={p}>{p}</option>)}</select>
+                  <select value={plan} onChange={(e) => setPlan(e.target.value)}>{Object.keys(plans.data?.plans ?? { starter: 1 }).map((p) => <option key={p}>{p}</option>)}</select>
                 </Sensitive>
               </>
             )}
@@ -240,7 +240,7 @@ function Workspaces() {
       <form className="adm-tools" onSubmit={(e) => { e.preventDefault(); setApplied(q.trim()); }}>
         <label>Owner email or workspace id<input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Empty shows the newest" /></label>
         <label>Plan<select value={plan} onChange={(e) => setPlan(e.target.value)} disabled={Boolean(applied)}><option value="">All plans</option>{Object.keys(plans.data?.plans ?? {}).map((p) => <option key={p}>{p}</option>)}</select></label>
-        <label>Billing<select value={bill} onChange={(e) => setBill(e.target.value)} disabled={Boolean(applied)}><option value="">Any</option>{["active", "past_due", "canceling", "none"].map((b) => <option key={b}>{b}</option>)}</select></label>
+        <label>Billing<select value={bill} onChange={(e) => setBill(e.target.value)} disabled={Boolean(applied)}><option value="">Any</option>{["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "none"].map((b) => <option key={b}>{b}</option>)}</select></label>
         <button type="submit">Search</button>
         {applied && <button type="button" className="btn-secondary" onClick={() => { setQ(""); setApplied(""); }}>Clear</button>}
       </form>

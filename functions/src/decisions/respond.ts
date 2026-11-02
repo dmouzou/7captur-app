@@ -37,11 +37,13 @@ export const recordDecisionUpdate = onCall(async (request) => {
     patch.executionState = input.executionState;
     Object.assign(event, { type: `execution_${input.executionState}` });
   } else {
+    const suggested = input.suggestedOutcome ?? d.suggestedOutcome ?? null;
     patch.outcome = {
-      followThrough: input.followThrough, outcome: input.outcome, note: input.note ?? null,
+      followThrough: input.followThrough, outcome: input.outcome, suggestedOutcome: suggested, note: input.note ?? null,
       evidence: "customer_reported", // never causal
     };
-    Object.assign(event, { type: "outcome_reported", followThrough: input.followThrough, outcome: input.outcome, note: input.note ?? null });
+    if (suggested) patch.suggestedOutcome = suggested;
+    Object.assign(event, { type: "outcome_reported", followThrough: input.followThrough, outcome: input.outcome, suggestedOutcome: suggested, note: input.note ?? null });
   }
 
   const batch = db.batch();

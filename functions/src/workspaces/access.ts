@@ -7,7 +7,13 @@ export async function requireMember(db: Firestore, workspaceId: string, uid: str
   const d = m.data();
   if (!m.exists || d?.status !== "active") throw new HttpsError("permission-denied", "Not a member of this workspace.");
   if (edit && !["owner", "editor"].includes(d.role)) throw new HttpsError("permission-denied", "Your role cannot do this.");
-  if (edit && !opts.allowSuspended && (await db.doc(`workspaces/${workspaceId}`).get()).data()?.suspended) {
-    throw new HttpsError("failed-precondition", "This workspace is suspended. Contact support.");
+  if (edit) {
+    const ws = (await db.doc(`workspaces/${workspaceId}`).get()).data();
+    if (!opts.allowSuspended && ws?.suspended) {
+      throw new HttpsError("failed-precondition", "This workspace is suspended. Contact support.");
+    }
+    if (ws?.billingStatus === "trial_expired" || ws?.billingStatus === "restricted") {
+      throw new HttpsError("failed-precondition", "This workspace is read-only. Subscribe to continue making changes.");
+    }
   }
 }

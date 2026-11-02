@@ -36,6 +36,9 @@ export const createWorkspace = onCall(async (request) => {
   const cPhone = (input.contactPhone ?? "").trim();
   const hasContact = Boolean(cName || cEmail || cPhone);
 
+  const now = new Date();
+  const trialEndsAt = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
   const bizRef = wsRef.collection("businesses").doc();
   const batch = db.batch();
   batch.set(wsRef, {
@@ -44,10 +47,11 @@ export const createWorkspace = onCall(async (request) => {
     country: input.country,
     timezone: input.timezone,
     defaultCurrency: input.currency,
-    plan: "free",
+    plan: "starter",
     planConfigVersion: PLAN_CONFIG_VERSION,
-    billingStatus: "none",
-    reportNextRunAt: Timestamp.fromDate(nextWeeklyRun(new Date(), input.timezone)),
+    billingStatus: "trialing",
+    trialEndsAt: Timestamp.fromDate(trialEndsAt),
+    reportNextRunAt: Timestamp.fromDate(nextWeeklyRun(now, input.timezone)),
     createdAt: FieldValue.serverTimestamp(),
     ...(hasContact ? {
       contact: {

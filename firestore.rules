@@ -19,8 +19,12 @@ service cloud.firestore {
     function notSuspended(wid) {
       return get(/databases/$(database)/documents/workspaces/$(wid)).data.get('suspended', false) != true;
     }
+    function notReadOnly(wid) {
+      let b = get(/databases/$(database)/documents/workspaces/$(wid)).data.get('billingStatus', '');
+      return b != 'trial_expired' && b != 'restricted';
+    }
     function canEdit(wid) {
-      return isMember(wid) && memberDoc(wid).data.role in ['owner', 'editor'] && notSuspended(wid);
+      return isMember(wid) && memberDoc(wid).data.role in ['owner', 'editor'] && notSuspended(wid) && notReadOnly(wid);
     }
 
     // Manual input records (posts, promotions, leads, sales, costs).

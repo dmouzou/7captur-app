@@ -1,14 +1,19 @@
 {
-  "version": 2,
+  "version": 3,
   "currency": "USD",
   "billingCadence": "monthly",
-  "notes": "Weekly recommendation allowances locked 2026-10-29 for Free, Starter, Growth and the three Pro bands. No monthly caps set (null) until decided. Custom is negotiated; its values and import/history/business limits for all paid plans are still provisional placeholders. Connections are counted per account (workspace), across all businesses, and e-commerce and ad accounts share one pool. An import is any CSV, screenshot or document brought into the app.",
+  "notes": "v3 plan set: Starter, Growth, Custom. No Free plan. Every new workspace gets a 14-day trial of Starter. Connections are counted per workspace, across all businesses; e-commerce platforms and ad accounts share one pool.",
   "plans": {
-    "free": {
-      "name": "Free",
-      "priceMonthly": 0,
-      "provisional": false,
-      "maxConnections": 1,
+    "starter": {
+      "name": "Starter",
+      "priceMonthly": 49,
+      "priceAnnualMonthly": 39,
+      "priceAnnual": 468,
+      "trialDays": 14,
+      "prioritySupport": false,
+      "weeklySummary": false,
+      "strategyCall": false,
+      "maxConnections": 2,
       "maxBusinesses": 1,
       "recommendations": {
         "weekly": 3,
@@ -17,94 +22,38 @@
       "importsPerMonth": 5,
       "historyDays": 30
     },
-    "starter": {
-      "name": "Starter",
-      "priceMonthly": 9,
-      "provisional": true,
-      "maxConnections": 1,
-      "maxBusinesses": 1,
-      "recommendations": {
-        "weekly": 10,
-        "monthly": null
-      },
-      "importsPerMonth": 15,
-      "historyDays": 180
-    },
     "growth": {
       "name": "Growth",
-      "priceMonthly": 39,
-      "provisional": true,
-      "maxConnections": 2,
+      "priceMonthly": 199,
+      "priceAnnualMonthly": 159,
+      "priceAnnual": 1908,
+      "trialDays": 14,
+      "prioritySupport": true,
+      "weeklySummary": true,
+      "strategyCall": false,
+      "maxConnections": 5,
       "maxBusinesses": 2,
       "recommendations": {
-        "weekly": 25,
+        "weekly": 30,
         "monthly": null
       },
       "importsPerMonth": 50,
       "historyDays": 365
     },
-    "pro_growth": {
-      "name": "Pro (Growth band)",
-      "priceMonthly": 59,
-      "provisional": true,
-      "spendBandUsd": {
-        "min": 0,
-        "max": 15000
-      },
-      "maxConnections": 3,
-      "maxBusinesses": 3,
-      "recommendations": {
-        "weekly": 40,
-        "monthly": null
-      },
-      "importsPerMonth": 100,
-      "historyDays": 730
-    },
-    "pro_scale": {
-      "name": "Pro (Scale band)",
-      "priceMonthly": 79,
-      "provisional": true,
-      "spendBandUsd": {
-        "min": 15000,
-        "max": 30000
-      },
-      "maxConnections": 3,
-      "maxBusinesses": 3,
-      "recommendations": {
-        "weekly": 60,
-        "monthly": null
-      },
-      "importsPerMonth": 100,
-      "historyDays": 730
-    },
-    "pro_pro": {
-      "name": "Pro (Pro band)",
-      "priceMonthly": 119,
-      "provisional": true,
-      "spendBandUsd": {
-        "min": 30000,
-        "max": 50000
-      },
-      "maxConnections": 3,
-      "maxBusinesses": 3,
-      "recommendations": {
-        "weekly": 100,
-        "monthly": null
-      },
-      "importsPerMonth": 100,
-      "historyDays": 730
-    },
     "custom": {
       "name": "Custom",
-      "priceMonthlyFrom": 199,
-      "provisional": true,
-      "maxConnections": 4,
-      "maxBusinesses": 10,
+      "priceMonthlyFrom": null,
+      "trialDays": 14,
+      "prioritySupport": true,
+      "weeklySummary": true,
+      "strategyCall": true,
+      "maxConnections": 999,
+      "maxBusinesses": 999,
       "recommendations": {
-        "weekly": 100,
+        "weekly": 999,
         "monthly": null
       },
-      "importsPerMonth": 500,
+      "importsPerMonth": 999,
       "historyDays": 1095
     }
   }
