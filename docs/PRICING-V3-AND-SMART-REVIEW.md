@@ -8,13 +8,15 @@ the v3 pricing; the app still enforces the old plans until this is built and dep
 | Plan | Monthly | Annual (per month) | Recs/week | Imports/month | History | Platforms | Business workspaces | Extras |
 |---|---|---|---|---|---|---|---|---|
 | Starter | $49 | $39 (billed $468/yr) | 3 | 5 | 30 days | 2 | 1 | none |
-| Growth | $199 | $159 (billed $1,908/yr) | 25 | 50 | 365 days | 5 | 2 | priority support |
+| Growth | $199 | $159 (billed $1,908/yr) | 30 (10x Starter) | 50 (10x Starter) | 365 days | 5 | 2 | priority support |
 | Custom | by agreement | none | agreed | agreed | agreed | agreed | agreed | priority support, monthly strategy call |
 
 - No Free plan. Every new account gets a 14-day trial of Starter, no card needed.
 - Removed: Free, old Starter ($9), old Growth ($39), Pro bands (`pro_growth`, `pro_scale`, `pro_pro`) and the ad-spend band logic.
 - Connections are counted per workspace (account), across all businesses; e-commerce platforms and ad accounts share one pool.
-- An import is any CSV, screenshot or document brought into the app.
+- An import is any CSV file brought into the app. Screenshot import is a no-go for the owner: disable it (functions/src/imports/screenshot.ts and its UI), then update the privacy policy to drop screenshot AI processing.
+- Weekly summary is Growth and above only. Starter has no weekly summary (gate the report and its email by plan).
+- Decisions are made by the deterministic engine; AI only rewrites conclusions. Keep it that way (owner decision).
 - Annual is the default shown on the site; there is a single Monthly/Annual toggle above the cards.
 
 ## 2. Trial, lock and deletion rules
