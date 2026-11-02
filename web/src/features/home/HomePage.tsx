@@ -19,7 +19,6 @@ import { useAuth } from "../auth/AuthProvider";
 import { PLANS } from "../../shared/plans";
 import { Logo } from "../../components/Logo";
 import { ThemeToggle } from "../../components/ThemeContext";
-import { AccountModal } from "../account/AccountModal";
 import { AccountPreferencesPanel } from "../account/AccountPreferencesPanel";
 import { GlobalSearchModal } from "../search/GlobalSearchModal";
 
@@ -75,7 +74,6 @@ export function HomePage() {
   });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
-  const [showAccountModal, setShowAccountModal] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [helpRecId, setHelpRecId] = useState<string | undefined>();
   const unread = useUnreadCount();
@@ -316,11 +314,8 @@ export function HomePage() {
               display: "inline-block",
             }}
           />
-          <button
-            type="button"
+          <div
             className="topbar-ws-pill"
-            onClick={() => setShowAccountModal(true)}
-            title="Click to view and edit account details, goals, and preferences"
             style={{
               display: "flex",
               alignItems: "center",
@@ -328,26 +323,9 @@ export function HomePage() {
               background: "var(--surface-subtle)",
               border: "1px solid var(--border)",
               borderRadius: 20,
-              padding: "4px 10px 4px 8px",
-              cursor: "pointer",
+              padding: "4px 12px 4px 10px",
             }}
           >
-            <div
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: "50%",
-                background: "var(--accent-fill)",
-                color: "var(--on-accent)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 10,
-                fontWeight: 700,
-              }}
-            >
-              {user?.email?.charAt(0).toUpperCase() || "U"}
-            </div>
             <span
               style={{
                 fontWeight: 600,
@@ -359,15 +337,12 @@ export function HomePage() {
                 whiteSpace: "nowrap",
               }}
             >
-              {user?.email || ws.workspaceName || "My Account"}
+              {ws.workspaceName || "Workspace"}
             </span>
             <span className="badge badge-primary" style={{ fontSize: 10, padding: "2px 6px" }}>
               {PLANS[ws.plan]?.name || "Starter"}
             </span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </button>
+          </div>
         </div>
 
         {/* Center: Global Search Bar */}
@@ -447,19 +422,20 @@ export function HomePage() {
             )}
           </button>
 
-          {/* User Profile Pill */}
+          {/* User Profile Pill -> Navigates to Account & Preferences tab (no window) */}
           <div
-            onClick={() => setShowAccountModal(true)}
-            title="Click to view and edit account details, goals, and preferences"
+            onClick={() => setTab("account")}
+            title="Account & Preferences"
             style={{
               display: "flex",
               alignItems: "center",
               gap: 10,
               padding: "4px 10px 4px 6px",
-              background: "var(--surface-subtle)",
-              border: "1px solid var(--border)",
+              background: tab === "account" ? "var(--surface-hover)" : "var(--surface-subtle)",
+              border: tab === "account" ? "1px solid var(--accent-fill)" : "1px solid var(--border)",
               borderRadius: 20,
               cursor: "pointer",
+              transition: "all 0.15s ease",
             }}
           >
             <div
@@ -1016,19 +992,11 @@ export function HomePage() {
         onMore={() => setMobileNavOpen((o) => !o)}
       />
 
-      {/* Account Details & Preferences Modal */}
-      <AccountModal
-        isOpen={showAccountModal}
-        onClose={() => setShowAccountModal(false)}
-        onOpenBilling={() => setTab("billing")}
-      />
-
       {/* Global Command Palette / Search Modal */}
       <GlobalSearchModal
         isOpen={showSearchModal}
         onClose={() => setShowSearchModal(false)}
         onNavigate={(t) => setTab(t as Tab)}
-        onOpenAccount={() => setShowAccountModal(true)}
       />
 
       {/* Sign Out Confirmation Modal */}

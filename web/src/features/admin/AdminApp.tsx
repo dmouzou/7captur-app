@@ -499,7 +499,7 @@ function AiEngine() {
   return (
     <div className="adm-card">
       <div className="adm-card-head">
-        <h3>AI Decision Engine Settings (Spec V3)</h3>
+        <h3>AI Decision Engine Settings</h3>
         <button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button>
       </div>
       <p className="muted" style={{ marginBottom: 16 }}>

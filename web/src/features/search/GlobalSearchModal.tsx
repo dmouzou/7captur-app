@@ -17,10 +17,10 @@ interface GlobalSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigate: (tab: string) => void;
-  onOpenAccount: () => void;
+  onOpenAccount?: () => void;
 }
 
-export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }: GlobalSearchModalProps) {
+export function GlobalSearchModal({ isOpen, onClose, onNavigate }: GlobalSearchModalProps) {
   const ws = useWorkspace();
   const [q, setQ] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -86,8 +86,8 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
         subtitle: "Change business objective, reporting currency, location and view mode",
         keywords: ["account", "preferences", "goals", "objective", "currency", "timezone", "location", "email"],
         onSelect: () => {
+          onNavigate("account");
           onClose();
-          onOpenAccount();
         },
       },
       {
@@ -275,7 +275,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
         category: "Metric",
         title: "Attributed ROAS",
         subtitle: "Net attributed revenue ÷ matching ad spend (revenue efficiency, not profit)",
-        badge: "Spec V3",
+        badge: "Metric",
         keywords: ["roas", "attributed roas", "efficiency", "ad return"],
         onSelect: () => {
           onNavigate("overview");
@@ -287,7 +287,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
         category: "Metric",
         title: "Reported ROAS",
         subtitle: "Platform-claimed revenue ÷ platform spend (platform's claim only, never alone to decide)",
-        badge: "Spec V3",
+        badge: "Metric",
         keywords: ["reported roas", "claimed roas", "meta roas", "google roas"],
         onSelect: () => {
           onNavigate("overview");
@@ -299,7 +299,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
         category: "Metric",
         title: "Contribution Margin (CM)",
         subtitle: "1 - COGS% - shipping% - variable costs% (required for break-even)",
-        badge: "Spec V3",
+        badge: "Metric",
         keywords: ["margin", "contribution margin", "cogs", "variable profit"],
         onSelect: () => {
           onNavigate("overview");
@@ -311,7 +311,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
         category: "Metric",
         title: "Break-even ROAS",
         subtitle: "1 ÷ Contribution margin (minimum return to avoid losing money on ad spend)",
-        badge: "Spec V3",
+        badge: "Metric",
         keywords: ["break-even", "break even roas", "floor"],
         onSelect: () => {
           onNavigate("overview");
@@ -335,7 +335,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
         category: "Metric",
         title: "Contribution After Marketing",
         subtitle: "Net revenue × CM - ad spend - other marketing costs (true commercial profit)",
-        badge: "Spec V3",
+        badge: "Metric",
         keywords: ["contribution after marketing", "profit", "net profit"],
         onSelect: () => {
           onNavigate("overview");
@@ -347,7 +347,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
         category: "Metric",
         title: "30-Day Run Rate",
         subtitle: "(Net revenue in last 28 days ÷ 28) × 30 baseline extrapolation",
-        badge: "Spec V3",
+        badge: "Metric",
         keywords: ["run rate", "30 day run rate", "baseline extrapolation"],
         onSelect: () => {
           onNavigate("overview");
@@ -435,7 +435,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate, onOpenAccount }
     }
 
     return items;
-  }, [recentSales, recentLeads, recentPosts, recentPromos, recentRecs, ws, onNavigate, onClose, onOpenAccount]);
+  }, [recentSales, recentLeads, recentPosts, recentPromos, recentRecs, ws, onNavigate, onClose]);
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();

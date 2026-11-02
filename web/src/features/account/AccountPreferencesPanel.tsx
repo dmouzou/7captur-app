@@ -280,23 +280,25 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
             </span>
           </div>
 
-          {/* Default Decision Presentation View (Stacked rows per user feedback) */}
-          <div style={{ background: "var(--surface-subtle)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
-            <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 10 }}>
-              Default Recommendation Presentation Mode (Spec V3)
-            </label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <label
+          {/* Default Decision Presentation View */}
+          <div style={{ background: "var(--surface-subtle)", padding: 20, borderRadius: 14, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 12 }}>
+              Default Recommendation Presentation Mode
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div
+                onClick={() => setDefaultViewMode("beginner")}
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
-                  gap: 12,
-                  padding: "12px 16px",
-                  borderRadius: 10,
-                  background: defaultViewMode === "beginner" ? "var(--surface)" : "transparent",
-                  border: `1.5px solid ${defaultViewMode === "beginner" ? "var(--accent)" : "var(--border)"}`,
+                  gap: 14,
+                  padding: "16px 18px",
+                  borderRadius: 12,
+                  background: defaultViewMode === "beginner" ? "var(--surface-hover)" : "var(--surface)",
+                  border: defaultViewMode === "beginner" ? "2px solid var(--accent-fill)" : "1px solid var(--border)",
                   cursor: "pointer",
                   transition: "all 0.15s ease",
+                  boxShadow: defaultViewMode === "beginner" ? "0 0 0 1px var(--accent-fill)" : "none",
                 }}
               >
                 <input
@@ -305,29 +307,39 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                   value="beginner"
                   checked={defaultViewMode === "beginner"}
                   onChange={() => setDefaultViewMode("beginner")}
-                  style={{ marginTop: 3, cursor: "pointer" }}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    minWidth: 18,
+                    marginTop: 2,
+                    cursor: "pointer",
+                    accentColor: "var(--accent-fill)",
+                    flexShrink: 0,
+                  }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>
+                  <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 3 }}>
                     Beginner View
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45 }}>
                     Plain language, clear single action, key unknowns, and safeguards.
                   </div>
                 </div>
-              </label>
+              </div>
 
-              <label
+              <div
+                onClick={() => setDefaultViewMode("advanced")}
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
-                  gap: 12,
-                  padding: "12px 16px",
-                  borderRadius: 10,
-                  background: defaultViewMode === "advanced" ? "var(--surface)" : "transparent",
-                  border: `1.5px solid ${defaultViewMode === "advanced" ? "var(--accent)" : "var(--border)"}`,
+                  gap: 14,
+                  padding: "16px 18px",
+                  borderRadius: 12,
+                  background: defaultViewMode === "advanced" ? "var(--surface-hover)" : "var(--surface)",
+                  border: defaultViewMode === "advanced" ? "2px solid var(--accent-fill)" : "1px solid var(--border)",
                   cursor: "pointer",
                   transition: "all 0.15s ease",
+                  boxShadow: defaultViewMode === "advanced" ? "0 0 0 1px var(--accent-fill)" : "none",
                 }}
               >
                 <input
@@ -336,41 +348,87 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                   value="advanced"
                   checked={defaultViewMode === "advanced"}
                   onChange={() => setDefaultViewMode("advanced")}
-                  style={{ marginTop: 3, cursor: "pointer" }}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    minWidth: 18,
+                    marginTop: 2,
+                    cursor: "pointer",
+                    accentColor: "var(--accent-fill)",
+                    flexShrink: 0,
+                  }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>
+                  <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 3 }}>
                     Advanced Telemetry
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45 }}>
                     Formula breakdowns, exact sample counts, attribution breakdown, gate conditions, and deterministic trace.
                   </div>
                 </div>
-              </label>
+              </div>
             </div>
           </div>
 
           {/* Notification Preferences */}
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 8 }}>
+          <div style={{ background: "var(--surface-subtle)", padding: 20, borderRadius: 14, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 12 }}>
               Notification Preferences
-            </label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, cursor: "pointer" }}>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  margin: 0,
+                  fontSize: 13.5,
+                  fontWeight: 500,
+                  color: "var(--ink)",
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={weeklyEmail}
                   onChange={(e) => setWeeklyEmail(e.target.checked)}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    minWidth: 18,
+                    cursor: "pointer",
+                    accentColor: "var(--accent-fill)",
+                    flexShrink: 0,
+                  }}
                 />
-                Receive Weekly Summary & Performance Digest (Growth & Custom plans)
+                <span>Receive Weekly Summary & Performance Digest (Growth & Custom plans)</span>
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, cursor: "pointer" }}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  margin: 0,
+                  fontSize: 13.5,
+                  fontWeight: 500,
+                  color: "var(--ink)",
+                  cursor: "pointer",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={reviewAlerts}
                   onChange={(e) => setReviewAlerts(e.target.checked)}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    minWidth: 18,
+                    cursor: "pointer",
+                    accentColor: "var(--accent-fill)",
+                    flexShrink: 0,
+                  }}
                 />
-                Receive Decision Review Readiness Alerts (when new evidence validates next step)
+                <span>Receive Decision Review Readiness Alerts (when new evidence validates next step)</span>
               </label>
             </div>
           </div>
