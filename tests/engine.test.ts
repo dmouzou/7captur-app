@@ -91,4 +91,48 @@ describe("engine", () => {
     const records = { ...empty(), posts: [post("a", { publishedAt: "2026-01-01" })] };
     expect(runEngine({ records, business: biz, today }).category).toBe("measurement");
   });
+
+  describe("Decision Engine V3 specifications", () => {
+    it("attribution safety gate: holds budget if attribution coverage is below 60%", () => {
+      const records = {
+        ...empty(),
+        promotions: [promo("p1", { spend: 100 })],
+        sales: [
+          sale("s1", { amount: 200, promotionId: "p1" }), // attributed 200
+          sale("s2", { amount: 400 }), // unlinked 400 -> total 600, coverage = 33.3% (< 60%)
+        ],
+        costs: [cost("c1", { amount: 50 })],
+      };
+      const r = runEngine({ records, business: { objective: "growth", currency: "USD" }, today });
+      expect(r.mode).toBe("optimize");
+      expect(r.action).toMatch(/Hold current budget.*attribution coverage/i);
+      expect(r.financials?.attributionCoverage).toBeCloseTo(0.333, 2);
+      expect(r.evidence_quality?.warnings.some((w) => w.includes("Attribution coverage"))).toBe(true);
+    });
+
+    it("component-first financials: computes CM, break-even ROAS, and structured outputs", () => {
+      const records = {
+        ...empty(),
+        promotions: [promo("p1", { spend: 100 })],
+        sales: [sale("s1", { amount: 500, promotionId: "p1" })],
+        costs: [
+          cost("c1", { category: "cogs", amount: 150 }), // COGS = 150
+          cost("c2", { category: "shipping", amount: 50 }), // shipping = 50 -> total variable = 200
+        ],
+      };
+      const r = runEngine({ records, business: { objective: "profit", currency: "USD" }, today });
+      expect(r.mode).toBe("optimize");
+      expect(r.engineVersion).toBe("rules-v3");
+      expect(r.financials?.grossSales).toBe(500);
+      expect(r.financials?.netRevenue).toBe(500);
+      // CM = (500 - 200) / 500 = 0.60 (60%)
+      expect(r.financials?.contributionMargin).toBe(0.6);
+      // Break-even ROAS = 1 / 0.60 = 1.67
+      expect(r.financials?.breakEvenRoas).toBe(1.67);
+      expect(r.primary_action).toBeDefined();
+      expect(r.guardrails?.duration).toBe("14 days");
+      expect(r.alternatives?.length).toBeGreaterThan(0);
+      expect(r.review_plan?.safety_check_at).toBeDefined();
+    });
+  });
 });

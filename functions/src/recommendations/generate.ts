@@ -82,12 +82,22 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
     if (dropped > 0) rec.evidence.warnings.push(`${dropped} record(s) had invalid values and were ignored.`);
 
     // Optional AI phrasing. Never blocks or fails the recommendation; rejected output is dropped.
-    const ai = await explainWithAI(rec, ANTHROPIC_API_KEY.value());
+    let secretKey: string | undefined;
+    try { secretKey = ANTHROPIC_API_KEY.value(); } catch { secretKey = undefined; }
+    let ai = null;
+    try {
+      ai = await explainWithAI(rec, secretKey);
+    } catch (aiErr) {
+      logger.warn("explainWithAI caught non-fatal error", { err: String(aiErr) });
+    }
 
     const batch = db.batch();
+    // Guarantee no undefined fields are passed to Firestore batch
+    const cleanRec = JSON.parse(JSON.stringify(rec));
     batch.set(recRef, {
-      ...rec,
-      ...(ai ? { aiSummary: { text: ai.text, model: ai.model, promptVersion: ai.promptVersion }, aiUsage: { inputTokens: ai.inputTokens ?? null, outputTokens: ai.outputTokens ?? null } } : {}), workspaceId, businessId, requestId, status: "generated", createdBy: uid,
+      ...cleanRec,
+      ...(ai ? { aiSummary: { text: ai.text, model: ai.model, promptVersion: ai.promptVersion }, aiUsage: { inputTokens: ai.inputTokens ?? null, outputTokens: ai.outputTokens ?? null } } : {}),
+      workspaceId, businessId, requestId, status: "generated", createdBy: uid,
       engineVersion: ENGINE_VERSION, createdAt: FieldValue.serverTimestamp(),
     });
     batch.set(db.collection(`workspaces/${workspaceId}/recommendationEvents`).doc(), {
@@ -99,6 +109,7 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
   } catch (err) {
     logger.error("generateRecommendation failed", { workspaceId, requestId, err: String(err) });
     await releaseReservation(db, workspaceId, requestId);
-    throw new HttpsError("internal", "Could not generate a recommendation. Your credit was not used.");
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new HttpsError("internal", `Could not generate a recommendation (${msg}). Your credit was not used.`);
   }
 });

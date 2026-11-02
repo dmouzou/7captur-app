@@ -6,6 +6,7 @@ initializeApp();
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 
 export { createWorkspace } from "./workspaces/createWorkspace";
+export { updateWorkspaceDetails } from "./workspaces/updateWorkspace";
 export { generateRecommendation } from "./recommendations/generate";
 export { recordRecommendationAction } from "./recommendations/action";
 export { createDecision } from "./decisions/create";

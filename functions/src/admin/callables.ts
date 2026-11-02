@@ -4,6 +4,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { z } from "zod";
 import { PLANS, PLAN_IDS } from "../shared/plans";
 import { ADMIN_ROLES, audit, plain, requireAdmin } from "./auth";
+import { getActiveAiConfig, maskApiKey, DEFAULT_AI_MODEL } from "../config/aiConfig";
 
 const db = () => getFirestore();
 const LIMIT = 50;
@@ -123,19 +124,78 @@ export const adminSetSuspension = onCall(async (request) => {
   return { ok: true };
 });
 
-/** Manual plan override (e.g. a comped Custom customer). Refused while a Paddle subscription exists: billing owns the plan then. */
+/** Manual plan override / subscription change by super admin. Allows changing plan and billing status. */
 export const adminChangePlan = onCall(async (request) => {
   const admin = requireAdmin(request, "change_plan", { fresh: true });
-  const p = wsId.extend({ plan: z.enum(PLAN_IDS as [string, ...string[]]), reason }).safeParse(request.data);
+  const p = wsId.extend({
+    plan: z.enum(PLAN_IDS as [string, ...string[]]),
+    billingStatus: z.enum(["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "none"]).optional(),
+    reason,
+  }).safeParse(request.data);
   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
   const ref = db().doc(`workspaces/${p.data.workspaceId}`);
   const w = await ref.get();
   if (!w.exists) throw new HttpsError("not-found", "Workspace not found.");
-  if (w.data()!.paddleSubscriptionId) throw new HttpsError("failed-precondition", "This workspace has a paid subscription. Change it through billing, not manually.");
-  const before = w.data()!.plan;
-  await ref.update({ plan: p.data.plan, planOverride: { by: admin.uid, reason: p.data.reason, at: FieldValue.serverTimestamp() } });
-  await audit(admin, "change_plan", p.data.workspaceId, { reason: p.data.reason, before: { plan: before }, after: { plan: p.data.plan } });
+
+  const beforePlan = w.data()!.plan;
+  const beforeStatus = w.data()!.billingStatus ?? "none";
+  const updates: Record<string, unknown> = {
+    plan: p.data.plan,
+    planOverride: { by: admin.uid, reason: p.data.reason, at: FieldValue.serverTimestamp() },
+  };
+  if (p.data.billingStatus) {
+    updates.billingStatus = p.data.billingStatus;
+    if (p.data.billingStatus === "active") {
+      updates.restrictAt = FieldValue.delete();
+    }
+  }
+  await ref.update(updates);
+  await audit(admin, "change_plan", p.data.workspaceId, {
+    reason: p.data.reason,
+    before: { plan: beforePlan, billingStatus: beforeStatus },
+    after: { plan: p.data.plan, billingStatus: p.data.billingStatus ?? beforeStatus },
+  });
   return { ok: true };
+});
+
+export const adminGetAiConfig = onCall(async (request) => {
+  requireAdmin(request, "read_plans");
+  const snap = await db().doc("config/ai").get();
+  const data = (snap.data() || {}) as { anthropicApiKey?: string; model?: string; updatedAt?: string; updatedBy?: string };
+  const { apiKey, model } = await getActiveAiConfig();
+  return {
+    configured: Boolean(data.anthropicApiKey || apiKey),
+    maskedKey: maskApiKey(data.anthropicApiKey || apiKey),
+    model: data.model || model,
+    updatedAt: data.updatedAt ?? null,
+    updatedBy: data.updatedBy ?? null,
+  };
+});
+
+export const adminSetAiConfig = onCall(async (request) => {
+  const admin = requireAdmin(request, "manage_admins", { fresh: true });
+  const p = z.object({
+    apiKey: z.string().trim().min(10, "API key too short").max(200),
+    model: z.string().trim().min(3).max(80).optional(),
+    reason: z.string().trim().min(5).max(300),
+  }).safeParse(request.data);
+  if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
+
+  const ref = db().doc("config/ai");
+  const model = p.data.model || DEFAULT_AI_MODEL;
+  await ref.set({
+    anthropicApiKey: p.data.apiKey,
+    model,
+    updatedAt: new Date().toISOString(),
+    updatedBy: admin.email || admin.uid,
+  }, { merge: true });
+
+  await audit(admin, "update_ai_config", "system", {
+    reason: p.data.reason,
+    after: { model, maskedKey: maskApiKey(p.data.apiKey) },
+  });
+
+  return { ok: true, maskedKey: maskApiKey(p.data.apiKey), model };
 });
 
 export const adminListRecommendations = onCall(async (request) => {

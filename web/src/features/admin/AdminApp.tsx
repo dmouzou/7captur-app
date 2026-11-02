@@ -189,7 +189,17 @@ function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
   const r = useCallable<Row>("adminWorkspaceDetail", { workspaceId: id });
   const plans = useCallable<{ plans: Record<string, unknown> }>("adminPlans");
   const [plan, setPlan] = useState("starter");
+  const [billingStatus, setBillingStatus] = useState("active");
   const [sec, setSec] = useState("overview");
+
+  useEffect(() => {
+    if (r.data?.summary) {
+      const s = r.data.summary as Row;
+      if (s.plan) setPlan(String(s.plan));
+      if (s.billingStatus) setBillingStatus(String(s.billingStatus));
+    }
+  }, [r.data]);
+
   return (
     <div>
       <button type="button" className="btn-secondary" onClick={back} style={{ marginBottom: 14 }}>Back to workspaces</button>
@@ -206,20 +216,57 @@ function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
               <div className="adm-kpis" style={{ marginBottom: 0 }}>{Object.entries(counts).map(([k, v]) => <Kpi key={k} label={humanHeader(k)} value={v} />)}</div>
             </div>
             <div className="adm-tabs" role="tablist">{SECTIONS.map(([k, name]) => <button key={k} type="button" role="tab" className="adm-tab" aria-selected={sec === k} onClick={() => setSec(k)}>{name}</button>)}</div>
-            {sec === "overview" && <div className="adm-card"><h3>Members</h3><Table rows={d.members as Row[]} search={false} /><h3 style={{ marginTop: 18 }}>Billing</h3><Table rows={d.billing ? [d.billing as Row] : []} search={false} empty="No subscription." /></div>}
+            {sec === "overview" && (
+              <div className="adm-card">
+                <h3>Subscription & Plan</h3>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, background: "var(--surface-subtle)", padding: 12, borderRadius: 8 }}>
+                  <div>Current Plan: <strong>{String(summary.plan).toUpperCase()}</strong></div>
+                  <div>Billing Status: <Pill value={String(summary.billingStatus)} /></div>
+                  <button type="button" className="btn-secondary" onClick={() => setSec("actions")} style={{ marginLeft: "auto", margin: 0 }}>Change Plan / Status</button>
+                </div>
+                <h3>Members</h3>
+                <Table rows={d.members as Row[]} search={false} />
+                <h3 style={{ marginTop: 18 }}>Billing</h3>
+                <Table rows={d.billing ? [d.billing as Row] : []} search={false} empty="No subscription." />
+              </div>
+            )}
             {sec === "connections" && <div className="adm-card"><h3>Connections</h3><Table rows={d.connections as Row[]} empty="No connections." /></div>}
             {sec === "usage" && <div className="adm-card"><h3>Recommendation usage</h3><Table rows={d.usage as Row[]} empty="No usage yet." /></div>}
             {sec === "activity" && <div className="adm-card"><h3>Recent imports</h3><Table rows={d.imports as Row[]} empty="No imports." /><h3 style={{ marginTop: 18 }}>Recent recommendations</h3><Table rows={d.recommendations as Row[]} empty="No recommendations." /></div>}
             {sec === "actions" && (
               <>
+                <Sensitive
+                  label="Update Subscription & Plan"
+                  onRun={async (reason) => {
+                    await call("adminChangePlan", { workspaceId: id, plan, billingStatus, reason });
+                    r.reload();
+                  }}
+                >
+                  <h3>Change User Plan & Subscription Status</h3>
+                  <p className="muted">Super admins can override user plan tiers (Starter, Growth, Custom) and adjust billing statuses immediately.</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 8 }}>
+                    <label>
+                      Plan Tier
+                      <select value={plan} onChange={(e) => setPlan(e.target.value)}>
+                        {Object.keys(plans.data?.plans ?? { starter: 1, growth: 1, custom: 1 }).map((p) => (
+                          <option key={p} value={p}>{p.toUpperCase()}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Billing Status
+                      <select value={billingStatus} onChange={(e) => setBillingStatus(e.target.value)}>
+                        {["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "none"].map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </Sensitive>
+
                 <Sensitive label={summary.suspended ? "Reactivate workspace" : "Suspend workspace"} onRun={async (reason) => { await call("adminSetSuspension", { workspaceId: id, suspended: !summary.suspended, reason }); r.reload(); }}>
                   <h3>{summary.suspended ? "Reactivate" : "Suspend"}</h3>
                   <p className="muted">Suspended workspaces can read, export and disconnect, but cannot add data, import or generate recommendations.</p>
-                </Sensitive>
-                <Sensitive label="Change plan" onRun={async (reason) => { await call("adminChangePlan", { workspaceId: id, plan, reason }); r.reload(); }}>
-                  <h3>Manual plan override</h3>
-                  <p className="muted">Refused if the workspace has a paid subscription.</p>
-                  <select value={plan} onChange={(e) => setPlan(e.target.value)}>{Object.keys(plans.data?.plans ?? { starter: 1 }).map((p) => <option key={p}>{p}</option>)}</select>
                 </Sensitive>
               </>
             )}
@@ -444,10 +491,82 @@ function Feedback() {
   );
 }
 
+function AiEngine() {
+  const r = useCallable<{ configured: boolean; maskedKey: string; model: string; updatedAt: string | null; updatedBy: string | null }>("adminGetAiConfig");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("claude-3-5-sonnet-20241022");
+
+  return (
+    <div className="adm-card">
+      <div className="adm-card-head">
+        <h3>AI Decision Engine Settings (Spec V3)</h3>
+        <button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button>
+      </div>
+      <p className="muted" style={{ marginBottom: 16 }}>
+        Configure the Anthropic Claude API key and active reasoning model used by the 7Captur decision engine to formulate structured recommendations.
+      </p>
+
+      <Async r={r}>
+        {(d) => (
+          <div>
+            <div className="adm-kpis" style={{ marginBottom: 20 }}>
+              <Kpi label="Engine Status" value={d.configured ? "Operational" : "Not Configured"} tone={d.configured ? undefined : "bad"} />
+              <Kpi label="Active Model" value={d.model} />
+              <Kpi label="Claude API Key" value={<code>{d.maskedKey || "None"}</code>} />
+            </div>
+
+            {d.updatedAt && (
+              <p className="adm-sub" style={{ marginBottom: 20 }}>
+                Last updated: {fmt(d.updatedAt)} by {d.updatedBy || "System"}
+              </p>
+            )}
+
+            <Sensitive
+              label="Update Claude AI Configuration"
+              onRun={async (reason) => {
+                await call("adminSetAiConfig", {
+                  apiKey: apiKey.trim(),
+                  model: model.trim() || undefined,
+                  reason,
+                });
+                setApiKey("");
+                r.reload();
+              }}
+            >
+              <h4 style={{ margin: "0 0 8px" }}>Update Claude API Key</h4>
+              <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+                Enter the secret Claude API key (e.g. <code>sk-ant-usr-...</code>). It will be encrypted and saved in secure backend configuration for the decision engine.
+              </p>
+              <label>
+                Anthropic Claude API Key:
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-ant-usr-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label style={{ marginTop: 10 }}>
+                Model:
+                <select value={model} onChange={(e) => setModel(e.target.value)}>
+                  <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022 (Recommended Default)</option>
+                  <option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022 (Fast / Diagnostics)</option>
+                  <option value="claude-3-opus-20240229">claude-3-opus-20240229 (High Reasoning)</option>
+                </select>
+              </label>
+            </Sensitive>
+          </div>
+        )}
+      </Async>
+    </div>
+  );
+}
+
 const NAV: { title: string; items: [string, string][] }[] = [
   { title: "Monitor", items: [["overview", "Overview"], ["jobs", "Jobs"]] },
   { title: "Customers", items: [["workspaces", "Workspaces"], ["recs", "Recommendations"], ["imports", "Imports"], ["integrations", "Integrations"], ["billing", "Billing"], ["feedback", "Feedback & Support"]] },
-  { title: "System", items: [["plans", "Plans"], ["audit", "Audit log"], ["admins", "Admins"]] },
+  { title: "System", items: [["ai", "AI Decision Engine"], ["plans", "Plans"], ["audit", "Audit log"], ["admins", "Admins"]] },
 ];
 
 export default function AdminApp() {
@@ -466,7 +585,7 @@ export default function AdminApp() {
 
   const screens: Record<string, () => ReactNode> = {
     overview: () => <Overview go={setTab} />, workspaces: () => <Workspaces />, recs: () => <Recommendations />, imports: () => <Imports />, integrations: () => <Integrations />,
-    billing: () => <Billing />, feedback: () => <Feedback />, jobs: () => <Jobs />, plans: () => <Plans />, audit: () => <Audit />, admins: () => <Admins />,
+    billing: () => <Billing />, feedback: () => <Feedback />, jobs: () => <Jobs />, ai: () => <AiEngine />, plans: () => <Plans />, audit: () => <Audit />, admins: () => <Admins />,
   };
   const title = NAV.flatMap((g) => g.items).find(([id]) => id === tab)?.[1] ?? "";
 
@@ -477,7 +596,7 @@ export default function AdminApp() {
         {NAV.map((g) => (
           <nav key={g.title} className="adm-group" aria-label={g.title}>
             <div className="adm-group-title">{g.title}</div>
-            {g.items.filter(([id]) => id !== "admins" || role === "super_admin").map(([id, name]) => (
+            {g.items.filter(([id]) => (id !== "admins" && id !== "ai") || role === "super_admin").map(([id, name]) => (
               <button key={id} type="button" className="adm-nav" aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>{name}</button>
             ))}
           </nav>

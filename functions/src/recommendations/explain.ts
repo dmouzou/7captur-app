@@ -1,7 +1,8 @@
 import type { Recommendation } from "../shared/recommendation";
+import { getActiveAiConfig, DEFAULT_AI_MODEL } from "../config/aiConfig";
 
 export const PROMPT_VERSION = "explain-v1";
-export const DEFAULT_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_MODEL = DEFAULT_AI_MODEL;
 const API_URL = "https://api.anthropic.com/v1/messages";
 
 /** Only the engine's own conclusions go to the model. No raw records, no free-text notes. */
@@ -47,10 +48,17 @@ export interface AiResult { text: string; model: string; promptVersion: string; 
  * deterministic recommendation is always complete without it.
  */
 export async function explainWithAI(
-  rec: Recommendation, apiKey: string, opts: { model?: string; fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+  rec: Recommendation, passedApiKey?: string, opts: { model?: string; fetchImpl?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<AiResult | null> {
   const f = opts.fetchImpl ?? fetch;
-  const model = opts.model ?? DEFAULT_MODEL;
+  let apiKey = passedApiKey;
+  let model = opts.model;
+  if (!apiKey || apiKey.trim() === "" || !apiKey.startsWith("sk-")) {
+    const cfg = await getActiveAiConfig();
+    apiKey = cfg.apiKey;
+    model = model ?? cfg.model;
+  }
+  model = model ?? DEFAULT_MODEL;
   const { system, user } = buildPrompt(rec);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

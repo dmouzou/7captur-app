@@ -64,13 +64,13 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
         requestId: crypto.randomUUID(),
       });
     } catch (e) {
-      const err = e as { code?: string; details?: { resetsOn?: string } };
+      const err = e as { code?: string; details?: { resetsOn?: string }; message?: string };
       setError(
         err.code === "functions/resource-exhausted"
           ? `You have used this week's recommendations. They reset on ${
               err.details?.resetsOn ?? "Monday"
             }. You can still review your history.`
-          : "Could not generate a recommendation. Your credit was not used."
+          : (err.message || "Could not generate a recommendation. Your credit was not used.")
       );
     } finally {
       setBusy(false);

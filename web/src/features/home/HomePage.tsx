@@ -19,6 +19,9 @@ import { useAuth } from "../auth/AuthProvider";
 import { PLANS } from "../../shared/plans";
 import { Logo } from "../../components/Logo";
 import { ThemeToggle } from "../../components/ThemeContext";
+import { AccountModal } from "../account/AccountModal";
+import { AccountPreferencesPanel } from "../account/AccountPreferencesPanel";
+import { GlobalSearchModal } from "../search/GlobalSearchModal";
 
 function useCollectionCount(coll: string) {
   const ws = useWorkspace();
@@ -49,6 +52,7 @@ type Tab =
   | "notifications"
   | "billing"
   | "settings"
+  | "account"
   | "help";
 
 interface NavGroup {
@@ -71,12 +75,25 @@ export function HomePage() {
   });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const [helpRecId, setHelpRecId] = useState<string | undefined>();
   const unread = useUnreadCount();
   const leadsCount = useCollectionCount("leads");
   const salesCount = useCollectionCount("sales");
   const costsCount = useCollectionCount("costs");
   const postsCount = useCollectionCount("posts");
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowSearchModal((prev) => !prev);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const navGroups: NavGroup[] = [
     {
@@ -244,6 +261,16 @@ export function HomePage() {
           ),
         },
         {
+          id: "account",
+          name: "Account & Preferences",
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          ),
+        },
+        {
           id: "help",
           name: "Help & Feedback",
           icon: <Icon name="help" size={18} />,
@@ -289,19 +316,66 @@ export function HomePage() {
               display: "inline-block",
             }}
           />
-          <div className="topbar-ws-pill" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>
-              Workspace
+          <button
+            type="button"
+            className="topbar-ws-pill"
+            onClick={() => setShowAccountModal(true)}
+            title="Click to view and edit account details, goals, and preferences"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "var(--surface-subtle)",
+              border: "1px solid var(--border)",
+              borderRadius: 20,
+              padding: "4px 10px 4px 8px",
+              cursor: "pointer",
+            }}
+          >
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: "var(--accent-fill)",
+                color: "var(--on-accent)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+                fontWeight: 700,
+              }}
+            >
+              {user?.email?.charAt(0).toUpperCase() || "U"}
+            </div>
+            <span
+              style={{
+                fontWeight: 600,
+                fontSize: 13,
+                color: "var(--ink)",
+                maxWidth: 160,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {user?.email || ws.workspaceName || "My Account"}
             </span>
-            <span className="badge badge-primary">
-              {PLANS[ws.plan]?.name || "Starter"} Plan
+            <span className="badge badge-primary" style={{ fontSize: 10, padding: "2px 6px" }}>
+              {PLANS[ws.plan]?.name || "Starter"}
             </span>
-          </div>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
         </div>
 
         {/* Center: Global Search Bar */}
         <div className="topbar-search" style={{ flex: 1, maxWidth: 460, display: "flex", alignItems: "center" }}>
-          <div style={{ position: "relative", width: "100%" }}>
+          <div
+            style={{ position: "relative", width: "100%", cursor: "pointer" }}
+            onClick={() => setShowSearchModal(true)}
+          >
             <svg
               width="15"
               height="15"
@@ -318,6 +392,7 @@ export function HomePage() {
             </svg>
             <input
               type="text"
+              readOnly
               placeholder="Search records, recommendations, metrics... (⌘K)"
               style={{
                 paddingLeft: 36,
@@ -327,11 +402,8 @@ export function HomePage() {
                 fontSize: 13,
                 borderRadius: 20,
                 background: "var(--surface-subtle)",
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  setTab("recommendations");
-                }
+                cursor: "pointer",
+                width: "100%",
               }}
             />
           </div>
@@ -377,6 +449,8 @@ export function HomePage() {
 
           {/* User Profile Pill */}
           <div
+            onClick={() => setShowAccountModal(true)}
+            title="Click to view and edit account details, goals, and preferences"
             style={{
               display: "flex",
               alignItems: "center",
@@ -385,6 +459,7 @@ export function HomePage() {
               background: "var(--surface-subtle)",
               border: "1px solid var(--border)",
               borderRadius: 20,
+              cursor: "pointer",
             }}
           >
             <div
@@ -420,7 +495,10 @@ export function HomePage() {
             <button
               type="button"
               className="link"
-              onClick={() => setConfirmSignOut(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirmSignOut(true);
+              }}
               style={{ fontSize: 12, marginLeft: 2 }}
             >
               Sign out
@@ -921,6 +999,7 @@ export function HomePage() {
           {tab === "notifications" && <NotificationsPanel />}
           {tab === "billing" && <BillingPanel />}
           {tab === "settings" && <SettingsPanel />}
+          {tab === "account" && <AccountPreferencesPanel onOpenBilling={() => setTab("billing")} />}
           {tab === "help" && <HelpFeedbackPanel initialRecommendationId={helpRecId} />}
         </main>
       </div>
@@ -935,6 +1014,21 @@ export function HomePage() {
         moreActive={mobileNavOpen}
         onSelect={(id) => { setTab(id as Tab); setMobileNavOpen(false); }}
         onMore={() => setMobileNavOpen((o) => !o)}
+      />
+
+      {/* Account Details & Preferences Modal */}
+      <AccountModal
+        isOpen={showAccountModal}
+        onClose={() => setShowAccountModal(false)}
+        onOpenBilling={() => setTab("billing")}
+      />
+
+      {/* Global Command Palette / Search Modal */}
+      <GlobalSearchModal
+        isOpen={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        onNavigate={(t) => setTab(t as Tab)}
+        onOpenAccount={() => setShowAccountModal(true)}
       />
 
       {/* Sign Out Confirmation Modal */}
