@@ -1,5 +1,34 @@
 # Decision Engine v2: Master Build Spec
 
+> ## STATUS UPDATE, 3 Nov 2026: rules-v4 is built. Read this before the rest.
+>
+> The engine was rebuilt in place on main as **`rules-v4`** (formula `true-roas-v2`, decision layer `decision-layer-v2`, AI wording `explain-v2`, follow-ups `followup-v1`). Older saved recommendations keep their own version. Where this spec says `rules-v2` or `true-roas-v1`, read `rules-v4` and `true-roas-v2`. Sections marked BUILT below are done; everything else is still the roadmap.
+>
+> ### Owner decisions (3 Nov 2026) that override earlier wording in this spec
+> 1. **True ROAS keeps its name.** True ROAS = (net attributed revenue after discounts and refunds, minus fees, returns and disputes) / ad spend. Fees, returns and disputes are allocated to attributed revenue by its share of net revenue, so nothing is deducted twice.
+> 2. **No fee visibility, no True ROAS claim.** Fees are visible when Stripe or PayPal is connected, or a fee cost (amount or percentage) covers the window. Otherwise the engine shows "Attributed ROAS (fees unknown)", never says True ROAS, and will not suggest more spend. It may still suggest a cut, because fees can only make a below-break-even return worse. Unknown returns and disputes are listed and lower confidence, but do not block.
+> 3. **Cost of goods and shipping go in contribution margin only.** Fees, returns and disputes are excluded from CM. Break-even ROAS = 1 / CM. Margin and break-even are null unless cost of goods is known. Contribution after marketing is null when margin is unknown.
+> 4. **Hard gates change the action, not just a label:** 20 confirmed orders, 14 days with records, 7 days with spend, 60% of net revenue linked. Thin volume downgrades mode from optimize to improve and holds spend. Low attribution blocks both cutting and scaling.
+> 5. **Decision rule (profitability):** ratio = True ROAS / break-even. Below 1.0 cut, 1.0 to 1.25 hold, 1.25 and above scale by at most 20% on one promotion. Orders objective judges attributed ROAS and cost per order against the same break-even.
+> 6. **Objective table:** profitability = True ROAS vs break-even; orders = attributed ROAS and cost per order; qualified_enquiries = cost per qualified enquiry; content_testing = engagement per reach; reduced_waste = cut the weakest spend; awareness = cost per 1,000 reached, no sales claims.
+> 7. **Costs:** frequency (one_off, monthly, yearly), end date, per order and per unit scopes, percentage of net revenue. Monthly = amount x overlap days / 30.4375, yearly = / 365.25. Legacy costs without frequency count once on their date with a warning. One-off costs dated before the window do not count.
+> 8. **Currency:** the user picks a reporting currency. Records in other currencies are converted with ECB daily reference rates (refreshed each weekday into `config/fx`) and labelled with the rate date. The user can switch conversion off, and then those records are left out with a warning. No rate means left out, never guessed.
+> 9. **Computed alternatives only.** Alternatives and "what would change the decision" come from the same numbers as the decision. No hard-coded amounts or percentages. The decision layer uses the engine's alternatives as its single source.
+> 10. **Dynamic review plan** by decision type and order rate (budget 7 to 21 days from the time needed for about 10 orders, cut 7, experiment 7, creative 10, tracking 14), stored on the decision.
+> 11. **Records are loaded by date window with pagination** (up to 20,000 per collection), not `limit(500)`. Costs load whole because recurring costs start before the window. New composite indexes added.
+> 12. `screenshot_extracted` provenance is retired and reads as `manual`.
+>
+> ### Option B: AI follow-up questions (BUILT)
+> - Callable `askAboutDecision`. The AI sees only the decision's frozen aggregate **snapshot** (financials, metrics, gates, alternatives, unknowns). Never raw rows, notes or customer data.
+> - **AI credits, separate from recommendation credits** (weekly recommendation caps stay 3 and 30): Starter 10 per month and 3 per decision, Growth 100 per month and 10 per decision, Custom agreed. Reserved atomically, released if the AI fails.
+> - Answers are validated and fail closed: numbers must trace to the snapshot, no links, no promises, no True ROAS wording when fees are unknown, and no spend change the engine did not choose. If validation fails or the AI is down, a fixed answer built from the snapshot is returned and no credit is used.
+> - Real input and output tokens are recorded per question and added to the month's usage for cost tracking.
+> - UI copy: follow-up answers are AI and can make mistakes; the recommendation comes from 7Captur's decision engine.
+> - The model name must not appear in marketing copy.
+>
+> ### Still to do
+> Import column-mapping suggestions (headers only) and campaign-name match suggestions the user confirms. New connectors (Stripe, PayPal, Meta, GA4 and others), the `signals` collection, per-campaign rules N0 to N12, weekly summary v2, and sales/promotion schema additions (`externalOrderId`, `campaignKey`, `claimedRevenue`) are not built. Starter GA4 slot decision and Sheets import counting are open.
+
 Audience: a coding agent or developer building this without further questions.
 Reference (plain English, owner-approved): "7Captur Decision Engine: The Master Guide" (Claude Doc, https://claude.ai/artifact/KoPQzAonpASGbSwS6n6aNs). If this spec and the guide disagree, stop and ask the owner.
 Status: approved by the owner on 2026-11-02 (Q1 to Q8 answered). Nothing in this file is built yet unless it says BUILT.

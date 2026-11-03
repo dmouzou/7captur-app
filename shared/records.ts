@@ -59,7 +59,9 @@ export const saleSchema = z.object({
   date,
   orderNumber: z.string().trim().max(80).optional(),
   quantity: z.number().int().positive().max(1e6).optional(),
+  /** What the customer paid. Gross sales = amount + discountAmount. */
   amount: money,
+  discountAmount: money.optional(),
   currency,
   status: z.enum(SALE_STATUS),
   refundAmount: money.optional(),
@@ -73,12 +75,15 @@ export const saleSchema = z.object({
 
 export const costSchema = z
   .object({
-    category: z.enum(["cogs", "fees", "shipping", "returns", "other"]),
+    category: z.enum(["cogs", "fees", "shipping", "returns", "disputes", "other"]),
     kind: z.enum(["amount", "percentage"]),
     scope: z.enum(["business_level", "per_order", "per_unit"]).optional(),
     amount: money,
     currency: currency.optional(),
     effectiveDate: date,
+    /** How a business-level amount repeats. Missing on legacy entries: counted once on its date, with a warning. */
+    frequency: z.enum(["one_off", "monthly", "yearly"]).optional(),
+    endDate: date.optional(),
     notes: note,
   })
   .superRefine((c, ctx) => {

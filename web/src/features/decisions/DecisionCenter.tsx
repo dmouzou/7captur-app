@@ -8,6 +8,7 @@ import { CUSTOMER_RESPONSES, EXECUTION_STATES, FOLLOW_THROUGH, OUTCOME_LABELS } 
 import { checkDecisionSufficiency, computeTrackRecord, type ReviewRecords } from "../../shared/sufficiency";
 import { localToday } from "../../shared/periods";
 import { PLANS } from "../../shared/plans";
+import { FollowUps } from "./FollowUps";
 
 type Decision = DecisionContent & {
   id: string;
@@ -232,7 +233,7 @@ function DecisionCard({
                 <div key={a.id} style={{ border: `1px solid ${a.favoured ? "var(--accent-line)" : "var(--line)"}`, background: a.favoured ? "var(--accent-soft)" : "transparent", borderRadius: 10, padding: "10px 14px" }}>
                   <strong style={{ color: "var(--ink)" }}>{a.label}{a.favoured ? " (suggested)" : ""}</strong>
                   <p className="muted" style={{ marginTop: 2 }}>{a.summary}</p>
-                  <p className="muted">Upside: {a.expectedBenefit} Downside: {a.downside} {a.reversible ? "Reversible." : "Hard to reverse."}</p>
+                  <p className="muted">{a.expectedBenefit ? `Upside: ${a.expectedBenefit} ` : ""}{a.downside ? `Downside: ${a.downside} ` : ""}{a.reversible ? "Reversible." : "Hard to reverse."}</p>
                   {a.whyNot && <p className="muted">Not now: {a.whyNot}</p>}
                 </div>
               ))}
@@ -259,6 +260,8 @@ function DecisionCard({
           </p>
         </div>
       </details>
+
+      <FollowUps decisionId={d.id} />
 
       <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
         {CUSTOMER_RESPONSES.map((r) => (

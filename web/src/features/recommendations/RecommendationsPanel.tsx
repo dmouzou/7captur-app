@@ -577,6 +577,34 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
                     </div>
                   )}
 
+                  {r.metrics && r.metrics.length > 0 && (
+                    <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+                      <span className="muted" style={{ fontSize: 12 }}>Numbers behind this ({r.decisionBasis?.metric ?? "metrics"}):</span>
+                      <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
+                        {r.metrics.map((m, i) => <li key={i}>{m.name}: <span className="mono">{m.value}</span></li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {r.evidence_quality?.gates && (
+                    <div style={{ marginTop: 10 }}>
+                      <span className="muted" style={{ fontSize: 12 }}>Data checks (a failed check limits what the engine will suggest)
+                        {r.evidence_quality.confidence ? `. Confidence: ${r.evidence_quality.confidence}` : ""}:</span>
+                      <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
+                        {r.evidence_quality.gates.map((g) => (
+                          <li key={g.key}>{g.passed ? "Passed" : "Not yet"}: {g.label}, {g.key === "attribution" ? `${Math.round(g.actual * 100)}% of ${Math.round(g.required * 100)}%` : `${g.actual} of ${g.required}`}</li>
+                        ))}
+                      </ul>
+                      {r.evidence_quality.unknownCosts && r.evidence_quality.unknownCosts.length > 0 && (
+                        <p className="muted" style={{ margin: "6px 0 0", fontSize: 12.5 }}>Not entered (unknown, not zero): {r.evidence_quality.unknownCosts.join(", ")}.</p>
+                      )}
+                    </div>
+                  )}
+                  {r.evidence.fx && (
+                    <p className="muted" style={{ margin: "10px 0 0", fontSize: 12.5 }}>
+                      {r.evidence.fx.convertedRecords} record(s) converted to {r.evidence.fx.reportingCurrency} using ECB rates dated {r.evidence.fx.rateDate}.
+                    </p>
+                  )}
+
                   {r.evidence.warnings && r.evidence.warnings.length > 0 && (
                     <div style={{ marginTop: 10 }}>
                       <span className="muted" style={{ fontSize: 12, color: "var(--gold)" }}>Evidence Warnings:</span>

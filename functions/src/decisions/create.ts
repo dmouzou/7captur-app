@@ -41,8 +41,6 @@ export const createDecision = onCall(async (request) => {
   batch.create(decRef, {
     ...content,
     workspaceId, businessId: rec.businessId, recommendationId, createdBy: uid,
-    // Frozen copy of what was known at decision time. Never rewritten.
-    snapshot: { evidence: rec.evidence, calculation: rec.calculation ?? null, engineVersion: rec.engineVersion, rationale: rec.rationale },
     response: "pending", executionState: "not_started", outcome: null,
     createdAt: FieldValue.serverTimestamp(),
   });

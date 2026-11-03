@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "currency": "USD",
   "billingCadence": "monthly",
   "notes": "v3 plan set: Starter, Growth, Custom. No Free plan. Every new workspace gets a 14-day trial of Starter. Connections are counted per workspace, across all businesses; e-commerce platforms and ad accounts share one pool.",
@@ -20,7 +20,11 @@
         "monthly": null
       },
       "importsPerMonth": 5,
-      "historyDays": 30
+      "historyDays": 30,
+      "aiFollowUps": {
+        "monthly": 10,
+        "perDecision": 3
+      }
     },
     "growth": {
       "name": "Growth",
@@ -38,7 +42,11 @@
         "monthly": null
       },
       "importsPerMonth": 50,
-      "historyDays": 365
+      "historyDays": 365,
+      "aiFollowUps": {
+        "monthly": 100,
+        "perDecision": 10
+      }
     },
     "custom": {
       "name": "Custom",
@@ -54,7 +62,11 @@
         "monthly": null
       },
       "importsPerMonth": 999,
-      "historyDays": 1095
+      "historyDays": 1095,
+      "aiFollowUps": {
+        "monthly": 9999,
+        "perDecision": 50
+      }
     }
   }
 }

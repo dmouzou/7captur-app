@@ -18,6 +18,8 @@ export interface PlanDefinition {
   maxBusinesses: number;
   recommendations: { weekly: number; monthly: number | null };
   importsPerMonth: number;
+  /** AI follow-up questions on a saved decision. Separate from recommendation credits. */
+  aiFollowUps: { monthly: number; perDecision: number };
   historyDays: number;
 }
 

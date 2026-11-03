@@ -27,8 +27,10 @@ export interface Recommendation {
     provenance: Record<string, number>;
     missing: string[];
     warnings: string[];
+    /** Present only when records in other currencies were converted. */
+    fx?: { reportingCurrency: string; rateDate: string; source: "ecb"; rates: Record<string, number>; convertedRecords: number };
   };
-  /** Reproducible calculation, present only when inputs allow it. */
+  /** Legacy (rules-v3 and earlier). Not written by rules-v4. */
   calculation?: {
     formulaVersion: string;
     currency: string;
@@ -50,7 +52,14 @@ export interface Recommendation {
     sampleDays?: number;
     confirmedOrders?: number;
     spendDays?: number;
+    /** rules-v4: hard gates with the actual and required values. A failed gate constrains the action. */
+    gates?: { key: "orders" | "days" | "spend_days" | "attribution"; label: string; actual: number; required: number; passed: boolean }[];
+    /** Costs that are not entered. They lower confidence, they are never treated as zero. */
+    unknownCosts?: string[];
+    confidence?: "high" | "medium" | "low";
   };
+  /** rules-v4: which metric the decision was judged on, and what the objective table says. */
+  decisionBasis?: { objective: string; metric: string; rule: string };
   metrics?: { name: string; value: string; definition_version: string }[];
   alternatives?: { action: string; why_not_selected: string }[];
   guardrails?: { budget_cap: number | null; duration: string | null; stop_conditions: string[] };
@@ -65,8 +74,19 @@ export interface Recommendation {
     grossSales: number;
     discounts: number;
     refunds: number;
+    /** Cost of returned goods and handling (cost entries), deducted in True ROAS, not in contribution margin. */
     returns: number;
+    fees?: number;
+    disputes?: number;
     netRevenue: number;
+    attributedRevenue?: number;
+    /** Attributed net revenue minus fees, returns and disputes (allocated by attributed share). */
+    keptAttributedRevenue?: number | null;
+    /** True ROAS. Null unless fees are visible. Never shown as True ROAS when null. */
+    trueRoas?: number | null;
+    feesVisible?: boolean;
+    ratioToBreakEven?: number | null;
+    costPerOrder?: number | null;
     adSpend: number;
     cogs: number;
     shipping: number;

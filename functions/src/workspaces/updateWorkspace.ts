@@ -9,6 +9,7 @@ const inputSchema = z.object({
   workspaceName: z.string().trim().min(1).max(120).optional(),
   objective: z.enum(["profit", "growth", "efficiency", "leads", "reach", "custom", "profitability", "revenue_growth", "qualified_enquiries", "content_engagement"]).optional(),
   currency: z.string().trim().length(3).optional(),
+  convertCurrencies: z.boolean().optional(),
   timezone: z.string().trim().min(2).max(80).optional(),
   country: z.string().trim().length(2).optional(),
   notificationPrefs: z.object({
@@ -27,7 +28,7 @@ export const updateWorkspaceDetails = onCall(async (request) => {
   if (!p.success) {
     throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid update payload.");
   }
-  const { workspaceId, businessId, workspaceName, objective, currency, timezone, country, notificationPrefs, defaultViewMode } = p.data;
+  const { workspaceId, businessId, workspaceName, objective, currency, timezone, country, notificationPrefs, defaultViewMode, convertCurrencies } = p.data;
 
   if (timezone) {
     try {
@@ -62,6 +63,7 @@ export const updateWorkspaceDetails = onCall(async (request) => {
   if (workspaceName) bizUpdates.name = workspaceName;
   if (objective) bizUpdates.objective = objective;
   if (currency) bizUpdates.currency = currency.toUpperCase();
+  if (convertCurrencies !== undefined) bizUpdates.convertCurrencies = convertCurrencies;
   if (timezone) bizUpdates.timezone = timezone;
   batch.update(bizRef, bizUpdates);
 

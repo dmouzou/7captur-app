@@ -316,8 +316,6 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
                               ? "badge-primary"
                               : prov === "imported"
                               ? "badge-pop"
-                              : prov === "screenshot_extracted"
-                              ? "badge-warning"
                               : ""
                           }`}
                           style={{ fontSize: 11.5 }}

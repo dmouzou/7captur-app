@@ -52,10 +52,13 @@ service cloud.firestore {
         && d.updatedAt == request.time;
     }
 
-    // Public pricing / feature config, server-written only.
-    match /config/{doc} {
-      allow read: if true;
+    // Server-written only. config/ai holds the model API key, so nothing here is public except the FX rates.
+    match /config/fx {
+      allow read: if signedIn();
       allow write: if false;
+    }
+    match /config/{doc} {
+      allow read, write: if false;
     }
 
     match /users/{uid} {
@@ -110,6 +113,11 @@ service cloud.firestore {
       match /decisions/{id} {
         allow read: if isMember(wid);
         allow write: if false;
+        // AI follow-up questions and answers, server-written.
+        match /followups/{fid} {
+          allow read: if isMember(wid);
+          allow write: if false;
+        }
       }
       match /decisionEvents/{id} {
         allow read: if isMember(wid);

@@ -52,6 +52,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
   const [workspaceName, setWorkspaceName] = useState(ws.workspaceName || "");
   const [objective, setObjective] = useState(ws.objective || "profitability");
   const [currency, setCurrency] = useState(ws.currency || "USD");
+  const [convertCurrencies, setConvertCurrencies] = useState(ws.convertCurrencies !== false);
   const [timezone, setTimezone] = useState(ws.timezone || "America/New_York");
   const [country, setCountry] = useState(ws.country || "US");
   const [defaultViewMode, setDefaultViewMode] = useState<"beginner" | "advanced">("beginner");
@@ -82,6 +83,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
         workspaceName: workspaceName.trim() || undefined,
         objective,
         currency,
+        convertCurrencies,
         timezone,
         country: country.toUpperCase(),
         notificationPrefs: {
@@ -235,6 +237,15 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                   </option>
                 ))}
               </select>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <input type="checkbox" checked={convertCurrencies} onChange={(e) => setConvertCurrencies(e.target.checked)} />
+                <span>
+                  Convert records in other currencies into {currency} using European Central Bank daily reference rates.
+                  Converted figures are labelled with the rate date. If this is off, records in other currencies are left out of calculations.
+                </span>
+              </label>
             </div>
             <div>
               <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 6 }}>

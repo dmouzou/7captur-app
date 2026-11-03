@@ -12,7 +12,7 @@ export const BUYING_METHODS = [
 
 /** Provenance labels from spec 7.1 / 7.4. */
 export const PROVENANCE = [
-  "connected", "manual", "imported", "screenshot_extracted", "estimated", "unknown",
+  "connected", "manual", "imported", "estimated", "unknown",
 ] as const;
 
 /** Lifecycle states from spec 6.1. */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDecision, addDays, REVIEW_DAYS } from "../functions/src/decisions/build";
+import { runEngine } from "../functions/src/recommendations/engine";
 import { respondInput } from "../shared/decision";
 import type { Recommendation } from "../shared/recommendation";
 
@@ -14,6 +15,13 @@ const budget = (adjusted: number | null, o: Partial<Recommendation> = {}): Recom
   calculation: { formulaVersion: "adjusted-return-v1", currency: "USD", revenue: 1000, costs: 300, spend: 400, adjustedReturn: adjusted, scope: "business_level" }, ...o,
 });
 const today = "2026-10-30";
+const day = (i: number) => `2026-10-${String(2 + i).padStart(2, "0")}`;
+const golden = () => ({
+  posts: [], leads: [],
+  promotions: Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, platform: "instagram", startDate: day(i), spend: 625, currency: "USD", objective: "orders" })),
+  sales: Array.from({ length: 20 }, (_, i) => ({ id: `s${i}`, date: day(i), amount: 850, currency: "USD", status: "confirmed", attribution: "unknown", promotionId: `p${i % 8}` })),
+  costs: [{ id: "c", category: "cogs", kind: "amount", amount: 8100, currency: "USD", effectiveDate: "2026-10-05" }],
+} as never);
 
 describe("decision layer", () => {
   it("maps v1 modes to v2 evidence quality", () => {
@@ -26,28 +34,36 @@ describe("decision layer", () => {
     const d = buildDecision(base({ mode: "explore", category: "measurement" }), { today });
     expect(d.queueStatus).toBe("investigate");
     expect(d.headline).toMatch(/cannot be ranked responsibly/);
-    expect(d.alternatives.find((a) => a.favoured)?.id).toBe("gather");
+    expect(d.alternatives.find((a) => a.favoured)?.label).toBe("Do what is suggested");
   });
 
   it("high impact with partial evidence investigates instead of acting on money", () => {
     expect(buildDecision(budget(1.5, { mode: "improve" }), { today }).queueStatus).toBe("investigate");
   });
 
-  it("budget stance follows the same thresholds as the v1 engine", () => {
-    const fav = (n: number) => buildDecision(budget(n), { today }).alternatives.find((a) => a.favoured)?.id;
-    expect(fav(0.6)).toBe("trim");
-    expect(fav(1.5)).toBe("hold");
-    expect(fav(2.4)).toBe("increase");
-    expect(buildDecision(budget(1.5), { today }).queueStatus).toBe("monitor");
+  it("uses the engine's computed alternatives as the single source, with exactly one favoured option", () => {
+    const rec = runEngine({ records: golden(), business: { objective: "profitability", currency: "USD" }, today: "2026-10-29", processorConnected: true });
+    const d = buildDecision(rec, { today: "2026-10-29" });
+    expect(d.alternatives.filter((a) => a.favoured)).toHaveLength(1);
+    expect(d.alternatives.filter((a) => !a.favoured).map((a) => a.whyNot)).toEqual((rec.alternatives ?? []).map((a) => a.why_not_selected));
+    for (const a of d.alternatives.filter((x) => !x.favoured)) expect(a.whyNot).toBeTruthy();
+    expect(d.queueStatus).toBe("act");
   });
 
-  it("exactly one option is favoured and every other option explains why not", () => {
-    for (const rec of [budget(0.6), budget(1.5), budget(3), base(), base({ mode: "explore", category: "content" })]) {
-      const alts = buildDecision(rec, { today }).alternatives;
-      expect(alts.filter((a) => a.favoured)).toHaveLength(1);
-      for (const a of alts.filter((x) => !x.favoured)) expect(a.whyNot).toBeTruthy();
-      expect(alts.some((a) => a.id === "wait")).toBe(true);
-    }
+  it("a hold decision is monitored, a data gap is investigated", () => {
+    const hold = runEngine({ records: golden(), business: { objective: "profitability", currency: "USD" }, today: "2026-10-29" });
+    expect(buildDecision(hold, { today: "2026-10-29" }).queueStatus).toBe("monitor");
+    const thin = runEngine({ records: { posts: [], promotions: [], leads: [], costs: [], sales: [{ id: "s", date: "2026-10-20", amount: 10, currency: "USD", status: "confirmed", attribution: "unknown" }] } as never, business: { objective: "profitability", currency: "USD" }, today: "2026-10-29" });
+    expect(buildDecision(thin, { today: "2026-10-29" }).queueStatus).toBe("investigate");
+  });
+
+  it("stores the dynamic review plan and a snapshot of aggregates only", () => {
+    const rec = runEngine({ records: golden(), business: { objective: "profitability", currency: "USD" }, today: "2026-10-29", processorConnected: true });
+    const d = buildDecision(rec, { today: "2026-10-29" });
+    expect(d.reviewOn).toBe(rec.review_plan!.decision_review_at);
+    expect(d.reviewPlan.readinessConditions.length).toBeGreaterThan(0);
+    expect(d.snapshot).toHaveProperty("financials");
+    expect(JSON.stringify(d.snapshot)).not.toMatch(/orderNumber|"notes"|email/);
   });
 
   it("keeps assumptions and limitations separate and lists missing data as limitations", () => {
@@ -59,7 +75,7 @@ describe("decision layer", () => {
 
   it("sets a review date and promises no specific figure", () => {
     const d = buildDecision(budget(2.5), { today });
-    expect(d.reviewOn).toBe(addDays(today, REVIEW_DAYS));
+    expect(d.reviewOn).toBe(addDays(today, REVIEW_DAYS)); // legacy record without a review plan
     expect(d.expectedOutcome.text).toMatch(/No specific figure is promised/);
     expect(JSON.stringify(d)).not.toMatch(/guarantee/i);
   });

@@ -1,25 +1,44 @@
-import { FieldValue, getFirestore, type QueryDocumentSnapshot } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { generateRecommendationInput } from "../shared/recommendation";
 import { recordSchemas, type RecordCollection } from "../shared/records";
 import { requireMember } from "../workspaces/access";
-import { runEngine, ENGINE_VERSION } from "./engine";
+import { runEngine, ENGINE_VERSION, addDays, WINDOW_DAYS } from "./engine";
+import type { FxRates } from "../shared/fx";
 import { explainWithAI } from "./explain";
 import { ANTHROPIC_API_KEY } from "../config";
 import { confirmReservation, localToday, releaseReservation, reserveRecommendation } from "./usage";
 import { addNotification } from "../notify/inapp";
 
-const MAX_DOCS = 500;
+const PAGE = 500;
+const MAX_PAGES = 40; // 20,000 records per collection is far beyond any 28-day window
+/** The field each collection is dated by. Costs are loaded whole: recurring costs started before the window. */
+const DATE_FIELD: Record<RecordCollection, string | null> = {
+  posts: "publishedAt", promotions: "startDate", leads: "date", sales: "date", costs: null,
+};
 
-async function load(db: FirebaseFirestore.Firestore, wid: string, bid: string, coll: RecordCollection) {
-  const snap = await db.collection(`workspaces/${wid}/${coll}`).where("businessId", "==", bid).limit(MAX_DOCS).get();
+/** Loads by date window with pagination, so the engine sees every record in the window, not an arbitrary 500. */
+export async function loadWindow(db: FirebaseFirestore.Firestore, wid: string, bid: string, coll: RecordCollection, from: string, to: string) {
+  const field = DATE_FIELD[coll];
+  const base = db.collection(`workspaces/${wid}/${coll}`).where("businessId", "==", bid);
+  const q = field ? base.where(field, ">=", from).where(field, "<=", to).orderBy(field) : base.orderBy(FieldPath.documentId());
+  const docs: QueryDocumentSnapshot[] = [];
+  let last: QueryDocumentSnapshot | undefined;
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const snap = await (last ? q.startAfter(last) : q).limit(PAGE).get();
+    docs.push(...snap.docs);
+    if (snap.size < PAGE) break;
+    last = snap.docs[snap.docs.length - 1];
+  }
   const schema = recordSchemas[coll];
   let dropped = 0;
-  const rows = snap.docs.flatMap((d: QueryDocumentSnapshot) => {
+  const rows = docs.flatMap((d) => {
     const parsed = (schema as typeof recordSchemas.posts).safeParse(d.data());
     if (!parsed.success) { dropped++; return []; }
-    return [{ ...parsed.data, id: d.id, provenance: d.data().provenance as string | undefined }];
+    // Retired label: screenshot reading was removed, so older rows read as manual entries.
+    const raw = d.data().provenance as string | undefined;
+    return [{ ...parsed.data, id: d.id, provenance: raw === "screenshot_extracted" ? "manual" : raw }];
   });
   return { rows, dropped };
 }
@@ -67,16 +86,25 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
   if (reservation.duplicate) return { recommendationId: requestId, duplicate: true };
 
   try {
+    const today = localToday(new Date(), ws.data()!.timezone);
+    const from = addDays(today, -(WINDOW_DAYS - 1));
     const [posts, promotions, leads, sales, costs] = await Promise.all(
-      (["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => load(db, workspaceId, businessId, c))
+      (["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => loadWindow(db, workspaceId, businessId, c, from, today))
     );
     const b = biz.data()!;
+    const [fxSnap, procSnap] = await Promise.all([
+      db.doc("config/fx").get(),
+      db.collection(`workspaces/${workspaceId}/connections`).where("status", "==", "connected").get(),
+    ]);
+    const processorConnected = procSnap.docs.some((d) => ["stripe", "paypal"].includes(String(d.data().provider)));
     const rec = runEngine({
       records: {
         posts: posts.rows, promotions: promotions.rows, leads: leads.rows, sales: sales.rows, costs: costs.rows,
       } as never,
-      business: { objective: b.objective, currency: b.currency },
-      today: localToday(new Date(), ws.data()!.timezone),
+      business: { objective: b.objective ?? b.objectives?.[0], currency: b.currency, convertCurrencies: b.convertCurrencies },
+      today,
+      fx: fxSnap.exists ? (fxSnap.data() as FxRates) : null,
+      processorConnected,
     });
     const dropped = posts.dropped + promotions.dropped + leads.dropped + sales.dropped + costs.dropped;
     if (dropped > 0) rec.evidence.warnings.push(`${dropped} record(s) had invalid values and were ignored.`);

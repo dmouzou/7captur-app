@@ -1,7 +1,7 @@
 import type { Recommendation } from "../shared/recommendation";
 import { getActiveAiConfig, DEFAULT_AI_MODEL } from "../config/aiConfig";
 
-export const PROMPT_VERSION = "explain-v1";
+export const PROMPT_VERSION = "explain-v2";
 export const DEFAULT_MODEL = DEFAULT_AI_MODEL;
 const API_URL = "https://api.anthropic.com/v1/messages";
 
@@ -10,6 +10,8 @@ export function buildPrompt(rec: Recommendation): { system: string; user: string
   const facts = {
     action: rec.action, rationale: rec.rationale, unknowns: rec.unknowns, risk: rec.risk,
     doNotActIf: rec.doNotActIf, nextMeasurement: rec.nextMeasurement, evidenceMode: rec.mode,
+    metrics: (rec.metrics ?? []).map((m) => `${m.name}: ${m.value}`),
+    costsNotEntered: rec.evidence_quality?.unknownCosts ?? [],
   };
   return {
     system: [
@@ -34,8 +36,10 @@ export function validateSummary(text: unknown, rec: Recommendation): string | nu
   if (t.length < 20 || t.length > 700) return null;
   if (/https?:|www\.|\[.*\]\(.*\)|```/i.test(t)) return null;
   if (/\b(guarantee[sd]?|promise[sd]?|definitely|certainly|proven|will (?:increase|boost|double|grow|improve))\b/i.test(t)) return null;
-  const allowedText = [rec.action, ...rec.rationale, ...rec.unknowns, rec.risk, rec.doNotActIf, rec.nextMeasurement].join(" ");
+  const allowedText = [rec.action, ...rec.rationale, ...rec.unknowns, rec.risk, rec.doNotActIf, rec.nextMeasurement, ...(rec.metrics ?? []).map((m) => `${m.name} ${m.value}`)].join(" ");
   if (rec.mode !== "optimize" && /\b(roas|profit\w*|return on ad spend)\b/i.test(t)) return null;
+  // True ROAS is claimed only when the engine itself computed it (fees visible).
+  if (/true roas/i.test(t) && rec.financials?.trueRoas == null) return null;
   const allowed = numbersIn(allowedText);
   for (const n of numbersIn(t)) if (!allowed.has(n)) return null;
   return t;

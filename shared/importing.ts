@@ -144,6 +144,7 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
       enumAliases: { paid: "confirmed", complete: "confirmed", completed: "confirmed", fulfilled: "confirmed", delivered: "confirmed", unpaid: "pending", partial_refund: "partially_refunded", refund: "refunded", returned: "refunded" },
       default: () => "confirmed", defaultLabel: () => "status = confirmed",
     },
+    { name: "discountAmount", label: "Discount", kind: "number", aliases: ["discount", "discount_amount", "discounts"] },
     { name: "refundAmount", label: "Refund amount", kind: "number", aliases: ["refundamount", "refund", "refunded_amount"] },
     { name: "product", label: "Product or service", kind: "text", aliases: ["product", "item", "product_name", "service"] },
     {
@@ -154,8 +155,8 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
   ],
   costs: [
     {
-      name: "category", label: "Category", kind: "enum", enumValues: ["cogs", "fees", "shipping", "returns", "other"], aliases: ["category", "cost_type", "type_of_cost"],
-      enumAliases: { cost_of_goods: "cogs", cost_of_goods_sold: "cogs", goods: "cogs", fee: "fees", payment_fees: "fees", processing: "fees", delivery: "shipping", fulfillment: "shipping", return: "returns" },
+      name: "category", label: "Category", kind: "enum", enumValues: ["cogs", "fees", "shipping", "returns", "disputes", "other"], aliases: ["category", "cost_type", "type_of_cost"],
+      enumAliases: { cost_of_goods: "cogs", cost_of_goods_sold: "cogs", goods: "cogs", fee: "fees", payment_fees: "fees", processing: "fees", delivery: "shipping", fulfillment: "shipping", return: "returns", chargeback: "disputes", chargebacks: "disputes", dispute: "disputes" },
       default: () => "other", defaultLabel: () => "category = other",
     },
     {
@@ -169,7 +170,13 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
     },
     { name: "amount", label: "Value", kind: "number", required: true, aliases: ["amount", "value", "cost"] },
     currencyField,
+    {
+      name: "frequency", label: "How often", kind: "enum", enumValues: ["one_off", "monthly", "yearly"], aliases: ["frequency", "recurrence", "repeats"],
+      enumAliases: { once: "one_off", "one-off": "one_off", single: "one_off", month: "monthly", year: "yearly", annual: "yearly", annually: "yearly" },
+      default: () => "one_off", defaultLabel: () => "frequency = one off",
+    },
     dateField("effectiveDate", "Effective from", ["effective", "date", "from", "start_date", "start"]),
+    dateField("endDate", "Ends on", ["end", "end_date", "until", "to"], false),
     notes,
   ],
 };

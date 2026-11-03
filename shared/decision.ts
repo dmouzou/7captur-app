@@ -27,8 +27,9 @@ export interface DecisionAlternative {
   id: string;
   label: string;
   summary: string;
-  expectedBenefit: string;
-  downside: string;
+  /** Present for the chosen option only. Other options carry whyNot, computed from the same numbers. */
+  expectedBenefit?: string;
+  downside?: string;
   reversible: boolean;
   favoured: boolean;
   /** Why this option is not the recommended one. Present only when not favoured. */
@@ -56,6 +57,10 @@ export interface DecisionContent {
   sensitivity: { mostLikelyToChange: string };
   expectedOutcome: { metric: string | null; text: string };
   reviewOn: string;
+  /** Dynamic review timing from the engine, by decision type and order rate. */
+  reviewPlan: { safetyCheckOn: string | null; evidenceCheckOn: string | null; decisionReviewOn: string | null; readinessConditions: string[] };
+  /** Frozen aggregate evidence. The only thing AI follow-up questions may see. Never raw rows. */
+  snapshot: Record<string, unknown>;
   priority: { score: number; reasons: string[] };
   layerVersion: string;
 }
