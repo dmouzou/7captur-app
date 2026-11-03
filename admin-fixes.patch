@@ -1,0 +1,1883 @@
+From a97778eaeff5481404266dc8c2e103880c9b08bb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 3 Nov 2026 09:17:01 +0000
+Subject: [PATCH] fix(admin): audit fixes, sticky super-admin plan override,
+ private support notes, paging, analytics
+
+- Plan changes are super admin only and stick: stored in server-only planOverrides/{wid}; Paddle webhook, enforceBilling and trialLifecycle skip overridden workspaces until cleared (adminClearPlanOverride)
+- Internal support notes stay on supportTickets only; customer copy gets status and optional reply. submitFeedback no longer writes internalNotes to the customer copy
+- Change + audit entry commit in one batch; role changes audit before and after (fail closed)
+- AI settings need manage_ai (super admin); default model updated
+- Cursor paging, status filters, batched owner lookup, failed-mail view, adminAnalytics, audited adminFeedbackDetail; overview no longer audit-logged
+- Indexes for supportTickets, recommendations (workspace scope), imports; explicit deny rules for planOverrides and supportTickets
+- Admin UI: role-aware tabs, MFA warning banner, two-step confirm, keyboard-accessible tables, Analytics tab, override banner
+- scripts/scrub-admin-data.mjs: one-time cleanup of old internalNotes and planOverride fields
+- config/ai stays readable as decided (documented in rules)
+---
+ README.md                               |  13 +-
+ firestore.indexes.json                  |  84 ++++
+ firestore.rules                         |  12 +
+ functions/src/admin/auth.ts             |  52 ++-
+ functions/src/admin/callables.ts        | 354 +++++++++++-----
+ functions/src/billing/manage.ts         |   2 +
+ functions/src/billing/trialLifecycle.ts |   1 +
+ functions/src/billing/webhook.ts        |  10 +-
+ functions/src/config/aiConfig.ts        |   2 +-
+ functions/src/feedback/submit.ts        |   4 +-
+ scripts/scrub-admin-data.mjs            |  37 ++
+ tests/admin.test.ts                     |  41 +-
+ tests/rules.test.ts                     |  21 +
+ web/src/features/admin/AdminApp.tsx     | 528 ++++++++++++++----------
+ web/src/features/admin/admin.css        |  11 +
+ 15 files changed, 844 insertions(+), 328 deletions(-)
+ create mode 100644 scripts/scrub-admin-data.mjs
+
+diff --git a/README.md b/README.md
+index 7354379..331e704 100644
+--- a/README.md
++++ b/README.md
+@@ -93,7 +93,18 @@ GOOGLE_CLOUD_PROJECT=<project-id> node scripts/set-super-admin.mjs you@example.c
+ ```
+ Then sign out and in again at `/admin`. Other admins are added in the Admins tab. Plan limits are read-only in the console on purpose:
+ they are versioned in `shared/plans.json` so the app and website cannot drift.
+-Not built yet: feedback/support inbox, rule/feature-flag editor, cost analytics.
++
++**Plan changes (super admin only).** A super admin can set any workspace's plan and billing status. The change is stored in the server-only
++`planOverrides/{workspaceId}` and sticks: the Paddle webhook (it still records the event and subscription), `enforceBilling` and
++`trialLifecycle` leave that workspace alone until a super admin clears the override. Clearing keeps the current plan until the next Paddle event.
++
++**Support inbox.** Internal notes live only on `supportTickets` (admin-only). The customer-readable copy under the workspace gets the status and an optional reply, never notes.
++
++**After deploying this version, run once per project:** `node scripts/scrub-admin-data.mjs --dry-run`, then without `--dry-run`. It removes old
++`internalNotes` from customer-readable feedback docs and moves any old `planOverride` field into `planOverrides/`. Then deploy indexes (`firebase deploy --only firestore:indexes`).
++
++Known and accepted for now: the Anthropic key is stored in `config/ai`, which `firestore.rules` leaves publicly readable. Move it to Secret Manager, rotate it, then narrow the `config` rule.
++Not built yet: rule/feature-flag editor, per-recommendation AI cost (so cost analytics shows "Not tracked"), invoices, import retry/cleanup.
+ 
+ ## Google Ads (Phase 3, read-only)
+ 
+diff --git a/firestore.indexes.json b/firestore.indexes.json
+index 68ec73d..cc80b04 100644
+--- a/firestore.indexes.json
++++ b/firestore.indexes.json
+@@ -125,6 +125,90 @@
+           "order": "DESCENDING"
+         }
+       ]
++    },
++    {
++      "collectionGroup": "supportTickets",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "createdAt",
++          "order": "DESCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "supportTickets",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "type",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "createdAt",
++          "order": "DESCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "supportTickets",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "workspaceId",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "createdAt",
++          "order": "DESCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "recommendations",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "createdAt",
++          "order": "DESCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "imports",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "createdAt",
++          "order": "DESCENDING"
++        }
++      ]
++    },
++    {
++      "collectionGroup": "imports",
++      "queryScope": "COLLECTION_GROUP",
++      "fields": [
++        {
++          "fieldPath": "status",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "createdAt",
++          "order": "DESCENDING"
++        }
++      ]
+     }
+   ],
+   "fieldOverrides": [
+diff --git a/firestore.rules b/firestore.rules
+index 1f291b6..3ce0da2 100644
+--- a/firestore.rules
++++ b/firestore.rules
+@@ -53,6 +53,8 @@ service cloud.firestore {
+     }
+ 
+     // Public pricing / feature config, server-written only.
++    // KNOWN AND ACCEPTED FOR NOW: config/ai holds the Anthropic key and is therefore readable by anyone through this rule.
++    // Planned fix: move the key to Secret Manager, then narrow this match to the public docs only.
+     match /config/{doc} {
+       allow read: if true;
+       allow write: if false;
+@@ -160,6 +162,16 @@ service cloud.firestore {
+       allow read, write: if false;
+     }
+ 
++    // Admin-only data. Never readable or writable by clients (the default deny already covers it; stated here so it stays so).
++    // planOverrides holds the reason and the admin behind a manual plan change.
++    // supportTickets holds internal notes.
++    match /planOverrides/{id} {
++      allow read, write: if false;
++    }
++    match /supportTickets/{id} {
++      allow read, write: if false;
++    }
++
+     match /{document=**} {
+       allow read, write: if false;
+     }
+diff --git a/functions/src/admin/auth.ts b/functions/src/admin/auth.ts
+index 3a8d0c8..cec9779 100644
+--- a/functions/src/admin/auth.ts
++++ b/functions/src/admin/auth.ts
+@@ -5,19 +5,23 @@ import { HttpsError, type CallableRequest } from "firebase-functions/v2/https";
+ export const ADMIN_ROLES = ["super_admin", "ops", "billing", "support"] as const;
+ export type AdminRole = (typeof ADMIN_ROLES)[number];
+ export type Permission =
+-  | "read_overview" | "read_workspaces" | "read_recommendations" | "read_imports" | "read_integrations" | "read_jobs"
+-  | "read_billing" | "read_plans" | "read_audit" | "suspend_workspace" | "change_plan" | "manage_admins"
++  | "read_overview" | "read_analytics" | "read_workspaces" | "read_recommendations" | "read_imports" | "read_integrations" | "read_jobs"
++  | "read_billing" | "read_plans" | "read_audit" | "suspend_workspace" | "change_plan" | "manage_admins" | "manage_ai"
+   | "read_feedback" | "update_feedback";
+ 
+ const ALL: Permission[] = [
+-  "read_overview", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs",
+-  "read_billing", "read_plans", "read_audit", "suspend_workspace", "change_plan", "manage_admins",
++  "read_overview", "read_analytics", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs",
++  "read_billing", "read_plans", "read_audit", "suspend_workspace", "change_plan", "manage_admins", "manage_ai",
+   "read_feedback", "update_feedback",
+ ];
++/**
++ * change_plan, manage_admins and manage_ai belong to super_admin ONLY. Do not add them to another role.
++ * (Plan changes are a super admin decision: they override Paddle until cleared.)
++ */
+ export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
+   super_admin: ALL,
+-  ops: ["read_overview", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs", "read_plans", "suspend_workspace", "read_feedback", "update_feedback"],
+-  billing: ["read_overview", "read_workspaces", "read_billing", "read_plans"],
++  ops: ["read_overview", "read_analytics", "read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_jobs", "read_plans", "suspend_workspace", "read_feedback", "update_feedback"],
++  billing: ["read_overview", "read_analytics", "read_workspaces", "read_billing", "read_plans"],
+   support: ["read_workspaces", "read_recommendations", "read_imports", "read_integrations", "read_feedback", "update_feedback"],
+ };
+ /** Actions that change state need a login from the last 5 minutes. */
+@@ -25,6 +29,11 @@ const FRESH_LOGIN_SECONDS = 300;
+ 
+ export const roleHas = (role: string | undefined, perm: Permission) => ADMIN_ROLES.includes(role as AdminRole) && ROLE_PERMISSIONS[role as AdminRole].includes(perm);
+ 
++/** True when the server rejects admin calls that were not signed in with a second factor. Off by default until MFA is enrolled. */
++export const mfaEnforced = () => process.env.ADMIN_REQUIRE_MFA === "true";
++export const hasSecondFactor = (token: Record<string, unknown> | undefined) =>
++  Boolean((token?.firebase as { sign_in_second_factor?: string } | undefined)?.sign_in_second_factor);
++
+ export interface AdminContext { uid: string; email: string | null; role: AdminRole }
+ 
+ export function requireAdmin(request: CallableRequest, perm: Permission, opts: { fresh?: boolean } = {}): AdminContext {
+@@ -33,28 +42,43 @@ export function requireAdmin(request: CallableRequest, perm: Permission, opts: {
+   const role = t.role as string | undefined;
+   // Same error for "not an admin" and "missing permission": do not reveal the admin surface exists.
+   if (!roleHas(role, perm)) throw new HttpsError("permission-denied", "Not allowed.");
+-  if (process.env.ADMIN_REQUIRE_MFA === "true" && !(t.firebase as { sign_in_second_factor?: string } | undefined)?.sign_in_second_factor) {
+-    throw new HttpsError("failed-precondition", "mfa-required");
+-  }
++  if (mfaEnforced() && !hasSecondFactor(t as unknown as Record<string, unknown>)) throw new HttpsError("failed-precondition", "mfa-required");
+   if (opts.fresh && Date.now() / 1000 - Number(t.auth_time ?? 0) > FRESH_LOGIN_SECONDS) throw new HttpsError("failed-precondition", "recent-login-required");
+   return { uid: request.auth.uid, email: (t.email as string | undefined) ?? null, role: role as AdminRole };
+ }
+ 
+-/** Append-only audit entry for every admin read of customer data and every admin change. */
+-export async function audit(admin: AdminContext, action: string, target: string, extra: { reason?: string; before?: unknown; after?: unknown; meta?: Record<string, unknown> } = {}) {
+-  await getFirestore().collection("auditEvents").add({
++type AuditExtra = { reason?: string; before?: unknown; after?: unknown; meta?: Record<string, unknown> };
++
++function auditData(admin: AdminContext, action: string, target: string, extra: AuditExtra) {
++  return {
+     actorUid: admin.uid, actorEmail: admin.email, actorRole: admin.role, action, target, reason: extra.reason ?? null,
+     before: extra.before ?? null, after: extra.after ?? null, meta: extra.meta ?? null, createdAt: FieldValue.serverTimestamp(),
+-  });
++  };
++}
++
++/** Append-only audit entry for every admin read of customer data and every admin change. */
++export async function audit(admin: AdminContext, action: string, target: string, extra: AuditExtra = {}) {
++  await getFirestore().collection("auditEvents").add(auditData(admin, action, target, extra));
++}
++
++/**
++ * Put the audit entry in the SAME batch/transaction as the change, so a change can never be saved without its audit
++ * entry (and an audit entry never exists for a change that failed).
++ */
++export function auditInBatch(batch: FirebaseFirestore.WriteBatch, admin: AdminContext, action: string, target: string, extra: AuditExtra = {}) {
++  batch.set(getFirestore().collection("auditEvents").doc(), auditData(admin, action, target, extra));
+ }
+ 
+ /** Firestore Timestamps and nested values to JSON-safe values; drops secret-looking fields defensively. */
+ const SECRET_KEYS = /secret|token|password|apikey|api_key|credential/i;
++/** Usage counters that merely contain the word "token" are not secrets. */
++const SAFE_KEYS = /^(inputTokens|outputTokens|totalTokens|tokensUsed|tokenUsage)$/;
++const isSecretKey = (k: string) => SECRET_KEYS.test(k) && !SAFE_KEYS.test(k);
+ export function plain(v: unknown): unknown {
+   if (v instanceof Timestamp) return v.toDate().toISOString();
+   if (Array.isArray(v)) return v.map(plain);
+   if (v && typeof v === "object") {
+-    return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k]) => !SECRET_KEYS.test(k)).map(([k, x]) => [k, plain(x)]));
++    return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k]) => !isSecretKey(k)).map(([k, x]) => [k, plain(x)]));
+   }
+   return v;
+ }
+diff --git a/functions/src/admin/callables.ts b/functions/src/admin/callables.ts
+index 371c537..10ab951 100644
+--- a/functions/src/admin/callables.ts
++++ b/functions/src/admin/callables.ts
+@@ -3,26 +3,53 @@ import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
+ import { HttpsError, onCall } from "firebase-functions/v2/https";
+ import { z } from "zod";
+ import { PLANS, PLAN_IDS } from "../shared/plans";
+-import { ADMIN_ROLES, audit, plain, requireAdmin } from "./auth";
++import { ADMIN_ROLES, audit, auditInBatch, hasSecondFactor, mfaEnforced, plain, requireAdmin } from "./auth";
+ import { getActiveAiConfig, maskApiKey, DEFAULT_AI_MODEL } from "../config/aiConfig";
+ 
+ const db = () => getFirestore();
+ const LIMIT = 50;
++const DAY = 86400000;
+ const wsId = z.object({ workspaceId: z.string().min(1).max(160) });
+ const reason = z.string().trim().min(5, "Give a reason (at least 5 characters).").max(500);
++const before = z.string().max(40).optional();
++const BILLING_STATUSES = ["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "paused", "none"] as const;
+ 
+ const count = async (q: FirebaseFirestore.Query) => (await q.count().get()).data().count;
+ 
++/** Cursor paging on createdAt (newest first). The cursor is seconds_nanos of the last row, never a guessed offset. */
++const cursorOf = (ts: Timestamp) => `${ts.seconds}_${ts.nanoseconds}`;
++function parseCursor(c?: string): Timestamp | undefined {
++  if (!c) return undefined;
++  const m = /^(\d+)_(\d+)$/.exec(c);
++  if (!m) throw new HttpsError("invalid-argument", "Invalid page.");
++  return new Timestamp(Number(m[1]), Number(m[2]));
++}
++const paged = (q: FirebaseFirestore.Query, cursor?: string) => {
++  const ts = parseCursor(cursor);
++  return (ts ? q.orderBy("createdAt", "desc").startAfter(ts) : q.orderBy("createdAt", "desc")).limit(LIMIT);
++};
++const nextCursor = (docs: FirebaseFirestore.QueryDocumentSnapshot[]) => {
++  if (docs.length < LIMIT) return null;
++  const ts = docs[docs.length - 1]!.data().createdAt;
++  return ts instanceof Timestamp ? cursorOf(ts) : null;
++};
++
+ /** Who am I: lets the admin UI decide what to show. The server still checks every call. */
+ export const adminWhoAmI = onCall(async (request) => {
+   const role = request.auth?.token.role as string | undefined;
+-  return { role: ADMIN_ROLES.includes(role as never) ? role : null };
++  const isAdmin = ADMIN_ROLES.includes(role as never);
++  return {
++    role: isAdmin ? role : null,
++    // Only admins learn the MFA state. The UI shows a warning banner while MFA is not enforced.
++    mfaEnforced: isAdmin ? mfaEnforced() : null,
++    secondFactor: isAdmin ? hasSecondFactor(request.auth?.token as unknown as Record<string, unknown>) : null,
++  };
+ });
+ 
+ export const adminOverview = onCall(async (request) => {
+-  const admin = requireAdmin(request, "read_overview");
++  requireAdmin(request, "read_overview");
+   const now = Date.now();
+-  const since7 = Timestamp.fromMillis(now - 7 * 86400000), since30 = Timestamp.fromMillis(now - 30 * 86400000);
++  const since7 = Timestamp.fromMillis(now - 7 * DAY), since30 = Timestamp.fromMillis(now - 30 * DAY);
+   const byPlan: Record<string, number> = {};
+   await Promise.all(PLAN_IDS.map(async (p) => { byPlan[p] = await count(db().collection("workspaces").where("plan", "==", p)); }));
+   const [workspaces, new30, recs7, recsFailed7, pastDue, canceling, needsReconnect, pendingDeletions, suspended, openFeedback] = await Promise.all([
+@@ -37,8 +64,8 @@ export const adminOverview = onCall(async (request) => {
+     count(db().collection("workspaces").where("suspended", "==", true)),
+     count(db().collection("supportTickets").where("status", "==", "open")),
+   ]);
+-  // Activation sample: of the 50 newest workspaces, how many saved any record / got a recommendation.
+-  const recent = await db().collection("workspaces").orderBy("createdAt", "desc").limit(50).get();
++  // Activation sample: of the 25 newest workspaces, how many saved any record / got a recommendation.
++  const recent = await db().collection("workspaces").orderBy("createdAt", "desc").limit(25).get();
+   let withRecord = 0, withRec = 0;
+   await Promise.all(recent.docs.map(async (w) => {
+     const [r, s, p] = await Promise.all([
+@@ -47,21 +74,84 @@ export const adminOverview = onCall(async (request) => {
+     if (!r.empty) withRec++;
+     if (!p.empty || !s.empty || !r.empty) withRecord++;
+   }));
+-  await audit(admin, "view_overview", "system");
++  // Aggregate numbers only: not audit-logged, so the audit log is not flooded by every page load.
+   return { workspaces, new30, byPlan, recs7, recsFailed7, pastDue, canceling, needsReconnect, pendingDeletions, suspended, openFeedback, activation: { sample: recent.size, withRecord, withRecommendation: withRec } };
+ });
+ 
+-async function summarize(id: string, d: FirebaseFirestore.DocumentData) {
+-  const owner = await getAuth().getUser(d.ownerUid).catch(() => null);
+-  return { id, name: d.name ?? "", ownerEmail: owner?.email ?? null, plan: d.plan, billingStatus: d.billingStatus ?? "none", country: d.country ?? null, suspended: Boolean(d.suspended), createdAt: plain(d.createdAt), deletionScheduledFor: plain(d.deletionScheduledFor) ?? null };
++/** Business analytics from data that exists today. Cost per recommendation is NOT tracked yet and is reported as such. */
++export const adminAnalytics = onCall(async (request) => {
++  requireAdmin(request, "read_analytics");
++  const now = Date.now();
++  const weekStart = (i: number) => Timestamp.fromMillis(now - (i + 1) * 7 * DAY);
++  const weekEnd = (i: number) => Timestamp.fromMillis(now - i * 7 * DAY);
++  const dayStart = (i: number) => Timestamp.fromMillis(now - (i + 1) * DAY);
++  const dayEnd = (i: number) => Timestamp.fromMillis(now - i * DAY);
++
++  const signups = await Promise.all(Array.from({ length: 8 }, (_, i) => i).map(async (i) => ({
++    weekEnding: weekEnd(i).toDate().toISOString().slice(0, 10),
++    count: await count(db().collection("workspaces").where("createdAt", ">=", weekStart(i)).where("createdAt", "<", weekEnd(i))),
++  })));
++  const recsPerDay = await Promise.all(Array.from({ length: 14 }, (_, i) => i).map(async (i) => {
++    const range = db().collectionGroup("recommendations").where("createdAt", ">=", dayStart(i)).where("createdAt", "<", dayEnd(i));
++    const [total, failed] = await Promise.all([count(range), count(range.where("status", "==", "failed"))]);
++    return { day: dayEnd(i).toDate().toISOString().slice(0, 10), total, failed };
++  }));
++
++  const byPlan: Record<string, number> = {};
++  await Promise.all(PLAN_IDS.map(async (p) => { byPlan[p] = await count(db().collection("workspaces").where("plan", "==", p)); }));
++  const total = Object.values(byPlan).reduce((s, v) => s + v, 0);
++  const [activePaid, trialing, canceling, canceled, pastDue] = await Promise.all(
++    (["active", "trialing", "canceling", "canceled", "past_due"] as const).map((s) => count(db().collection("workspaces").where("billingStatus", "==", s))),
++  );
++
++  // Time to first recommendation, from the 100 newest workspaces.
++  const recent = await db().collection("workspaces").orderBy("createdAt", "desc").limit(100).get();
++  const minutes: number[] = [];
++  await Promise.all(recent.docs.map(async (w) => {
++    const first = await w.ref.collection("recommendations").orderBy("createdAt", "asc").limit(1).get();
++    const a = w.data().createdAt, b = first.docs[0]?.data().createdAt;
++    if (a instanceof Timestamp && b instanceof Timestamp) minutes.push(Math.max(0, Math.round((b.toMillis() - a.toMillis()) / 60000)));
++  }));
++  minutes.sort((x, y) => x - y);
++  const median = minutes.length ? minutes[Math.floor(minutes.length / 2)]! : null;
++
++  return {
++    signups: signups.reverse(),
++    recsPerDay: recsPerDay.reverse(),
++    plans: { byPlan, total, paidActive: activePaid, trialing, canceling, canceled, pastDue, paidShare: total ? Math.round((activePaid / total) * 100) : 0 },
++    timeToFirstRecommendation: { sample: recent.size, withRecommendation: minutes.length, medianMinutes: median },
++    costPerRecommendation: { tracked: false, note: "AI cost is not recorded per recommendation yet. Add token usage to each recommendation to enable this." },
++  };
++});
++
++type OwnerInfo = { email: string | null; lastSignIn: string | null };
++/** One batched Auth lookup (up to 100 per call) instead of one call per row. */
++async function ownerMap(uids: string[]): Promise<Map<string, OwnerInfo>> {
++  const out = new Map<string, OwnerInfo>();
++  const unique = [...new Set(uids.filter(Boolean))];
++  for (let i = 0; i < unique.length; i += 100) {
++    const res = await getAuth().getUsers(unique.slice(i, i + 100).map((uid) => ({ uid }))).catch(() => null);
++    res?.users.forEach((u) => out.set(u.uid, { email: u.email ?? null, lastSignIn: u.metadata.lastSignInTime ? new Date(u.metadata.lastSignInTime).toISOString() : null }));
++  }
++  return out;
++}
++
++function summarize(id: string, d: FirebaseFirestore.DocumentData, owners: Map<string, OwnerInfo>) {
++  const o = owners.get(d.ownerUid);
++  return { id, name: d.name ?? "", ownerEmail: o?.email ?? null, ownerLastSignIn: o?.lastSignIn ?? null, plan: d.plan, billingStatus: d.billingStatus ?? "none", country: d.country ?? null, suspended: Boolean(d.suspended), createdAt: plain(d.createdAt), deletionScheduledFor: plain(d.deletionScheduledFor) ?? null };
+ }
++const summarizeAll = async (docs: FirebaseFirestore.DocumentSnapshot[]) => {
++  const owners = await ownerMap(docs.map((d) => d.data()!.ownerUid as string));
++  return docs.map((d) => summarize(d.id, d.data()!, owners));
++};
+ 
+ export const adminSearchWorkspaces = onCall(async (request) => {
+   const admin = requireAdmin(request, "read_workspaces");
+-  const p = z.object({ query: z.string().trim().max(200).optional(), plan: z.string().optional(), billingStatus: z.string().optional() }).safeParse(request.data ?? {});
++  const p = z.object({ query: z.string().trim().max(200).optional(), plan: z.string().optional(), billingStatus: z.string().optional(), before }).safeParse(request.data ?? {});
+   if (!p.success) throw new HttpsError("invalid-argument", "Invalid search.");
+   const { query, plan, billingStatus } = p.data;
+-  let docs: FirebaseFirestore.QueryDocumentSnapshot[] | FirebaseFirestore.DocumentSnapshot[] = [];
++  let docs: FirebaseFirestore.DocumentSnapshot[] = [];
++  let next: string | null = null;
+   if (query?.includes("@")) {
+     const u = await getAuth().getUserByEmail(query).catch(() => null);
+     if (u) docs = (await db().collection("workspaces").where("ownerUid", "==", u.uid).limit(LIMIT).get()).docs;
+@@ -72,10 +162,12 @@ export const adminSearchWorkspaces = onCall(async (request) => {
+     let q: FirebaseFirestore.Query = db().collection("workspaces");
+     if (plan) q = q.where("plan", "==", plan);
+     if (billingStatus) q = q.where("billingStatus", "==", billingStatus);
+-    docs = (await q.orderBy("createdAt", "desc").limit(LIMIT).get()).docs;
++    const snap = await paged(q, p.data.before).get();
++    docs = snap.docs;
++    next = nextCursor(snap.docs);
+   }
+-  await audit(admin, "search_workspaces", "workspaces", { meta: { hasQuery: Boolean(query), plan: plan ?? null, billingStatus: billingStatus ?? null } });
+-  return { items: await Promise.all(docs.map((d) => summarize(d.id, d.data()!))) };
++  if (!p.data.before) await audit(admin, "search_workspaces", "workspaces", { meta: { hasQuery: Boolean(query), plan: plan ?? null, billingStatus: billingStatus ?? null } });
++  return { items: await summarizeAll(docs), next };
+ });
+ 
+ /** Support context: metadata and counts only. No tokens, no payment data, no raw customer records. */
+@@ -86,19 +178,22 @@ export const adminWorkspaceDetail = onCall(async (request) => {
+   const ref = db().doc(`workspaces/${p.data.workspaceId}`);
+   const w = await ref.get();
+   if (!w.exists) throw new HttpsError("not-found", "Workspace not found.");
+-  const [conns, usage, imports, recs, billing, members, ...counts] = await Promise.all([
++  const [conns, usage, imports, recs, billing, members, override, ...counts] = await Promise.all([
+     ref.collection("connections").get(),
+     ref.collection("usage").orderBy("__name__", "desc").limit(6).get(),
+     ref.collection("imports").orderBy("createdAt", "desc").limit(10).get(),
+     ref.collection("recommendations").orderBy("createdAt", "desc").limit(10).get(),
+     ref.collection("billing").doc("subscription").get(),
+     ref.collection("members").get(),
++    db().doc(`planOverrides/${p.data.workspaceId}`).get(),
+     ...["posts", "promotions", "leads", "sales", "costs"].map((c) => count(ref.collection(c))),
+   ]);
+   await audit(admin, "view_workspace", p.data.workspaceId);
+   const b = billing.data();
++  const o = override.data();
++  const [summary] = await summarizeAll([w]);
+   return {
+-    summary: await summarize(w.id, w.data()!),
++    summary,
+     workspace: plain({ ...w.data(), ownerUid: undefined }),
+     members: members.docs.map((m) => ({ uid: m.id, role: m.data().role, status: m.data().status })),
+     counts: { posts: counts[0], promotions: counts[1], leads: counts[2], sales: counts[3], costs: counts[4] },
+@@ -107,6 +202,7 @@ export const adminWorkspaceDetail = onCall(async (request) => {
+     imports: imports.docs.map((i) => plain({ id: i.id, status: i.data().status, collection: i.data().collection, counts: i.data().counts, createdAt: i.data().createdAt })),
+     recommendations: recs.docs.map((r) => plain({ id: r.id, status: r.data().status, mode: r.data().mode, category: r.data().category, createdAt: r.data().createdAt })),
+     billing: b ? plain({ status: b.status, plan: b.plan, currentPeriodEndsAt: b.currentPeriodEndsAt, subscriptionId: b.subscriptionId }) : null,
++    planOverride: o ? plain({ plan: o.plan, billingStatus: o.billingStatus, reason: o.reason, byEmail: o.byEmail, at: o.at }) : null,
+   };
+ });
+ 
+@@ -117,19 +213,27 @@ export const adminSetSuspension = onCall(async (request) => {
+   const ref = db().doc(`workspaces/${p.data.workspaceId}`);
+   const w = await ref.get();
+   if (!w.exists) throw new HttpsError("not-found", "Workspace not found.");
+-  const before = Boolean(w.data()!.suspended);
+-  if (p.data.suspended) await ref.update({ suspended: true, suspendedAt: FieldValue.serverTimestamp(), suspendedReason: p.data.reason });
+-  else await ref.update({ suspended: FieldValue.delete(), suspendedAt: FieldValue.delete(), suspendedReason: FieldValue.delete() });
+-  await audit(admin, p.data.suspended ? "suspend_workspace" : "reactivate_workspace", p.data.workspaceId, { reason: p.data.reason, before: { suspended: before }, after: { suspended: p.data.suspended } });
++  const was = Boolean(w.data()!.suspended);
++  const batch = db().batch();
++  if (p.data.suspended) batch.update(ref, { suspended: true, suspendedAt: FieldValue.serverTimestamp(), suspendedReason: p.data.reason });
++  else batch.update(ref, { suspended: FieldValue.delete(), suspendedAt: FieldValue.delete(), suspendedReason: FieldValue.delete() });
++  // The change and its audit entry commit together or not at all.
++  auditInBatch(batch, admin, p.data.suspended ? "suspend_workspace" : "reactivate_workspace", p.data.workspaceId, { reason: p.data.reason, before: { suspended: was }, after: { suspended: p.data.suspended } });
++  await batch.commit();
+   return { ok: true };
+ });
+ 
+-/** Manual plan override / subscription change by super admin. Allows changing plan and billing status. */
++/**
++ * Super admin only. Sets a workspace's plan and billing status by hand.
++ * The override is recorded in planOverrides/{workspaceId} (server-only: never readable by customers) and STICKS:
++ * the Paddle webhook, enforceBilling and trialLifecycle leave an overridden workspace alone until a super admin
++ * clears the override with adminClearPlanOverride.
++ */
+ export const adminChangePlan = onCall(async (request) => {
+   const admin = requireAdmin(request, "change_plan", { fresh: true });
+   const p = wsId.extend({
+     plan: z.enum(PLAN_IDS as [string, ...string[]]),
+-    billingStatus: z.enum(["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "none"]).optional(),
++    billingStatus: z.enum(BILLING_STATUSES).optional(),
+     reason,
+   }).safeParse(request.data);
+   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
+@@ -139,27 +243,40 @@ export const adminChangePlan = onCall(async (request) => {
+ 
+   const beforePlan = w.data()!.plan;
+   const beforeStatus = w.data()!.billingStatus ?? "none";
+-  const updates: Record<string, unknown> = {
+-    plan: p.data.plan,
+-    planOverride: { by: admin.uid, reason: p.data.reason, at: FieldValue.serverTimestamp() },
+-  };
+-  if (p.data.billingStatus) {
+-    updates.billingStatus = p.data.billingStatus;
+-    if (p.data.billingStatus === "active") {
+-      updates.restrictAt = FieldValue.delete();
+-    }
+-  }
+-  await ref.update(updates);
+-  await audit(admin, "change_plan", p.data.workspaceId, {
+-    reason: p.data.reason,
+-    before: { plan: beforePlan, billingStatus: beforeStatus },
+-    after: { plan: p.data.plan, billingStatus: p.data.billingStatus ?? beforeStatus },
++  const nextStatus = p.data.billingStatus ?? beforeStatus;
++  const updates: Record<string, unknown> = { plan: p.data.plan, billingStatus: nextStatus };
++  if (nextStatus === "active" || nextStatus === "trialing") updates.restrictAt = FieldValue.delete();
++
++  const batch = db().batch();
++  batch.update(ref, updates);
++  batch.set(db().doc(`planOverrides/${p.data.workspaceId}`), {
++    plan: p.data.plan, billingStatus: nextStatus, reason: p.data.reason, by: admin.uid, byEmail: admin.email, at: FieldValue.serverTimestamp(),
+   });
++  auditInBatch(batch, admin, "change_plan", p.data.workspaceId, {
++    reason: p.data.reason, before: { plan: beforePlan, billingStatus: beforeStatus }, after: { plan: p.data.plan, billingStatus: nextStatus, overrideSticks: true },
++  });
++  await batch.commit();
++  return { ok: true };
++});
++
++/** Super admin only. Removes the override so Paddle and the billing jobs manage the workspace again from their next event. */
++export const adminClearPlanOverride = onCall(async (request) => {
++  const admin = requireAdmin(request, "change_plan", { fresh: true });
++  const p = wsId.extend({ reason }).safeParse(request.data);
++  if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
++  const oRef = db().doc(`planOverrides/${p.data.workspaceId}`);
++  const o = await oRef.get();
++  if (!o.exists) throw new HttpsError("failed-precondition", "No override to clear.");
++  const batch = db().batch();
++  batch.delete(oRef);
++  auditInBatch(batch, admin, "clear_plan_override", p.data.workspaceId, { reason: p.data.reason, before: { plan: o.data()!.plan, billingStatus: o.data()!.billingStatus } });
++  await batch.commit();
+   return { ok: true };
+ });
+ 
++/** Super admin only. The key stays where it is today; moving it to Secret Manager is a separate, planned change. */
+ export const adminGetAiConfig = onCall(async (request) => {
+-  requireAdmin(request, "read_plans");
++  requireAdmin(request, "manage_ai");
+   const snap = await db().doc("config/ai").get();
+   const data = (snap.data() || {}) as { anthropicApiKey?: string; model?: string; updatedAt?: string; updatedBy?: string };
+   const { apiKey, model } = await getActiveAiConfig();
+@@ -173,7 +290,7 @@ export const adminGetAiConfig = onCall(async (request) => {
+ });
+ 
+ export const adminSetAiConfig = onCall(async (request) => {
+-  const admin = requireAdmin(request, "manage_admins", { fresh: true });
++  const admin = requireAdmin(request, "manage_ai", { fresh: true });
+   const p = z.object({
+     apiKey: z.string().trim().min(10, "API key too short").max(200),
+     model: z.string().trim().min(3).max(80).optional(),
+@@ -181,32 +298,29 @@ export const adminSetAiConfig = onCall(async (request) => {
+   }).safeParse(request.data);
+   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
+ 
+-  const ref = db().doc("config/ai");
+   const model = p.data.model || DEFAULT_AI_MODEL;
+-  await ref.set({
++  const batch = db().batch();
++  batch.set(db().doc("config/ai"), {
+     anthropicApiKey: p.data.apiKey,
+     model,
+     updatedAt: new Date().toISOString(),
+     updatedBy: admin.email || admin.uid,
+   }, { merge: true });
+-
+-  await audit(admin, "update_ai_config", "system", {
+-    reason: p.data.reason,
+-    after: { model, maskedKey: maskApiKey(p.data.apiKey) },
+-  });
++  auditInBatch(batch, admin, "update_ai_config", "system", { reason: p.data.reason, after: { model, maskedKey: maskApiKey(p.data.apiKey) } });
++  await batch.commit();
+ 
+   return { ok: true, maskedKey: maskApiKey(p.data.apiKey), model };
+ });
+ 
+ export const adminListRecommendations = onCall(async (request) => {
+   const admin = requireAdmin(request, "read_recommendations");
+-  const p = z.object({ workspaceId: z.string().max(160).optional(), status: z.string().max(40).optional() }).safeParse(request.data ?? {});
++  const p = z.object({ workspaceId: z.string().max(160).optional(), status: z.string().max(40).optional(), before }).safeParse(request.data ?? {});
+   if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
+   let q: FirebaseFirestore.Query = p.data.workspaceId ? db().collection(`workspaces/${p.data.workspaceId}/recommendations`) : db().collectionGroup("recommendations");
+   if (p.data.status) q = q.where("status", "==", p.data.status);
+-  const snap = await q.orderBy("createdAt", "desc").limit(LIMIT).get();
+-  await audit(admin, "list_recommendations", p.data.workspaceId ?? "all", { meta: { status: p.data.status ?? null } });
+-  return { items: snap.docs.map((d) => plain({ id: d.id, workspaceId: d.ref.parent.parent!.id, status: d.data().status, mode: d.data().mode, category: d.data().category, engineVersion: d.data().engineVersion ?? d.data().version, createdAt: d.data().createdAt })) };
++  const snap = await paged(q, p.data.before).get();
++  if (!p.data.before) await audit(admin, "list_recommendations", p.data.workspaceId ?? "all", { meta: { status: p.data.status ?? null } });
++  return { items: snap.docs.map((d) => plain({ id: d.id, workspaceId: d.ref.parent.parent!.id, status: d.data().status, mode: d.data().mode, category: d.data().category, engineVersion: d.data().engineVersion ?? d.data().version, createdAt: d.data().createdAt })), next: nextCursor(snap.docs) };
+ });
+ 
+ export const adminRecommendationDetail = onCall(async (request) => {
+@@ -222,84 +336,115 @@ export const adminRecommendationDetail = onCall(async (request) => {
+ 
+ export const adminListImports = onCall(async (request) => {
+   const admin = requireAdmin(request, "read_imports");
+-  const snap = await db().collectionGroup("imports").orderBy("createdAt", "desc").limit(LIMIT).get();
+-  await audit(admin, "list_imports", "all");
+-  return { items: snap.docs.map((d) => plain({ id: d.id, workspaceId: d.ref.parent.parent!.id, status: d.data().status, collection: d.data().collection, counts: d.data().counts, rowErrors: (d.data().rowErrors ?? []).slice(0, 5), createdAt: d.data().createdAt })) };
++  const p = z.object({ workspaceId: z.string().max(160).optional(), status: z.string().max(40).optional(), before }).safeParse(request.data ?? {});
++  if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
++  let q: FirebaseFirestore.Query = p.data.workspaceId ? db().collection(`workspaces/${p.data.workspaceId}/imports`) : db().collectionGroup("imports");
++  if (p.data.status) q = q.where("status", "==", p.data.status);
++  const snap = await paged(q, p.data.before).get();
++  if (!p.data.before) await audit(admin, "list_imports", p.data.workspaceId ?? "all", { meta: { status: p.data.status ?? null } });
++  return { items: snap.docs.map((d) => plain({ id: d.id, workspaceId: d.ref.parent.parent!.id, status: d.data().status, collection: d.data().collection, counts: d.data().counts, rowErrors: (d.data().rowErrors ?? []).slice(0, 5), createdAt: d.data().createdAt })), next: nextCursor(snap.docs) };
+ });
+ 
++const CONNECTION_STATUSES = ["connected", "needs_reconnect", "pending_account", "disconnected"];
+ export const adminListIntegrations = onCall(async (request) => {
+   const admin = requireAdmin(request, "read_integrations");
+-  const snap = await db().collectionGroup("connections").where("status", "in", ["connected", "needs_reconnect", "pending_account"]).limit(200).get();
+-  await audit(admin, "list_integrations", "all");
+-  return { items: snap.docs.map((d) => plain({ id: d.id, workspaceId: d.ref.parent.parent!.id, provider: d.data().provider, status: d.data().status, shop: d.data().shop, customerId: d.data().customerId, lastSyncedAt: d.data().lastSyncedAt, lastError: d.data().lastError, partialSync: d.data().partialSync })) };
++  const p = z.object({ status: z.enum(CONNECTION_STATUSES as [string, ...string[]]).optional() }).safeParse(request.data ?? {});
++  if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
++  const q = db().collectionGroup("connections");
++  const snap = await (p.data.status ? q.where("status", "==", p.data.status) : q.where("status", "in", CONNECTION_STATUSES)).limit(200).get();
++  await audit(admin, "list_integrations", "all", { meta: { status: p.data.status ?? null } });
++  // Problems first, so a broken connection is never buried under healthy ones.
++  const rank = (s: string) => (s === "needs_reconnect" ? 0 : s === "pending_account" ? 1 : s === "connected" ? 2 : 3);
++  const items = snap.docs.map((d) => plain({ id: d.id, workspaceId: d.ref.parent.parent!.id, provider: d.data().provider, status: d.data().status, shop: d.data().shop, customerId: d.data().customerId, scopes: d.data().scopes, lastSyncedAt: d.data().lastSyncedAt, lastError: d.data().lastError, partialSync: d.data().partialSync }) as Record<string, unknown>)
++    .sort((a, b) => rank(String(a.status)) - rank(String(b.status)));
++  return { items };
+ });
+ 
+ export const adminJobs = onCall(async (request) => {
+   const admin = requireAdmin(request, "read_jobs");
+-  const overdue = await db().collection("workspaces").where("reportNextRunAt", "<", Timestamp.fromMillis(Date.now() - 2 * 3600000)).limit(LIMIT).get();
+-  const mails = await db().collection("mail").limit(LIMIT).get();
+-  const deletions = await db().collection("deletionRequests").orderBy("requestedAt", "desc").limit(20).get();
++  const [overdue, failedMail, recentMail, deletions] = await Promise.all([
++    db().collection("workspaces").where("reportNextRunAt", "<", Timestamp.fromMillis(Date.now() - 2 * 3600000)).limit(LIMIT).get(),
++    db().collection("mail").where("delivery.state", "==", "ERROR").limit(LIMIT).get(),
++    db().collection("mail").orderBy("delivery.startTime", "desc").limit(LIMIT).get(),
++    db().collection("deletionRequests").orderBy("requestedAt", "desc").limit(20).get(),
++  ]);
+   await audit(admin, "view_jobs", "system");
++  const mailRow = (m: FirebaseFirestore.QueryDocumentSnapshot) => plain({ id: m.id, kind: m.data().meta?.kind, state: m.data().delivery?.state ?? "queued", error: m.data().delivery?.error ?? null, attempts: m.data().delivery?.attempts ?? null, startedAt: m.data().delivery?.startTime ?? null });
+   return {
+     overdueReports: overdue.docs.map((d) => ({ workspaceId: d.id, reportNextRunAt: plain(d.data().reportNextRunAt), attempts: d.data().reportAttempts ?? 0 })),
+-    mail: mails.docs.map((m) => plain({ id: m.id, kind: m.data().meta?.kind, state: m.data().delivery?.state ?? "queued", error: m.data().delivery?.error ?? null, attempts: m.data().delivery?.attempts ?? null })),
++    failedMail: failedMail.docs.map(mailRow),
++    mail: recentMail.docs.map(mailRow),
+     deletions: deletions.docs.map((d) => plain({ workspaceId: d.id, status: d.data().status, requestedAt: d.data().requestedAt, scheduledFor: d.data().scheduledFor })),
+   };
+ });
+ 
+ export const adminBilling = onCall(async (request) => {
+   const admin = requireAdmin(request, "read_billing");
+-  const [problem, events] = await Promise.all([
++  const [problem, events, overrides] = await Promise.all([
+     db().collection("workspaces").where("billingStatus", "in", ["past_due", "canceling", "restricted"]).limit(LIMIT).get(),
+-    db().collection("billingEvents").orderBy("receivedAt", "desc").limit(LIMIT).get(),
++    db().collection("billingEvents").orderBy("receivedAt", "desc").limit(100).get(),
++    db().collection("planOverrides").limit(100).get(),
+   ]);
+   await audit(admin, "view_billing", "system");
+   return {
+-    workspaces: await Promise.all(problem.docs.map((d) => summarize(d.id, d.data()))),
++    workspaces: await summarizeAll(problem.docs),
+     events: events.docs.map((e) => plain({ id: e.id, type: e.data().type, workspaceId: e.data().workspaceId, outcome: e.data().outcome, receivedAt: e.data().receivedAt })),
++    overrides: overrides.docs.map((o) => plain({ workspaceId: o.id, plan: o.data().plan, billingStatus: o.data().billingStatus, reason: o.data().reason, by: o.data().byEmail, at: o.data().at })),
+   };
+ });
+ 
+ export const adminPlans = onCall(async (request) => {
+-  const admin = requireAdmin(request, "read_plans");
+-  await audit(admin, "view_plans", "system");
++  requireAdmin(request, "read_plans");
+   return { plans: PLANS };
+ });
+ 
+ export const adminListAudit = onCall(async (request) => {
+-  requireAdmin(request, "read_audit");
+-  const p = z.object({ action: z.string().max(60).optional() }).safeParse(request.data ?? {});
++  const admin = requireAdmin(request, "read_audit");
++  const p = z.object({ action: z.string().max(60).optional(), before }).safeParse(request.data ?? {});
+   if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
+   let q: FirebaseFirestore.Query = db().collection("auditEvents");
+   if (p.data.action) q = q.where("action", "==", p.data.action);
+-  const snap = await q.orderBy("createdAt", "desc").limit(100).get();
+-  return { items: snap.docs.map((d) => plain({ id: d.id, ...d.data() })) };
++  const snap = await paged(q, p.data.before).get();
++  if (!p.data.before) await audit(admin, "view_audit", "auditEvents", { meta: { action: p.data.action ?? null } });
++  return { items: snap.docs.map((d) => plain({ id: d.id, ...d.data() })), next: nextCursor(snap.docs) };
+ });
+ 
+-/** Grant or remove an admin role. Super admin only, fresh login, cannot change your own role, always audited. */
++/** Grant or remove an admin role. Super admin only, fresh login, cannot change your own role, audited before AND after. */
+ export const adminSetRole = onCall(async (request) => {
+   const admin = requireAdmin(request, "manage_admins", { fresh: true });
+   const p = z.object({ email: z.string().email(), role: z.enum([...ADMIN_ROLES, "none"] as [string, ...string[]]), reason }).safeParse(request.data);
+   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
+   const user = await getAuth().getUserByEmail(p.data.email).catch(() => null);
+   if (!user) throw new HttpsError("not-found", "No user with that email.");
++  // Because you cannot change your own role and only a super admin can call this, at least one super admin always remains.
+   if (user.uid === admin.uid) throw new HttpsError("failed-precondition", "You cannot change your own role.");
+   if (!user.emailVerified) throw new HttpsError("failed-precondition", "That email is not verified.");
+   const claims = { ...(user.customClaims ?? {}) } as Record<string, unknown>;
+-  const before = claims.role ?? null;
+-  if (p.data.role === "none") delete claims.role; else claims.role = p.data.role;
+-  await getAuth().setCustomUserClaims(user.uid, claims);
+-  await getAuth().revokeRefreshTokens(user.uid);
+-  await audit(admin, "set_admin_role", user.uid, { reason: p.data.reason, before: { role: before }, after: { role: p.data.role === "none" ? null : p.data.role }, meta: { email: p.data.email } });
++  const was = claims.role ?? null;
++  const now = p.data.role === "none" ? null : p.data.role;
++  const meta = { email: p.data.email };
++  // Fail closed: if the intent cannot be logged, nothing changes.
++  await audit(admin, "set_admin_role_attempt", user.uid, { reason: p.data.reason, before: { role: was }, after: { role: now }, meta });
++  try {
++    if (now === null) delete claims.role; else claims.role = now;
++    await getAuth().setCustomUserClaims(user.uid, claims);
++    await getAuth().revokeRefreshTokens(user.uid);
++  } catch {
++    await audit(admin, "set_admin_role_failed", user.uid, { reason: p.data.reason, before: { role: was }, after: { role: now }, meta }).catch(() => undefined);
++    throw new HttpsError("internal", "Could not change the role. Nothing was applied.");
++  }
++  await audit(admin, "set_admin_role", user.uid, { reason: p.data.reason, before: { role: was }, after: { role: now }, meta });
+   return { ok: true };
+ });
+ 
++/** List view: no customer message or email. Opening a ticket goes through adminFeedbackDetail, which is audit-logged. */
+ export const adminListFeedback = onCall(async (request) => {
+   const admin = requireAdmin(request, "read_feedback");
+   const p = z.object({
+     status: z.string().max(40).optional(),
+     type: z.string().max(40).optional(),
+     workspaceId: z.string().max(160).optional(),
++    before,
+   }).safeParse(request.data ?? {});
+   if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
+ 
+@@ -308,52 +453,63 @@ export const adminListFeedback = onCall(async (request) => {
+   if (p.data.type) q = q.where("type", "==", p.data.type);
+   if (p.data.workspaceId) q = q.where("workspaceId", "==", p.data.workspaceId);
+ 
+-  const snap = await q.orderBy("createdAt", "desc").limit(LIMIT).get();
+-  await audit(admin, "list_feedback", p.data.workspaceId ?? "all");
++  const snap = await paged(q, p.data.before).get();
++  if (!p.data.before) await audit(admin, "list_feedback", p.data.workspaceId ?? "all");
+   return {
+-    items: snap.docs.map((d) => plain({ id: d.id, ...d.data() })),
++    items: snap.docs.map((d) => plain({ id: d.id, createdAt: d.data().createdAt, type: d.data().type, status: d.data().status, subject: d.data().subject, workspaceId: d.data().workspaceId, recommendationId: d.data().recommendationId ?? null })),
++    next: nextCursor(snap.docs),
+   };
+ });
+ 
++export const adminFeedbackDetail = onCall(async (request) => {
++  const admin = requireAdmin(request, "read_feedback");
++  const p = z.object({ ticketId: z.string().min(1).max(160) }).safeParse(request.data);
++  if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
++  const snap = await db().doc(`supportTickets/${p.data.ticketId}`).get();
++  if (!snap.exists) throw new HttpsError("not-found", "Ticket not found.");
++  await audit(admin, "view_feedback", p.data.ticketId, { meta: { workspaceId: snap.data()!.workspaceId ?? null } });
++  return { ticket: plain({ id: snap.id, ...snap.data() }) };
++});
++
++/**
++ * internalNote stays on supportTickets ONLY (admin-only). The workspace copy is readable by every member of the customer's
++ * workspace, so it only ever gets the status and the optional customerReply, never internal notes.
++ */
+ export const adminUpdateFeedback = onCall(async (request) => {
+   const admin = requireAdmin(request, "update_feedback");
+   const p = z.object({
+     ticketId: z.string().min(1).max(160),
+     status: z.enum(["open", "in_progress", "resolved", "dismissed"]),
+     internalNote: z.string().trim().max(1000).optional(),
++    customerReply: z.string().trim().max(1000).optional(),
+   }).safeParse(request.data);
+   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
+ 
+   const ticketRef = db().doc(`supportTickets/${p.data.ticketId}`);
+   const snap = await ticketRef.get();
+   if (!snap.exists) throw new HttpsError("not-found", "Ticket not found.");
+-
+   const current = snap.data()!;
+-  const noteEntry = p.data.internalNote ? {
+-    by: admin.email || admin.uid,
+-    note: p.data.internalNote,
+-    at: new Date().toISOString(),
+-  } : null;
+ 
+-  const updates: Record<string, unknown> = {
++  const at = new Date().toISOString();
++  const by = admin.email || admin.uid;
++  const batch = db().batch();
++  batch.update(ticketRef, {
+     status: p.data.status,
+     updatedAt: FieldValue.serverTimestamp(),
+-    ...(noteEntry ? { internalNotes: FieldValue.arrayUnion(noteEntry) } : {}),
+-  };
+-
+-  const batch = db().batch();
+-  batch.update(ticketRef, updates);
++    ...(p.data.internalNote ? { internalNotes: FieldValue.arrayUnion({ by, note: p.data.internalNote, at }) } : {}),
++    ...(p.data.customerReply ? { customerReply: { text: p.data.customerReply, at } } : {}),
++  });
+   if (current.workspaceId) {
+-    const wsTicketRef = db().doc(`workspaces/${current.workspaceId}/feedback/${p.data.ticketId}`);
+-    batch.update(wsTicketRef, updates);
++    const wsRef = db().doc(`workspaces/${current.workspaceId}/feedback/${p.data.ticketId}`);
++    // Only touch the customer copy if it exists; a missing copy must not fail the whole update.
++    if ((await wsRef.get()).exists) {
++      batch.update(wsRef, { status: p.data.status, updatedAt: FieldValue.serverTimestamp(), ...(p.data.customerReply ? { customerReply: { text: p.data.customerReply, at } } : {}) });
++    }
+   }
+-  await batch.commit();
+-
+-  await audit(admin, "update_feedback", p.data.ticketId, {
++  auditInBatch(batch, admin, "update_feedback", p.data.ticketId, {
+     before: { status: current.status },
+-    after: { status: p.data.status, note: p.data.internalNote ?? null },
++    after: { status: p.data.status, internalNote: p.data.internalNote ?? null, customerReply: p.data.customerReply ?? null },
+   });
+-
++  await batch.commit();
+   return { ok: true };
+ });
+-
+diff --git a/functions/src/billing/manage.ts b/functions/src/billing/manage.ts
+index 5568c7f..fde3447 100644
+--- a/functions/src/billing/manage.ts
++++ b/functions/src/billing/manage.ts
+@@ -67,6 +67,8 @@ export const enforceBilling = onSchedule("every day 03:30", async () => {
+   const due = await db.collection("workspaces").where("restrictAt", "<=", Timestamp.now()).limit(200).get();
+   for (const doc of due.docs) {
+     try {
++      // A super admin plan override sticks until a super admin clears it.
++      if ((await db.doc(`planOverrides/${doc.id}`).get()).exists) continue;
+       const status = doc.data().billingStatus === "past_due" ? "restricted" : "canceled";
+       await doc.ref.update({ billingStatus: status, restrictAt: null });
+       await db.doc(`workspaces/${doc.id}/billing/subscription`).set({ restrictedAt: FieldValue.serverTimestamp() }, { merge: true });
+diff --git a/functions/src/billing/trialLifecycle.ts b/functions/src/billing/trialLifecycle.ts
+index 1a01b9e..c655fe2 100644
+--- a/functions/src/billing/trialLifecycle.ts
++++ b/functions/src/billing/trialLifecycle.ts
+@@ -183,6 +183,7 @@ export const trialLifecycle = onSchedule("every day 04:00", async () => {
+   let count = 0;
+   for (const doc of trialingSnap.docs) {
+     try {
++      if ((await db.doc(`planOverrides/${doc.id}`).get()).exists) continue; // override sticks until cleared
+       const ws = { id: doc.id, ...(doc.data() as Omit<WorkspaceDoc, "id">) };
+       await processWorkspaceTrial(db, ws, now);
+       count++;
+diff --git a/functions/src/billing/webhook.ts b/functions/src/billing/webhook.ts
+index 03cc2f8..a557dcb 100644
+--- a/functions/src/billing/webhook.ts
++++ b/functions/src/billing/webhook.ts
+@@ -62,14 +62,18 @@ export const paddleWebhook = onRequest({ secrets: [PADDLE_WEBHOOK_SECRET], cors:
+     const eventRef = db.doc(`billingEvents/${ev.event_id}`);
+     const billingRef = db.doc(`workspaces/${wid}/billing/subscription`);
+     const wsRef = db.doc(`workspaces/${wid}`);
++    const overrideRef = db.doc(`planOverrides/${wid}`);
+     const notify = await db.runTransaction(async (tx) => {
+-      const [seen, billing] = await Promise.all([tx.get(eventRef), tx.get(billingRef)]);
++      const [seen, billing, override] = await Promise.all([tx.get(eventRef), tx.get(billingRef), tx.get(overrideRef)]);
+       if (seen.exists) return null;
+       const prev = (billing.data() ?? {}) as PrevBilling;
+       const out = reducePaddleEvent(ev, prev, { priceMap: parsePriceMap(PADDLE_PRICE_MAP.value()), graceDays: BILLING_GRACE_DAYS.value() });
+-      tx.set(eventRef, { type: ev.event_type, workspaceId: wid, occurredAt: ev.occurred_at, outcome: out.action, receivedAt: FieldValue.serverTimestamp() });
+-      if (out.action !== "apply") return out.action === "notify_only" ? out.notify : null;
++      // A super admin override sticks: Paddle still records its state and the event, but the workspace plan is left alone.
++      const held = override.exists && out.action === "apply";
++      tx.set(eventRef, { type: ev.event_type, workspaceId: wid, occurredAt: ev.occurred_at, outcome: held ? "held_by_override" : out.action, receivedAt: FieldValue.serverTimestamp() });
++      if (out.action !== "apply") return out.action === "notify_only" && !override.exists ? out.notify : null;
+       tx.set(billingRef, { ...out.billing, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
++      if (held) return null;
+       tx.update(wsRef, {
+         plan: out.workspace.plan, billingStatus: out.workspace.billingStatus,
+         restrictAt: out.workspace.restrictAt ? Timestamp.fromDate(new Date(out.workspace.restrictAt)) : null,
+diff --git a/functions/src/config/aiConfig.ts b/functions/src/config/aiConfig.ts
+index a91d7a6..aed9058 100644
+--- a/functions/src/config/aiConfig.ts
++++ b/functions/src/config/aiConfig.ts
+@@ -2,7 +2,7 @@ import { getFirestore } from "firebase-admin/firestore";
+ import { ANTHROPIC_API_KEY } from "../config";
+ 
+ export const DEFAULT_CLAUDE_KEY = process.env.DEFAULT_CLAUDE_KEY ?? "";
+-export const DEFAULT_AI_MODEL = "claude-3-5-sonnet-20241022";
++export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
+ 
+ export interface AiConfigData {
+   anthropicApiKey?: string;
+diff --git a/functions/src/feedback/submit.ts b/functions/src/feedback/submit.ts
+index 5779af4..ca03eb1 100644
+--- a/functions/src/feedback/submit.ts
++++ b/functions/src/feedback/submit.ts
+@@ -59,8 +59,10 @@ export const submitFeedback = onCall({ timeoutSeconds: 30 }, async (request) =>
+     updatedAt: FieldValue.serverTimestamp(),
+   };
+ 
++  // The workspace copy is readable by every member of the workspace, so it must never carry internal notes.
++  const { internalNotes: _internal, ...customerCopy } = payload;
+   const batch = db.batch();
+-  batch.set(db.doc(`workspaces/${workspaceId}/feedback/${ticketId}`), payload);
++  batch.set(db.doc(`workspaces/${workspaceId}/feedback/${ticketId}`), customerCopy);
+   batch.set(db.doc(`supportTickets/${ticketId}`), payload);
+   await batch.commit();
+ 
+diff --git a/scripts/scrub-admin-data.mjs b/scripts/scrub-admin-data.mjs
+new file mode 100644
+index 0000000..7d735f5
+--- /dev/null
++++ b/scripts/scrub-admin-data.mjs
+@@ -0,0 +1,37 @@
++// One-time cleanup after the admin fixes. Usage (run LOCALLY, once per project):
++//   gcloud auth application-default login
++//   GOOGLE_CLOUD_PROJECT=<project-id> node scripts/scrub-admin-data.mjs [--dry-run]
++// 1) Removes `internalNotes` from every customer-readable workspaces/{id}/feedback/{ticket} doc
++//    (they were copied there by the old adminUpdateFeedback and could be read by workspace members).
++// 2) Moves the old `planOverride` field off the customer-readable workspace doc into planOverrides/{id}
++//    (server-only), so existing manual overrides keep sticking and their reason stops being customer-visible.
++import { initializeApp, applicationDefault } from "firebase-admin/app";
++import { FieldValue, getFirestore } from "firebase-admin/firestore";
++
++const dry = process.argv.includes("--dry-run");
++const project = process.env.GOOGLE_CLOUD_PROJECT;
++if (!project) { console.error("Set GOOGLE_CLOUD_PROJECT to the Firebase project id."); process.exit(1); }
++initializeApp({ credential: applicationDefault(), projectId: project });
++const db = getFirestore();
++
++let notes = 0;
++for (const doc of (await db.collectionGroup("feedback").get()).docs) {
++  if (!("internalNotes" in doc.data())) continue;
++  notes++;
++  if (!dry) await doc.ref.update({ internalNotes: FieldValue.delete() });
++}
++
++let overrides = 0;
++for (const doc of (await db.collection("workspaces").where("planOverride", "!=", null).get()).docs) {
++  const d = doc.data();
++  overrides++;
++  if (dry) continue;
++  const batch = db.batch();
++  batch.set(db.doc(`planOverrides/${doc.id}`), {
++    plan: d.plan, billingStatus: d.billingStatus ?? "none", reason: d.planOverride?.reason ?? "migrated", by: d.planOverride?.by ?? null,
++    byEmail: null, at: d.planOverride?.at ?? FieldValue.serverTimestamp(),
++  });
++  batch.update(doc.ref, { planOverride: FieldValue.delete() });
++  await batch.commit();
++}
++console.log(`${dry ? "Would scrub" : "Scrubbed"} internalNotes on ${notes} feedback doc(s); ${dry ? "would move" : "moved"} ${overrides} plan override(s) in ${project}.`);
+diff --git a/tests/admin.test.ts b/tests/admin.test.ts
+index ccc3631..486d493 100644
+--- a/tests/admin.test.ts
++++ b/tests/admin.test.ts
+@@ -1,4 +1,4 @@
+-import { describe, expect, it } from "vitest";
++import { afterEach, describe, expect, it } from "vitest";
+ import { requireAdmin, roleHas, plain } from "../functions/src/admin/auth";
+ 
+ const req = (token: Record<string, unknown> | null) => ({ auth: token ? { uid: "u1", token } : undefined, data: {} }) as never;
+@@ -36,3 +36,42 @@ describe("plain()", () => {
+     expect(plain({ a: 1, accessToken: "x", nested: { clientSecret: "y", ok: 2 }, list: [{ password: "p", k: 1 }] })).toEqual({ a: 1, nested: { ok: 2 }, list: [{ k: 1 }] });
+   });
+ });
++
++describe("super admin only powers", () => {
++  const ONLY_SUPER = ["change_plan", "manage_admins", "manage_ai"] as const;
++  it("only super_admin can change plans, manage admins or edit AI settings", () => {
++    for (const perm of ONLY_SUPER) {
++      expect(roleHas("super_admin", perm)).toBe(true);
++      for (const role of ["ops", "billing", "support"]) expect(roleHas(role, perm)).toBe(false);
++    }
++  });
++  it("a non-super admin is refused on the server, with the same error as a non-admin", () => {
++    for (const role of ["ops", "billing", "support"]) {
++      expect(() => requireAdmin(req({ role, auth_time: now() }), "change_plan", { fresh: true })).toThrow(/Not allowed/);
++    }
++  });
++  it("support has no overview, so the UI must not send it there", () => {
++    expect(roleHas("support", "read_overview")).toBe(false);
++    expect(roleHas("support", "read_workspaces")).toBe(true);
++  });
++});
++
++describe("MFA", () => {
++  const prev = process.env.ADMIN_REQUIRE_MFA;
++  afterEach(() => { if (prev === undefined) delete process.env.ADMIN_REQUIRE_MFA; else process.env.ADMIN_REQUIRE_MFA = prev; });
++  it("is not required while the flag is off", () => {
++    delete process.env.ADMIN_REQUIRE_MFA;
++    expect(requireAdmin(req({ role: "ops", auth_time: now() }), "read_overview").role).toBe("ops");
++  });
++  it("is required when the flag is on", () => {
++    process.env.ADMIN_REQUIRE_MFA = "true";
++    expect(() => requireAdmin(req({ role: "ops", auth_time: now() }), "read_overview")).toThrow(/mfa-required/);
++    expect(requireAdmin(req({ role: "ops", auth_time: now(), firebase: { sign_in_second_factor: "totp" } }), "read_overview").role).toBe("ops");
++  });
++});
++
++describe("plain() keeps usage counters", () => {
++  it("keeps token usage numbers but still drops real tokens", () => {
++    expect(plain({ inputTokens: 10, outputTokens: 5, accessToken: "x", refresh_token: "y" })).toEqual({ inputTokens: 10, outputTokens: 5 });
++  });
++});
+diff --git a/tests/rules.test.ts b/tests/rules.test.ts
+index a1c3c85..8b3aa4a 100644
+--- a/tests/rules.test.ts
++++ b/tests/rules.test.ts
+@@ -116,3 +116,24 @@ describe("read-only enforcement", () => {
+     await assertFails(setDoc(doc(db, "workspaces/wsA/posts/p_ro"), post("wsA", "alice")));
+   });
+ });
++
++describe("admin-only collections", () => {
++  it("members and anonymous users cannot read or write planOverrides, supportTickets or auditEvents", async () => {
++    await env.withSecurityRulesDisabled(async (ctx) => {
++      const db = ctx.firestore();
++      await setDoc(doc(db, "planOverrides/wsA"), { plan: "growth", reason: "internal" });
++      await setDoc(doc(db, "supportTickets/t1"), { workspaceId: "wsA", internalNotes: [{ note: "internal" }] });
++      await setDoc(doc(db, "auditEvents/a1"), { action: "x" });
++    });
++    for (const db of [env.authenticatedContext("alice").firestore(), env.unauthenticatedContext().firestore()]) {
++      for (const path of ["planOverrides/wsA", "supportTickets/t1", "auditEvents/a1"]) {
++        await assertFails(getDoc(doc(db, path)));
++        await assertFails(setDoc(doc(db, path), { x: 1 }));
++      }
++    }
++  });
++  it("members cannot write their own workspace feedback copy", async () => {
++    const db = env.authenticatedContext("alice").firestore();
++    await assertFails(setDoc(doc(db, "workspaces/wsA/feedback/t1"), { status: "resolved" }));
++  });
++});
+diff --git a/web/src/features/admin/AdminApp.tsx b/web/src/features/admin/AdminApp.tsx
+index 1a5005f..43bc1f8 100644
+--- a/web/src/features/admin/AdminApp.tsx
++++ b/web/src/features/admin/AdminApp.tsx
+@@ -5,6 +5,7 @@ import { auth, functions } from "../../services/firebase";
+ import { AuthPage } from "../auth/AuthPage";
+ import { useAuth } from "../auth/AuthProvider";
+ import { Logo } from "../../components/Logo";
++import { PLAN_IDS } from "../../shared/plans";
+ import { ThemeToggle } from "../../components/ThemeContext";
+ import "./admin.css";
+ 
+@@ -57,15 +58,17 @@ function Table({ rows, cols, onRow, search = true, empty = "Nothing to show." }:
+         <table className="adm-table">
+           <thead>
+             <tr>{keys.map((k) => (
+-              <th key={k} scope="col" aria-sort={sort?.key === k ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
+-                onClick={() => setSort((s) => (s?.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: 1 }))}>
++              <th key={k} scope="col" tabIndex={0} aria-sort={sort?.key === k ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
++                onClick={() => setSort((s) => (s?.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: 1 }))}
++                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSort((s) => (s?.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: 1 })); } }}>
+                 {humanHeader(k)}{sort?.key === k ? (sort.dir === 1 ? " ↑" : " ↓") : ""}
+               </th>
+             ))}</tr>
+           </thead>
+           <tbody>
+             {shown.map((r, i) => (
+-              <tr key={i} className={onRow ? "is-click" : ""} onClick={onRow ? () => onRow(r) : undefined}>
++              <tr key={i} className={onRow ? "is-click" : ""} tabIndex={onRow ? 0 : undefined} onClick={onRow ? () => onRow(r) : undefined}
++                onKeyDown={onRow ? (e) => { if (e.key === "Enter") onRow(r); } : undefined}>
+                 {keys.map((k) => {
+                   const v = r[k], text = fmt(v);
+                   if (typeof v === "number") return <td key={k} className="is-num" title={text}>{text}</td>;
+@@ -99,6 +102,32 @@ function Async<T>({ r, children }: { r: { data?: T; error?: string; loading: boo
+   return <>{r.data ? children(r.data) : null}</>;
+ }
+ 
++/* ---------- cursor paging: "Load more" appends the next page from the server ---------- */
++type PagedState = { rows: Row[]; next: string | null; loading: boolean; loadingMore: boolean; error?: string };
++function usePaged(name: string, params: Record<string, unknown>) {
++  const key = JSON.stringify(params);
++  const [s, setS] = useState<PagedState>({ rows: [], next: null, loading: true, loadingMore: false });
++  const load = useCallback((cursor?: string) => {
++    setS((x) => (cursor ? { ...x, loadingMore: true, error: undefined } : { rows: [], next: null, loading: true, loadingMore: false }));
++    call<{ items: Row[]; next?: string | null }>(name, { ...JSON.parse(key), before: cursor })
++      .then((d) => setS((x) => ({ rows: cursor ? [...x.rows, ...d.items] : d.items, next: d.next ?? null, loading: false, loadingMore: false })))
++      .catch((e) => setS((x) => ({ ...x, loading: false, loadingMore: false, error: (e as { message?: string }).message ?? "Failed" })));
++  }, [name, key]);
++  useEffect(() => { load(); }, [load]);
++  return { ...s, reload: () => load(), more: () => { if (s.next) load(s.next); } };
++}
++function PagedTable({ r, cols, onRow, empty }: { r: ReturnType<typeof usePaged>; cols?: string[]; onRow?: (row: Row) => void; empty?: string }) {
++  if (r.loading) return <div role="status" aria-label="Loading"><div className="adm-skel" style={{ width: "40%" }} /><div className="adm-skel" /><div className="adm-skel" style={{ width: "80%" }} /></div>;
++  if (r.error && !r.rows.length) return <div role="alert"><p className="error">{r.error}</p><button type="button" className="btn-secondary" onClick={r.reload}>Try again</button></div>;
++  return (
++    <>
++      <Table rows={r.rows} cols={cols} onRow={onRow} empty={empty} />
++      {r.error && <p className="error" role="alert">{r.error}</p>}
++      {r.next && <button type="button" className="btn-secondary" style={{ marginTop: 10 }} disabled={r.loadingMore} onClick={r.more}>{r.loadingMore ? "Loading…" : "Load more"}</button>}
++    </>
++  );
++}
++
+ /* ---------- re-authentication before sensitive actions (the server also demands a login from the last 5 minutes) ---------- */
+ async function reauth(password: string) {
+   const user = auth.currentUser!;
+@@ -108,20 +137,24 @@ async function reauth(password: string) {
+ }
+ 
+ function Sensitive({ label, onRun, children }: { label: string; onRun: (reason: string) => Promise<void>; children?: ReactNode }) {
+-  const [reason, setReason] = useState(""); const [pw, setPw] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
++  const [reason, setReason] = useState(""); const [pw, setPw] = useState(""); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false); const [armed, setArmed] = useState(false);
+   const usesPw = auth.currentUser?.providerData.some((p) => p.providerId === "password");
+   async function go() {
++    if (!armed) { setArmed(true); setMsg(""); return; } // second click confirms
+     setBusy(true); setMsg("");
+     try { await reauth(pw); await onRun(reason); setMsg("Done."); setPw(""); setReason(""); }
+     catch (e) { setMsg((e as { message?: string }).message ?? "Failed"); }
+-    finally { setBusy(false); }
++    finally { setBusy(false); setArmed(false); }
+   }
+   return (
+     <div className="adm-card">
+       {children}
+-      <label>Reason (saved in the audit log)<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
++      <label>Reason (saved in the audit log)<input value={reason} onChange={(e) => { setReason(e.target.value); setArmed(false); }} /></label>
+       {usesPw && <label>Your password<input type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} /></label>}
+-      <button type="button" style={{ marginTop: 14 }} disabled={busy || reason.trim().length < 5} onClick={go}>{label}</button>
++      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
++        <button type="button" disabled={busy || reason.trim().length < 5} onClick={go}>{armed ? `Confirm: ${label}` : label}</button>
++        {armed && !busy && <button type="button" className="btn-secondary" onClick={() => setArmed(false)}>Cancel</button>}
++      </div>
+       <div role="status" className="muted" style={{ marginTop: 8 }}>{msg}</div>
+     </div>
+   );
+@@ -135,7 +168,7 @@ const PLAN_COLORS = ["#8fce3a", "#d8b14a", "#6aa8e0", "#c78ae0", "#e2685f", "#85
+ const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
+ 
+ /* ---------- screens ---------- */
+-function Overview({ go }: { go: (tab: string) => void }) {
++function Overview({ go, can }: { go: (tab: string) => void; can: (tab: string) => boolean }) {
+   const r = useCallable<Row & { byPlan: Record<string, number>; activation: Record<string, number> }>("adminOverview");
+   return <Async r={r}>{(d) => {
+     const n = (k: string) => Number(d[k] ?? 0);
+@@ -163,7 +196,7 @@ function Overview({ go }: { go: (tab: string) => void }) {
+           <div className="adm-card">
+             <h3>Needs attention</h3>
+             {open.length === 0 ? <p className="adm-ok">Nothing needs attention.</p> : (
+-              <div className="adm-attn">{open.map(([label, v, tab]) => <button key={label} type="button" onClick={() => go(tab)}><span>{label}</span><span className="num">{v}</span></button>)}</div>
++              <div className="adm-attn">{open.map(([label, v, tab]) => <button key={label} type="button" disabled={!can(tab)} onClick={() => go(tab)}><span>{label}</span><span className="num">{v}</span></button>)}</div>
+             )}
+           </div>
+           <div className="adm-card">
+@@ -185,12 +218,15 @@ function Overview({ go }: { go: (tab: string) => void }) {
+   }}</Async>;
+ }
+ 
+-function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
++const BILLING_STATUSES = ["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "paused", "none"];
++
++function WorkspaceDetail({ id, back, role }: { id: string; back: () => void; role: string }) {
+   const r = useCallable<Row>("adminWorkspaceDetail", { workspaceId: id });
+-  const plans = useCallable<{ plans: Record<string, unknown> }>("adminPlans");
+-  const [plan, setPlan] = useState("starter");
++  const [plan, setPlan] = useState<string>(PLAN_IDS[0] ?? "starter");
+   const [billingStatus, setBillingStatus] = useState("active");
+   const [sec, setSec] = useState("overview");
++  const isSuper = role === "super_admin";
++  const canSuspend = isSuper || role === "ops";
+ 
+   useEffect(() => {
+     if (r.data?.summary) {
+@@ -205,24 +241,30 @@ function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
+       <button type="button" className="btn-secondary" onClick={back} style={{ marginBottom: 14 }}>Back to workspaces</button>
+       <Async r={r}>{(d) => {
+         const summary = d.summary as Row; const counts = d.counts as Record<string, number>;
++        const override = d.planOverride as Row | null;
+         const SECTIONS: [string, string][] = [["overview", "Overview"], ["connections", "Connections"], ["usage", "Usage"], ["activity", "Imports and recommendations"], ["actions", "Actions"]];
+         return (
+           <>
+             <div className="adm-card">
+               <div className="adm-card-head">
+-                <div><h2>{String(summary.name || id)}</h2><p className="adm-sub">{String(summary.ownerEmail ?? "No owner email")} · <span className="num">{id}</span></p></div>
+-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><Pill value={String(summary.plan)} /><Pill value={String(summary.billingStatus)} />{Boolean(summary.suspended) && <Pill value="suspended" />}</div>
++                <div><h2>{String(summary.name || id)}</h2><p className="adm-sub">{String(summary.ownerEmail ?? "No owner email")} · <span className="num">{id}</span></p>{Boolean(summary.ownerLastSignIn) && <p className="adm-sub">Owner last signed in {fmt(summary.ownerLastSignIn)}</p>}</div>
++                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><Pill value={String(summary.plan)} /><Pill value={String(summary.billingStatus)} />{Boolean(summary.suspended) && <Pill value="suspended" />}{override && <Pill value="manual override" />}</div>
+               </div>
+               <div className="adm-kpis" style={{ marginBottom: 0 }}>{Object.entries(counts).map(([k, v]) => <Kpi key={k} label={humanHeader(k)} value={v} />)}</div>
+             </div>
+             <div className="adm-tabs" role="tablist">{SECTIONS.map(([k, name]) => <button key={k} type="button" role="tab" className="adm-tab" aria-selected={sec === k} onClick={() => setSec(k)}>{name}</button>)}</div>
+             {sec === "overview" && (
+               <div className="adm-card">
++                {override && (
++                  <div className="adm-notice" role="status">
++                    Manual override active: {String(override.plan)} / {String(override.billingStatus)}, set by {String(override.byEmail ?? "an admin")} on {fmt(override.at)}. Reason: {String(override.reason)}. Paddle and the billing jobs will not change this workspace until a super admin clears the override.
++                  </div>
++                )}
+                 <h3>Subscription & Plan</h3>
+-                <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, background: "var(--surface-subtle)", padding: 12, borderRadius: 8 }}>
+-                  <div>Current Plan: <strong>{String(summary.plan).toUpperCase()}</strong></div>
+-                  <div>Billing Status: <Pill value={String(summary.billingStatus)} /></div>
+-                  <button type="button" className="btn-secondary" onClick={() => setSec("actions")} style={{ marginLeft: "auto", margin: 0 }}>Change Plan / Status</button>
++                <div className="adm-planbox">
++                  <div>Current plan: <strong>{String(summary.plan).toUpperCase()}</strong></div>
++                  <div>Billing status: <Pill value={String(summary.billingStatus)} /></div>
++                  {isSuper && <button type="button" className="btn-secondary" onClick={() => setSec("actions")} style={{ marginLeft: "auto", margin: 0 }}>Change plan or status</button>}
+                 </div>
+                 <h3>Members</h3>
+                 <Table rows={d.members as Row[]} search={false} />
+@@ -235,39 +277,36 @@ function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
+             {sec === "activity" && <div className="adm-card"><h3>Recent imports</h3><Table rows={d.imports as Row[]} empty="No imports." /><h3 style={{ marginTop: 18 }}>Recent recommendations</h3><Table rows={d.recommendations as Row[]} empty="No recommendations." /></div>}
+             {sec === "actions" && (
+               <>
+-                <Sensitive
+-                  label="Update Subscription & Plan"
+-                  onRun={async (reason) => {
+-                    await call("adminChangePlan", { workspaceId: id, plan, billingStatus, reason });
+-                    r.reload();
+-                  }}
+-                >
+-                  <h3>Change User Plan & Subscription Status</h3>
+-                  <p className="muted">Super admins can override user plan tiers (Starter, Growth, Custom) and adjust billing statuses immediately.</p>
+-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 8 }}>
+-                    <label>
+-                      Plan Tier
+-                      <select value={plan} onChange={(e) => setPlan(e.target.value)}>
+-                        {Object.keys(plans.data?.plans ?? { starter: 1, growth: 1, custom: 1 }).map((p) => (
+-                          <option key={p} value={p}>{p.toUpperCase()}</option>
+-                        ))}
+-                      </select>
+-                    </label>
+-                    <label>
+-                      Billing Status
+-                      <select value={billingStatus} onChange={(e) => setBillingStatus(e.target.value)}>
+-                        {["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "none"].map((b) => (
+-                          <option key={b} value={b}>{b}</option>
+-                        ))}
+-                      </select>
+-                    </label>
+-                  </div>
+-                </Sensitive>
+-
+-                <Sensitive label={summary.suspended ? "Reactivate workspace" : "Suspend workspace"} onRun={async (reason) => { await call("adminSetSuspension", { workspaceId: id, suspended: !summary.suspended, reason }); r.reload(); }}>
+-                  <h3>{summary.suspended ? "Reactivate" : "Suspend"}</h3>
+-                  <p className="muted">Suspended workspaces can read, export and disconnect, but cannot add data, import or generate recommendations.</p>
+-                </Sensitive>
++                {isSuper && (
++                  <Sensitive
++                    label="Set plan and status"
++                    onRun={async (reason) => { await call("adminChangePlan", { workspaceId: id, plan, billingStatus, reason }); r.reload(); }}
++                  >
++                    <h3>Change plan and subscription status</h3>
++                    <p className="muted">Super admin only. The change applies immediately and sticks: Paddle and the billing jobs will not overwrite it until you clear the override.</p>
++                    <div className="adm-two">
++                      <label>Plan
++                        <select value={plan} onChange={(e) => setPlan(e.target.value)}>{PLAN_IDS.map((p) => <option key={p} value={p}>{p.toUpperCase()}</option>)}</select>
++                      </label>
++                      <label>Billing status
++                        <select value={billingStatus} onChange={(e) => setBillingStatus(e.target.value)}>{BILLING_STATUSES.map((b) => <option key={b} value={b}>{b.replace(/_/g, " ")}</option>)}</select>
++                      </label>
++                    </div>
++                  </Sensitive>
++                )}
++                {isSuper && override && (
++                  <Sensitive label="Clear override" onRun={async (reason) => { await call("adminClearPlanOverride", { workspaceId: id, reason }); r.reload(); }}>
++                    <h3>Clear manual override</h3>
++                    <p className="muted">Paddle and the billing jobs manage this workspace again from their next event. The workspace keeps its current plan until then, so set the plan you want first if it should change.</p>
++                  </Sensitive>
++                )}
++                {canSuspend && (
++                  <Sensitive label={summary.suspended ? "Reactivate workspace" : "Suspend workspace"} onRun={async (reason) => { await call("adminSetSuspension", { workspaceId: id, suspended: !summary.suspended, reason }); r.reload(); }}>
++                    <h3>{summary.suspended ? "Reactivate" : "Suspend"}</h3>
++                    <p className="muted">Suspended workspaces can read, export and disconnect, but cannot add data, import or generate recommendations.</p>
++                  </Sensitive>
++                )}
++                {!isSuper && !canSuspend && <div className="adm-card"><p className="muted">Your role has no actions on a workspace.</p></div>}
+               </>
+             )}
+           </>
+@@ -277,21 +316,20 @@ function WorkspaceDetail({ id, back }: { id: string; back: () => void }) {
+   );
+ }
+ 
+-function Workspaces() {
++function Workspaces({ role }: { role: string }) {
+   const [q, setQ] = useState(""); const [applied, setApplied] = useState(""); const [plan, setPlan] = useState(""); const [bill, setBill] = useState(""); const [open, setOpen] = useState<string | null>(null);
+-  const plans = useCallable<{ plans: Record<string, unknown> }>("adminPlans");
+-  const r = useCallable<{ items: Row[] }>("adminSearchWorkspaces", { query: applied || undefined, plan: plan || undefined, billingStatus: bill || undefined });
+-  if (open) return <WorkspaceDetail id={open} back={() => setOpen(null)} />;
++  const r = usePaged("adminSearchWorkspaces", { query: applied || undefined, plan: plan || undefined, billingStatus: bill || undefined });
++  if (open) return <WorkspaceDetail id={open} back={() => setOpen(null)} role={role} />;
+   return (
+     <div className="adm-card">
+       <form className="adm-tools" onSubmit={(e) => { e.preventDefault(); setApplied(q.trim()); }}>
+         <label>Owner email or workspace id<input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Empty shows the newest" /></label>
+-        <label>Plan<select value={plan} onChange={(e) => setPlan(e.target.value)} disabled={Boolean(applied)}><option value="">All plans</option>{Object.keys(plans.data?.plans ?? {}).map((p) => <option key={p}>{p}</option>)}</select></label>
+-        <label>Billing<select value={bill} onChange={(e) => setBill(e.target.value)} disabled={Boolean(applied)}><option value="">Any</option>{["active", "trialing", "trial_expired", "past_due", "canceling", "canceled", "restricted", "none"].map((b) => <option key={b}>{b}</option>)}</select></label>
++        <label>Plan<select value={plan} onChange={(e) => setPlan(e.target.value)} disabled={Boolean(applied)}><option value="">All plans</option>{PLAN_IDS.map((p) => <option key={p}>{p}</option>)}</select></label>
++        <label>Billing<select value={bill} onChange={(e) => setBill(e.target.value)} disabled={Boolean(applied)}><option value="">Any</option>{BILLING_STATUSES.map((b) => <option key={b}>{b}</option>)}</select></label>
+         <button type="submit">Search</button>
+         {applied && <button type="button" className="btn-secondary" onClick={() => { setQ(""); setApplied(""); }}>Clear</button>}
+       </form>
+-      <Async r={r}>{(d) => <Table rows={d.items} cols={["name", "ownerEmail", "plan", "billingStatus", "suspended", "country", "createdAt", "id"]} onRow={(row) => setOpen(String(row.id))} />}</Async>
++      <PagedTable r={r} cols={["name", "ownerEmail", "plan", "billingStatus", "suspended", "country", "ownerLastSignIn", "createdAt", "id"]} onRow={(row) => setOpen(String(row.id))} empty="No workspaces match." />
+     </div>
+   );
+ }
+@@ -303,34 +341,81 @@ function RecDetail({ workspaceId, id }: { workspaceId: string; id: string }) {
+ 
+ function Recommendations() {
+   const [status, setStatus] = useState(""); const [sel, setSel] = useState<Row | null>(null);
+-  const r = useCallable<{ items: Row[] }>("adminListRecommendations", { status: status || undefined });
++  const r = usePaged("adminListRecommendations", { status: status || undefined });
+   return (
+     <div className="adm-card">
+       <div className="adm-tools">
+         <label>Status<input list="rec-status" value={status} onChange={(e) => setStatus(e.target.value)} placeholder="All, or type e.g. failed" /></label>
+         <datalist id="rec-status"><option value="failed" /><option value="generated" /></datalist>
+       </div>
+-      <Async r={r}>{(x) => <Table rows={x.items} cols={["createdAt", "status", "mode", "category", "engineVersion", "workspaceId", "id"]} onRow={setSel} />}</Async>
++      <PagedTable r={r} cols={["createdAt", "status", "mode", "category", "engineVersion", "workspaceId", "id"]} onRow={setSel} empty="No recommendations." />
+       {sel && <RecDetail key={`${sel.workspaceId}/${sel.id}`} workspaceId={String(sel.workspaceId)} id={String(sel.id)} />}
+     </div>
+   );
+ }
+ 
+-const simple = (title: string, fn: string, key: string, cols?: string[]) => function Simple() {
+-  const r = useCallable<Record<string, Row[]>>(fn);
+-  return <div className="adm-card"><div className="adm-card-head"><h3>{title}</h3><button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button></div><Async r={r}>{(d) => <Table rows={d[key]} cols={cols} />}</Async></div>;
+-};
+-const Imports = simple("Imports", "adminListImports", "items");
+-const Integrations = simple("Integrations", "adminListIntegrations", "items");
+-const Audit = simple("Audit log", "adminListAudit", "items", ["createdAt", "actorEmail", "actorRole", "action", "target", "reason", "before", "after"]);
++function Imports() {
++  const [status, setStatus] = useState("");
++  const r = usePaged("adminListImports", { status: status || undefined });
++  return (
++    <div className="adm-card">
++      <div className="adm-card-head"><h3>Imports</h3><button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button></div>
++      <div className="adm-tools">
++        <label>Status<input list="imp-status" value={status} onChange={(e) => setStatus(e.target.value)} placeholder="All, or type e.g. failed" /></label>
++        <datalist id="imp-status"><option value="failed" /><option value="partial" /><option value="complete" /></datalist>
++      </div>
++      <PagedTable r={r} empty="No imports." />
++    </div>
++  );
++}
++
++function Integrations() {
++  const [status, setStatus] = useState("");
++  const r = useCallable<{ items: Row[] }>("adminListIntegrations", { status: status || undefined });
++  return (
++    <div className="adm-card">
++      <div className="adm-card-head"><h3>Integrations</h3><button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button></div>
++      <div className="adm-tools">
++        <label>Status<select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">All (problems first)</option>{["needs_reconnect", "pending_account", "connected", "disconnected"].map((x) => <option key={x} value={x}>{x.replace(/_/g, " ")}</option>)}</select></label>
++      </div>
++      <Async r={r}>{(d) => <Table rows={d.items} empty="No connections." />}</Async>
++    </div>
++  );
++}
++
++function Audit() {
++  const [action, setAction] = useState(""); const [applied, setApplied] = useState("");
++  const r = usePaged("adminListAudit", { action: applied || undefined });
++  return (
++    <div className="adm-card">
++      <div className="adm-card-head"><h3>Audit log</h3><button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button></div>
++      <form className="adm-tools" onSubmit={(e) => { e.preventDefault(); setApplied(action.trim()); }}>
++        <label>Action<input list="audit-actions" value={action} onChange={(e) => setAction(e.target.value)} placeholder="All, or e.g. change_plan" /></label>
++        <datalist id="audit-actions">{["change_plan", "clear_plan_override", "suspend_workspace", "reactivate_workspace", "set_admin_role", "set_admin_role_failed", "update_ai_config", "update_feedback", "view_workspace", "view_feedback", "view_recommendation"].map((a) => <option key={a} value={a} />)}</datalist>
++        <button type="submit">Filter</button>
++        {applied && <button type="button" className="btn-secondary" onClick={() => { setAction(""); setApplied(""); }}>Clear</button>}
++      </form>
++      <PagedTable r={r} cols={["createdAt", "actorEmail", "actorRole", "action", "target", "reason", "before", "after"]} empty="No audit entries." />
++    </div>
++  );
++}
+ 
+ function Jobs() {
+   const r = useCallable<Record<string, Row[]>>("adminJobs");
+-  return <Async r={r}>{(d) => <><div className="adm-card"><h3>Overdue weekly reports</h3><Table rows={d.overdueReports} empty="No overdue reports." /></div><div className="adm-card"><h3>Email outbox</h3><Table rows={d.mail} empty="Outbox is empty." /></div><div className="adm-card"><h3>Deletion requests</h3><Table rows={d.deletions} empty="No deletion requests." /></div></>}</Async>;
++  return <Async r={r}>{(d) => <>
++    <div className="adm-card"><h3>Failed emails</h3><Table rows={d.failedMail} empty="No failed emails." /></div>
++    <div className="adm-card"><h3>Overdue weekly reports</h3><Table rows={d.overdueReports} empty="No overdue reports." /></div>
++    <div className="adm-card"><h3>Recent emails</h3><Table rows={d.mail} empty="Outbox is empty." /></div>
++    <div className="adm-card"><h3>Deletion requests</h3><Table rows={d.deletions} empty="No deletion requests." /></div>
++  </>}</Async>;
+ }
+ function Billing() {
+   const r = useCallable<Record<string, Row[]>>("adminBilling");
+-  return <Async r={r}>{(d) => <><div className="adm-card"><h3>Needs attention</h3><Table rows={d.workspaces} empty="No billing problems." /></div><div className="adm-card"><h3>Recent provider events</h3><Table rows={d.events} empty="No events." /></div></>}</Async>;
++  return <Async r={r}>{(d) => <>
++    <div className="adm-card"><h3>Needs attention</h3><Table rows={d.workspaces} empty="No billing problems." /></div>
++    <div className="adm-card"><h3>Manual plan overrides</h3><p className="muted" style={{ marginBottom: 12 }}>These workspaces ignore Paddle until a super admin clears the override.</p><Table rows={d.overrides} empty="No manual overrides." /></div>
++    <div className="adm-card"><h3>Recent provider events</h3><Table rows={d.events} empty="No events." /></div>
++  </>}</Async>;
+ }
+ function Plans() {
+   const r = useCallable<{ plans: Record<string, Row> }>("adminPlans");
+@@ -341,148 +426,169 @@ function Admins() {
+   return (
+     <Sensitive label="Apply role" onRun={async (reason) => { await call("adminSetRole", { email, role, reason }); }}>
+       <h3>Admins</h3>
+-      <p className="muted">Roles: super_admin (everything), ops, billing, support (read-only). Choose none to remove. The person must have a verified email and sign in again.</p>
++      <p className="muted">Roles: super_admin (everything, including plan changes), ops, billing, support. Choose none to remove. The person must have a verified email and sign in again. You cannot change your own role.</p>
+       <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+       <select value={role} onChange={(e) => setRole(e.target.value)}>{["super_admin", "ops", "billing", "support", "none"].map((x) => <option key={x}>{x}</option>)}</select>
+     </Sensitive>
+   );
+ }
+ 
++type AnalyticsData = {
++  signups: { weekEnding: string; count: number }[];
++  recsPerDay: { day: string; total: number; failed: number }[];
++  plans: { byPlan: Record<string, number>; total: number; paidActive: number; trialing: number; canceling: number; canceled: number; pastDue: number; paidShare: number };
++  timeToFirstRecommendation: { sample: number; withRecommendation: number; medianMinutes: number | null };
++  costPerRecommendation: { tracked: boolean; note: string };
++};
++function minutesLabel(m: number | null) {
++  if (m === null) return "No data";
++  if (m < 60) return `${m} min`;
++  if (m < 1440) return `${Math.round(m / 60)} h`;
++  return `${Math.round(m / 1440)} d`;
++}
++function Analytics() {
++  const r = useCallable<AnalyticsData>("adminAnalytics");
++  return <Async r={r}>{(d) => {
++    const t = d.timeToFirstRecommendation;
++    const maxSignup = Math.max(1, ...d.signups.map((s) => s.count));
++    return (
++      <>
++        <div className="adm-kpis">
++          <Kpi label="Paid and active" value={d.plans.paidActive} hint={`${d.plans.paidShare}% of ${d.plans.total} workspaces`} />
++          <Kpi label="In trial" value={d.plans.trialing} />
++          <Kpi label="Canceling" value={d.plans.canceling} tone={d.plans.canceling > 0 ? "warn" : undefined} />
++          <Kpi label="Canceled" value={d.plans.canceled} />
++          <Kpi label="Past due" value={d.plans.pastDue} tone={d.plans.pastDue > 0 ? "bad" : undefined} />
++          <Kpi label="Median time to first recommendation" value={minutesLabel(t.medianMinutes)} hint={`${t.withRecommendation} of newest ${t.sample} got one`} />
++          <Kpi label="Cost per recommendation" value="Not tracked" hint={d.costPerRecommendation.note} />
++        </div>
++        <div className="adm-grid">
++          <div className="adm-card">
++            <h3>Signups per week</h3>
++            {d.signups.map((s) => (
++              <div key={s.weekEnding}><div className="adm-legend-row"><span>Week ending {s.weekEnding}</span><span className="num">{s.count}</span></div><div className="adm-meter"><span style={{ width: `${pct(s.count, maxSignup)}%` }} /></div></div>
++            ))}
++          </div>
++          <div className="adm-card">
++            <h3>Recommendations per day (14 days)</h3>
++            <Table search={false} rows={d.recsPerDay.map((x) => ({ day: x.day, total: x.total, failed: x.failed, failedPercent: pct(x.failed, x.total) }))} />
++          </div>
++        </div>
++      </>
++    );
++  }}</Async>;
++}
++
+ function Feedback() {
+   const [status, setStatus] = useState("");
+   const [type, setType] = useState("");
+   const [sel, setSel] = useState<Row | null>(null);
+   const [newStatus, setNewStatus] = useState("in_progress");
+   const [internalNote, setInternalNote] = useState("");
++  const [customerReply, setCustomerReply] = useState("");
+   const [updating, setUpdating] = useState(false);
+   const [msg, setMsg] = useState("");
+ 
+-  const r = useCallable<{ items: Row[] }>("adminListFeedback", {
+-    status: status || undefined,
+-    type: type || undefined,
+-  });
++  const r = usePaged("adminListFeedback", { status: status || undefined, type: type || undefined });
++
++  async function openTicket(row: Row) {
++    setMsg("");
++    try {
++      const d = await call<{ ticket: Row }>("adminFeedbackDetail", { ticketId: row.id });
++      setSel(d.ticket); setNewStatus(String(d.ticket.status ?? "in_progress")); setInternalNote(""); setCustomerReply("");
++    } catch (e) { setMsg((e as { message?: string }).message ?? "Could not open the ticket."); }
++  }
+ 
+   async function updateTicket() {
+     if (!sel) return;
+-    setUpdating(true);
+-    setMsg("");
++    setUpdating(true); setMsg("");
+     try {
+-      await call("adminUpdateFeedback", {
+-        ticketId: sel.id,
+-        status: newStatus,
+-        internalNote: internalNote.trim() || undefined,
+-      });
+-      setMsg("Ticket updated successfully.");
+-      setInternalNote("");
++      await call("adminUpdateFeedback", { ticketId: sel.id, status: newStatus, internalNote: internalNote.trim() || undefined, customerReply: customerReply.trim() || undefined });
++      setMsg("Ticket updated.");
++      const d = await call<{ ticket: Row }>("adminFeedbackDetail", { ticketId: sel.id });
++      setSel(d.ticket); setInternalNote(""); setCustomerReply("");
+       r.reload();
+-    } catch (e) {
+-      setMsg((e as { message?: string }).message ?? "Update failed.");
+-    } finally {
+-      setUpdating(false);
+-    }
++    } catch (e) { setMsg((e as { message?: string }).message ?? "Update failed."); }
++    finally { setUpdating(false); }
+   }
+ 
+   return (
+     <div className="adm-card">
+       <div className="adm-card-head">
+-        <h3>Customer Feedback & Support (Spec 10.2)</h3>
++        <h3>Customer feedback and support</h3>
+         <button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button>
+       </div>
+       <div className="adm-tools">
+-        <label>
+-          Filter Status
++        <label>Filter status
+           <select value={status} onChange={(e) => setStatus(e.target.value)}>
+-            <option value="">All statuses</option>
+-            <option value="open">Open</option>
+-            <option value="in_progress">In Progress</option>
+-            <option value="resolved">Resolved</option>
+-            <option value="dismissed">Dismissed</option>
++            <option value="">All statuses</option><option value="open">Open</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option>
+           </select>
+         </label>
+-        <label>
+-          Filter Type
++        <label>Filter type
+           <select value={type} onChange={(e) => setType(e.target.value)}>
+-            <option value="">All types</option>
+-            <option value="bad_recommendation">Bad Recommendation</option>
+-            <option value="support_request">Support Request</option>
+-            <option value="product_feedback">Product Feedback</option>
++            <option value="">All types</option><option value="bad_recommendation">Bad recommendation</option><option value="support_request">Support request</option><option value="product_feedback">Product feedback</option>
+           </select>
+         </label>
+       </div>
+-      <Async r={r}>
+-        {(x) => (
+-          <Table
+-            rows={x.items}
+-            cols={["createdAt", "type", "status", "subject", "userEmail", "workspaceId", "recommendationId"]}
+-            onRow={(row) => {
+-              setSel(row);
+-              setNewStatus(String(row.status ?? "in_progress"));
+-              setMsg("");
+-            }}
+-          />
+-        )}
+-      </Async>
++      <PagedTable r={r} cols={["createdAt", "type", "status", "subject", "workspaceId", "recommendationId"]} onRow={openTicket} empty="No tickets." />
++      {msg && !sel && <p className="error" role="alert">{msg}</p>}
+ 
+       {sel && (
+-        <div style={{ marginTop: 24, padding: "18px 20px", background: "var(--surface-subtle)", borderRadius: 10, border: "1px solid var(--border)" }}>
++        <div className="adm-ticket">
+           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+             <div>
+               <h4 style={{ margin: "0 0 4px", fontSize: 16 }}>{String(sel.subject)}</h4>
+-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+-                Ticket ID: {String(sel.id)} · User: {String(sel.userEmail ?? "anonymous")} · Workspace: {String(sel.workspaceId)}
+-              </p>
++              <p className="muted" style={{ margin: 0, fontSize: 13 }}>Ticket {String(sel.id)} · User: {String(sel.userEmail ?? "none given")} · Workspace: {String(sel.workspaceId)}</p>
++              <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>Opening a ticket is audit-logged.</p>
+             </div>
+             <button type="button" className="btn-secondary" onClick={() => setSel(null)}>Close</button>
+           </div>
+ 
+           <div style={{ marginBottom: 16 }}>
+-            <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)" }}>User Message</span>
+-            <p style={{ margin: "6px 0 0", fontSize: 14, whiteSpace: "pre-wrap", color: "var(--ink)", background: "var(--surface)", padding: 12, borderRadius: 8 }}>
+-              {String(sel.message)}
+-            </p>
++            <span className="adm-label">Customer message</span>
++            <p className="adm-msg">{String(sel.message)}</p>
+           </div>
+ 
++          {Boolean(sel.customerReply) && (
++            <div style={{ marginBottom: 16 }}>
++              <span className="adm-label">Last reply sent to the customer</span>
++              <p className="adm-msg">{String((sel.customerReply as { text?: string }).text ?? "")}</p>
++            </div>
++          )}
++
+           {Boolean(sel.recContext) && (
+             <div style={{ marginBottom: 16 }}>
+-              <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--accent)" }}>Attached Recommendation Context</span>
++              <span className="adm-label">Attached recommendation context</span>
+               <pre className="adm-json" style={{ marginTop: 6 }}>{JSON.stringify(sel.recContext, null, 2)}</pre>
+             </div>
+           )}
+ 
+           {Array.isArray(sel.internalNotes) && sel.internalNotes.length > 0 && (
+             <div style={{ marginBottom: 16 }}>
+-              <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--muted)" }}>Previous Internal Notes</span>
++              <span className="adm-label">Internal notes (admins only)</span>
+               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                 {(sel.internalNotes as { by: string; note: string; at: string }[]).map((n, i) => (
+-                  <div key={i} style={{ fontSize: 13, background: "var(--surface)", padding: "8px 12px", borderRadius: 6 }}>
+-                    <strong>{n.by}</strong> <span className="muted">({new Date(n.at).toLocaleString()}):</span> {n.note}
+-                  </div>
++                  <div key={i} className="adm-msg"><strong>{n.by}</strong> <span className="muted">({new Date(n.at).toLocaleString()}):</span> {n.note}</div>
+                 ))}
+               </div>
+             </div>
+           )}
+ 
+-          <div style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+-            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+-              <label style={{ margin: 0 }}>
+-                Set Status:
+-                <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)} style={{ marginLeft: 8 }}>
+-                  <option value="open">Open</option>
+-                  <option value="in_progress">In Progress</option>
+-                  <option value="resolved">Resolved</option>
+-                  <option value="dismissed">Dismissed</option>
+-                </select>
+-              </label>
+-            </div>
+-            <label>
+-              Add Operational / Resolution Note:
+-              <textarea rows={3} value={internalNote} onChange={(e) => setInternalNote(e.target.value)} placeholder="Type internal note or resolution response visible to customer..." style={{ width: "100%", marginTop: 4 }} />
++          <div style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid var(--line)", paddingTop: 16 }}>
++            <label>Status
++              <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)}>
++                <option value="open">Open</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="dismissed">Dismissed</option>
++              </select>
++            </label>
++            <label>Internal note (admins only, never shown to the customer)
++              <textarea rows={3} value={internalNote} onChange={(e) => setInternalNote(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
++            </label>
++            <label>Reply to the customer (they can see this)
++              <textarea rows={3} value={customerReply} onChange={(e) => setCustomerReply(e.target.value)} placeholder="Leave empty to send no reply" style={{ width: "100%", marginTop: 4 }} />
+             </label>
+             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+-              <button type="button" onClick={updateTicket} disabled={updating}>
+-                {updating ? "Saving…" : "Save Ticket Updates"}
+-              </button>
+-              {msg && <span style={{ fontSize: 13, color: "var(--accent)" }}>{msg}</span>}
++              <button type="button" onClick={updateTicket} disabled={updating}>{updating ? "Saving…" : "Save ticket"}</button>
++              {msg && <span role="status" style={{ fontSize: 13, color: "var(--accent)" }}>{msg}</span>}
+             </div>
+           </div>
+         </div>
+@@ -491,100 +597,101 @@ function Feedback() {
+   );
+ }
+ 
++const AI_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"];
+ function AiEngine() {
+   const r = useCallable<{ configured: boolean; maskedKey: string; model: string; updatedAt: string | null; updatedBy: string | null }>("adminGetAiConfig");
+   const [apiKey, setApiKey] = useState("");
+-  const [model, setModel] = useState("claude-3-5-sonnet-20241022");
++  const [model, setModel] = useState<string | undefined>(undefined);
+ 
+   return (
+     <div className="adm-card">
+       <div className="adm-card-head">
+-        <h3>AI Decision Engine Settings</h3>
++        <h3>AI decision engine settings</h3>
+         <button type="button" className="btn-secondary" onClick={r.reload}>Refresh</button>
+       </div>
+       <p className="muted" style={{ marginBottom: 16 }}>
+-        Configure the Anthropic Claude API key and active reasoning model used by the 7Captur decision engine to formulate structured recommendations.
++        The Anthropic API key and model used by the 7Captur decision engine. The key is stored in the app configuration for now. Moving it to Secret Manager is planned.
+       </p>
+ 
+       <Async r={r}>
+-        {(d) => (
+-          <div>
+-            <div className="adm-kpis" style={{ marginBottom: 20 }}>
+-              <Kpi label="Engine Status" value={d.configured ? "Operational" : "Not Configured"} tone={d.configured ? undefined : "bad"} />
+-              <Kpi label="Active Model" value={d.model} />
+-              <Kpi label="Claude API Key" value={<code>{d.maskedKey || "None"}</code>} />
+-            </div>
+-
+-            {d.updatedAt && (
+-              <p className="adm-sub" style={{ marginBottom: 20 }}>
+-                Last updated: {fmt(d.updatedAt)} by {d.updatedBy || "System"}
+-              </p>
+-            )}
++        {(d) => {
++          const current = model ?? d.model;
++          const options = AI_MODELS.includes(d.model) ? AI_MODELS : [d.model, ...AI_MODELS];
++          return (
++            <div>
++              <div className="adm-kpis" style={{ marginBottom: 20 }}>
++                <Kpi label="Engine status" value={d.configured ? "Configured" : "Not configured"} tone={d.configured ? undefined : "bad"} />
++                <Kpi label="Active model" value={d.model} />
++                <Kpi label="API key" value={<code>{d.maskedKey || "None"}</code>} />
++              </div>
+ 
+-            <Sensitive
+-              label="Update Claude AI Configuration"
+-              onRun={async (reason) => {
+-                await call("adminSetAiConfig", {
+-                  apiKey: apiKey.trim(),
+-                  model: model.trim() || undefined,
+-                  reason,
+-                });
+-                setApiKey("");
+-                r.reload();
+-              }}
+-            >
+-              <h4 style={{ margin: "0 0 8px" }}>Update Claude API Key</h4>
+-              <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+-                Enter the secret Claude API key (e.g. <code>sk-ant-usr-...</code>). It will be encrypted and saved in secure backend configuration for the decision engine.
+-              </p>
+-              <label>
+-                Anthropic Claude API Key:
+-                <input
+-                  type="password"
+-                  value={apiKey}
+-                  onChange={(e) => setApiKey(e.target.value)}
+-                  placeholder="sk-ant-usr-..."
+-                  autoComplete="off"
+-                />
+-              </label>
+-              <label style={{ marginTop: 10 }}>
+-                Model:
+-                <select value={model} onChange={(e) => setModel(e.target.value)}>
+-                  <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022 (Recommended Default)</option>
+-                  <option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022 (Fast / Diagnostics)</option>
+-                  <option value="claude-3-opus-20240229">claude-3-opus-20240229 (High Reasoning)</option>
+-                </select>
+-              </label>
+-            </Sensitive>
+-          </div>
+-        )}
++              {d.updatedAt && <p className="adm-sub" style={{ marginBottom: 20 }}>Last updated: {fmt(d.updatedAt)} by {d.updatedBy || "System"}</p>}
++
++              <Sensitive
++                label="Update AI configuration"
++                onRun={async (reason) => {
++                  await call("adminSetAiConfig", { apiKey: apiKey.trim(), model: current.trim() || undefined, reason });
++                  setApiKey(""); setModel(undefined);
++                  r.reload();
++                }}
++              >
++                <h4 style={{ margin: "0 0 8px" }}>Update API key and model</h4>
++                <label>
++                  Anthropic API key
++                  <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..." autoComplete="off" />
++                </label>
++                <label style={{ marginTop: 10 }}>
++                  Model
++                  <select value={current} onChange={(e) => setModel(e.target.value)}>
++                    {options.map((m) => <option key={m} value={m}>{m}{m === d.model ? " (current)" : ""}</option>)}
++                  </select>
++                </label>
++              </Sensitive>
++            </div>
++          );
++        }}
+       </Async>
+     </div>
+   );
+ }
+ 
++/** UX only: which tabs each role sees. The server checks the real permission on every call. */
++const TAB_ROLES: Record<string, string[]> = {
++  overview: ["super_admin", "ops", "billing"], analytics: ["super_admin", "ops", "billing"], jobs: ["super_admin", "ops"],
++  workspaces: ["super_admin", "ops", "billing", "support"], recs: ["super_admin", "ops", "support"], imports: ["super_admin", "ops", "support"],
++  integrations: ["super_admin", "ops", "support"], billing: ["super_admin", "billing"], feedback: ["super_admin", "ops", "support"],
++  ai: ["super_admin"], plans: ["super_admin", "ops", "billing"], audit: ["super_admin"], admins: ["super_admin"],
++};
+ const NAV: { title: string; items: [string, string][] }[] = [
+-  { title: "Monitor", items: [["overview", "Overview"], ["jobs", "Jobs"]] },
++  { title: "Monitor", items: [["overview", "Overview"], ["analytics", "Analytics"], ["jobs", "Jobs"]] },
+   { title: "Customers", items: [["workspaces", "Workspaces"], ["recs", "Recommendations"], ["imports", "Imports"], ["integrations", "Integrations"], ["billing", "Billing"], ["feedback", "Feedback & Support"]] },
+   { title: "System", items: [["ai", "AI Decision Engine"], ["plans", "Plans"], ["audit", "Audit log"], ["admins", "Admins"]] },
+ ];
+ 
++type Me = { role: string | null; mfaEnforced: boolean | null; secondFactor: boolean | null };
++
+ export default function AdminApp() {
+   const { user, loading } = useAuth();
+-  const [role, setRole] = useState<string | null | undefined>(undefined);
+-  const [tab, setTab] = useState("overview");
++  const [me, setMe] = useState<Me | undefined>(undefined);
++  const [tabState, setTab] = useState("overview");
+   const [confirmSignOut, setConfirmSignOut] = useState(false);
+   useEffect(() => {
+     if (!user) return;
+-    user.getIdToken(true).then(() => call<{ role: string | null }>("adminWhoAmI")).then((r) => setRole(r.role)).catch(() => setRole(null));
++    user.getIdToken(true).then(() => call<Me>("adminWhoAmI")).then(setMe).catch(() => setMe({ role: null, mfaEnforced: null, secondFactor: null }));
+   }, [user]);
+   if (loading) return <main className="page"><p className="muted" role="status">Loading…</p></main>;
+   if (!user) return <AuthPage />;
+-  if (role === undefined) return <main className="page"><p className="muted" role="status">Loading…</p></main>;
++  if (me === undefined) return <main className="page"><p className="muted" role="status">Loading…</p></main>;
++  const role = me.role;
+   if (!role) return <main className="page"><h1>Not found</h1><p className="muted">This page does not exist.</p></main>;
+ 
++  const can = (id: string) => (TAB_ROLES[id] ?? []).includes(role);
++  const visible = NAV.map((g) => ({ ...g, items: g.items.filter(([id]) => can(id)) })).filter((g) => g.items.length > 0);
++  const firstTab = visible[0]?.items[0]?.[0] ?? "workspaces";
++  const tab = can(tabState) ? tabState : firstTab;
++
+   const screens: Record<string, () => ReactNode> = {
+-    overview: () => <Overview go={setTab} />, workspaces: () => <Workspaces />, recs: () => <Recommendations />, imports: () => <Imports />, integrations: () => <Integrations />,
++    overview: () => <Overview go={setTab} can={can} />, analytics: () => <Analytics />, workspaces: () => <Workspaces role={role} />, recs: () => <Recommendations />, imports: () => <Imports />, integrations: () => <Integrations />,
+     billing: () => <Billing />, feedback: () => <Feedback />, jobs: () => <Jobs />, ai: () => <AiEngine />, plans: () => <Plans />, audit: () => <Audit />, admins: () => <Admins />,
+   };
+   const title = NAV.flatMap((g) => g.items).find(([id]) => id === tab)?.[1] ?? "";
+@@ -593,16 +700,21 @@ export default function AdminApp() {
+     <div className="adm">
+       <aside className="adm-side" aria-label="Admin sections">
+         <div className="adm-group" style={{ padding: "0 6px 4px" }}><Logo size={30} subtitle="Admin" /></div>
+-        {NAV.map((g) => (
++        {visible.map((g) => (
+           <nav key={g.title} className="adm-group" aria-label={g.title}>
+             <div className="adm-group-title">{g.title}</div>
+-            {g.items.filter(([id]) => (id !== "admins" && id !== "ai") || role === "super_admin").map(([id, name]) => (
++            {g.items.map(([id, name]) => (
+               <button key={id} type="button" className="adm-nav" aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>{name}</button>
+             ))}
+           </nav>
+         ))}
+       </aside>
+       <main className="adm-main">
++        {me.mfaEnforced === false && (
++          <div className="adm-banner" role="alert">
++            Admin MFA is not enforced. Anyone who gets an admin password can act as that admin. Enroll a second factor for every admin, then set ADMIN_REQUIRE_MFA=true on the functions.
++          </div>
++        )}
+         <header className="adm-top">
+           <div><h1>{title}</h1><p className="adm-sub">Internal administration. Every action is checked on the server and audit-logged.</p></div>
+           <div className="adm-user">
+diff --git a/web/src/features/admin/admin.css b/web/src/features/admin/admin.css
+index 2f63a1a..0dc2305 100644
+--- a/web/src/features/admin/admin.css
++++ b/web/src/features/admin/admin.css
+@@ -80,3 +80,14 @@
+   .adm-main { padding-top: 16px; }
+   .adm-kpi-value { font-size: 26px; }
+ }
++
++/* Warning and notice blocks, ticket panel, plan box (replace the old inline styles). */
++.adm-banner { margin: 0 0 16px; padding: 12px 16px; border-radius: 12px; background: rgba(216,177,74,.14); color: var(--gold); border: 1px solid rgba(216,177,74,.35); font-size: 13.5px; font-weight: 600; }
++.adm-notice { margin: 0 0 16px; padding: 12px 16px; border-radius: 12px; background: var(--accent-soft); color: var(--ink); border: 1px solid var(--accent-line); font-size: 13.5px; }
++.adm-planbox { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; background: var(--bg2); padding: 12px; border-radius: 10px; border: 1px solid var(--line); }
++.adm-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
++.adm-ticket { margin-top: 24px; padding: 18px 20px; background: var(--bg2); border-radius: 12px; border: 1px solid var(--line); }
++.adm-label { font: 700 12px var(--font-head); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
++.adm-msg { margin: 6px 0 0; font-size: 14px; white-space: pre-wrap; color: var(--ink); background: var(--bg3); padding: 10px 12px; border-radius: 8px; }
++.adm-table tbody tr.is-click:focus-visible, .adm-table th:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
++@media (max-width: 600px) { .adm-two { grid-template-columns: 1fr; } }
+-- 
+2.43.0
+

@@ -59,8 +59,10 @@ export const submitFeedback = onCall({ timeoutSeconds: 30 }, async (request) => 
     updatedAt: FieldValue.serverTimestamp(),
   };
 
+  // The workspace copy is readable by every member of the workspace, so it must never carry internal notes.
+  const { internalNotes: _internal, ...customerCopy } = payload;
   const batch = db.batch();
-  batch.set(db.doc(`workspaces/${workspaceId}/feedback/${ticketId}`), payload);
+  batch.set(db.doc(`workspaces/${workspaceId}/feedback/${ticketId}`), customerCopy);
   batch.set(db.doc(`supportTickets/${ticketId}`), payload);
   await batch.commit();
 

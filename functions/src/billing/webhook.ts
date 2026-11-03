@@ -62,14 +62,18 @@ export const paddleWebhook = onRequest({ secrets: [PADDLE_WEBHOOK_SECRET], cors:
     const eventRef = db.doc(`billingEvents/${ev.event_id}`);
     const billingRef = db.doc(`workspaces/${wid}/billing/subscription`);
     const wsRef = db.doc(`workspaces/${wid}`);
+    const overrideRef = db.doc(`planOverrides/${wid}`);
     const notify = await db.runTransaction(async (tx) => {
-      const [seen, billing] = await Promise.all([tx.get(eventRef), tx.get(billingRef)]);
+      const [seen, billing, override] = await Promise.all([tx.get(eventRef), tx.get(billingRef), tx.get(overrideRef)]);
       if (seen.exists) return null;
       const prev = (billing.data() ?? {}) as PrevBilling;
       const out = reducePaddleEvent(ev, prev, { priceMap: parsePriceMap(PADDLE_PRICE_MAP.value()), graceDays: BILLING_GRACE_DAYS.value() });
-      tx.set(eventRef, { type: ev.event_type, workspaceId: wid, occurredAt: ev.occurred_at, outcome: out.action, receivedAt: FieldValue.serverTimestamp() });
-      if (out.action !== "apply") return out.action === "notify_only" ? out.notify : null;
+      // A super admin override sticks: Paddle still records its state and the event, but the workspace plan is left alone.
+      const held = override.exists && out.action === "apply";
+      tx.set(eventRef, { type: ev.event_type, workspaceId: wid, occurredAt: ev.occurred_at, outcome: held ? "held_by_override" : out.action, receivedAt: FieldValue.serverTimestamp() });
+      if (out.action !== "apply") return out.action === "notify_only" && !override.exists ? out.notify : null;
       tx.set(billingRef, { ...out.billing, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      if (held) return null;
       tx.update(wsRef, {
         plan: out.workspace.plan, billingStatus: out.workspace.billingStatus,
         restrictAt: out.workspace.restrictAt ? Timestamp.fromDate(new Date(out.workspace.restrictAt)) : null,

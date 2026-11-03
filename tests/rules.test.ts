@@ -116,3 +116,24 @@ describe("read-only enforcement", () => {
     await assertFails(setDoc(doc(db, "workspaces/wsA/posts/p_ro"), post("wsA", "alice")));
   });
 });
+
+describe("admin-only collections", () => {
+  it("members and anonymous users cannot read or write planOverrides, supportTickets or auditEvents", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, "planOverrides/wsA"), { plan: "growth", reason: "internal" });
+      await setDoc(doc(db, "supportTickets/t1"), { workspaceId: "wsA", internalNotes: [{ note: "internal" }] });
+      await setDoc(doc(db, "auditEvents/a1"), { action: "x" });
+    });
+    for (const db of [env.authenticatedContext("alice").firestore(), env.unauthenticatedContext().firestore()]) {
+      for (const path of ["planOverrides/wsA", "supportTickets/t1", "auditEvents/a1"]) {
+        await assertFails(getDoc(doc(db, path)));
+        await assertFails(setDoc(doc(db, path), { x: 1 }));
+      }
+    }
+  });
+  it("members cannot write their own workspace feedback copy", async () => {
+    const db = env.authenticatedContext("alice").firestore();
+    await assertFails(setDoc(doc(db, "workspaces/wsA/feedback/t1"), { status: "resolved" }));
+  });
+});

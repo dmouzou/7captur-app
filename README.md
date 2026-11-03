@@ -93,7 +93,18 @@ GOOGLE_CLOUD_PROJECT=<project-id> node scripts/set-super-admin.mjs you@example.c
 ```
 Then sign out and in again at `/admin`. Other admins are added in the Admins tab. Plan limits are read-only in the console on purpose:
 they are versioned in `shared/plans.json` so the app and website cannot drift.
-Not built yet: feedback/support inbox, rule/feature-flag editor, cost analytics.
+
+**Plan changes (super admin only).** A super admin can set any workspace's plan and billing status. The change is stored in the server-only
+`planOverrides/{workspaceId}` and sticks: the Paddle webhook (it still records the event and subscription), `enforceBilling` and
+`trialLifecycle` leave that workspace alone until a super admin clears the override. Clearing keeps the current plan until the next Paddle event.
+
+**Support inbox.** Internal notes live only on `supportTickets` (admin-only). The customer-readable copy under the workspace gets the status and an optional reply, never notes.
+
+**After deploying this version, run once per project:** `node scripts/scrub-admin-data.mjs --dry-run`, then without `--dry-run`. It removes old
+`internalNotes` from customer-readable feedback docs and moves any old `planOverride` field into `planOverrides/`. Then deploy indexes (`firebase deploy --only firestore:indexes`).
+
+Known and accepted for now: the Anthropic key is stored in `config/ai`, which `firestore.rules` leaves publicly readable. Move it to Secret Manager, rotate it, then narrow the `config` rule.
+Not built yet: rule/feature-flag editor, per-recommendation AI cost (so cost analytics shows "Not tracked"), invoices, import retry/cleanup.
 
 ## Google Ads (Phase 3, read-only)
 

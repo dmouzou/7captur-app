@@ -2,7 +2,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { ANTHROPIC_API_KEY } from "../config";
 
 export const DEFAULT_CLAUDE_KEY = process.env.DEFAULT_CLAUDE_KEY ?? "";
-export const DEFAULT_AI_MODEL = "claude-3-5-sonnet-20241022";
+export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
 
 export interface AiConfigData {
   anthropicApiKey?: string;

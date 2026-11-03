@@ -67,6 +67,8 @@ export const enforceBilling = onSchedule("every day 03:30", async () => {
   const due = await db.collection("workspaces").where("restrictAt", "<=", Timestamp.now()).limit(200).get();
   for (const doc of due.docs) {
     try {
+      // A super admin plan override sticks until a super admin clears it.
+      if ((await db.doc(`planOverrides/${doc.id}`).get()).exists) continue;
       const status = doc.data().billingStatus === "past_due" ? "restricted" : "canceled";
       await doc.ref.update({ billingStatus: status, restrictAt: null });
       await db.doc(`workspaces/${doc.id}/billing/subscription`).set({ restrictedAt: FieldValue.serverTimestamp() }, { merge: true });

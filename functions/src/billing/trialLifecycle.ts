@@ -183,6 +183,7 @@ export const trialLifecycle = onSchedule("every day 04:00", async () => {
   let count = 0;
   for (const doc of trialingSnap.docs) {
     try {
+      if ((await db.doc(`planOverrides/${doc.id}`).get()).exists) continue; // override sticks until cleared
       const ws = { id: doc.id, ...(doc.data() as Omit<WorkspaceDoc, "id">) };
       await processWorkspaceTrial(db, ws, now);
       count++;
