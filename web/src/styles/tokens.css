@@ -1056,3 +1056,136 @@ html.dark .modal-box::after, :root[data-theme="dark"] .modal-box::after {
   border: 1px solid var(--accent-line);
   box-shadow: 0 0 0 6px var(--accent-soft), 0 18px 40px -20px var(--glow);
 }
+
+/* ============================================================
+   Action Directive & Decision Directive Styling
+   High contrast, distinctive typography, theme-adaptive
+   ============================================================ */
+.action-directive-card {
+  position: relative;
+  border-radius: 14px;
+  padding: 20px 22px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.action-directive-card.mode-optimize {
+  background: linear-gradient(135deg, rgba(143, 206, 58, 0.12) 0%, rgba(20, 32, 18, 0.72) 100%);
+  border: 1px solid rgba(143, 206, 58, 0.38);
+  border-left: 6px solid #8fce3a;
+  box-shadow: 0 8px 28px -6px rgba(143, 206, 58, 0.28);
+}
+.action-directive-card.mode-improve {
+  background: linear-gradient(135deg, rgba(123, 97, 255, 0.12) 0%, rgba(26, 20, 52, 0.72) 100%);
+  border: 1px solid rgba(123, 97, 255, 0.38);
+  border-left: 6px solid #7b61ff;
+  box-shadow: 0 8px 28px -6px rgba(123, 97, 255, 0.28);
+}
+.action-directive-card.mode-explore {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(38, 28, 16, 0.72) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.38);
+  border-left: 6px solid #f59e0b;
+  box-shadow: 0 8px 28px -6px rgba(245, 158, 11, 0.28);
+}
+
+.action-directive-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+.action-directive-badge.mode-optimize {
+  background: rgba(143, 206, 58, 0.2);
+  color: #a2e04b;
+  border: 1px solid rgba(143, 206, 58, 0.38);
+}
+.action-directive-badge.mode-improve {
+  background: rgba(123, 97, 255, 0.2);
+  color: #c7d2fe;
+  border: 1px solid rgba(123, 97, 255, 0.38);
+}
+.action-directive-badge.mode-explore {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde68a;
+  border: 1px solid rgba(245, 158, 11, 0.38);
+}
+
+.action-directive-sub {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.action-directive-text {
+  margin: 0;
+  font-size: 1.32rem;
+  font-weight: 800;
+  font-family: "Plus Jakarta Sans", "Inter Tight", var(--font-head), sans-serif;
+  color: var(--ink);
+  line-height: 1.42;
+  letter-spacing: -0.025em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+/* Light mode overrides */
+html.light .action-directive-card.mode-optimize,
+:root[data-theme="light"] .action-directive-card.mode-optimize {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border: 1px solid #86efac;
+  border-left: 6px solid #16a34a;
+  box-shadow: 0 4px 20px -4px rgba(22, 163, 74, 0.2);
+}
+html.light .action-directive-card.mode-improve,
+:root[data-theme="light"] .action-directive-card.mode-improve {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  border: 1px solid #c4b5fd;
+  border-left: 6px solid #7c3aed;
+  box-shadow: 0 4px 20px -4px rgba(124, 58, 237, 0.2);
+}
+html.light .action-directive-card.mode-explore,
+:root[data-theme="light"] .action-directive-card.mode-explore {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fde68a;
+  border-left: 6px solid #d97706;
+  box-shadow: 0 4px 20px -4px rgba(217, 119, 6, 0.2);
+}
+
+html.light .action-directive-badge.mode-optimize,
+:root[data-theme="light"] .action-directive-badge.mode-optimize {
+  background: rgba(22, 163, 74, 0.16);
+  color: #15803d;
+  border: 1px solid rgba(22, 163, 74, 0.35);
+}
+html.light .action-directive-badge.mode-improve,
+:root[data-theme="light"] .action-directive-badge.mode-improve {
+  background: rgba(124, 58, 237, 0.16);
+  color: #6d28d9;
+  border: 1px solid rgba(124, 58, 237, 0.35);
+}
+html.light .action-directive-badge.mode-explore,
+:root[data-theme="light"] .action-directive-badge.mode-explore {
+  background: rgba(217, 119, 6, 0.16);
+  color: #b45309;
+  border: 1px solid rgba(217, 119, 6, 0.35);
+}
+
+html.light .action-directive-sub,
+:root[data-theme="light"] .action-directive-sub {
+  color: #4b524a;
+}
+
+html.light .action-directive-text,
+:root[data-theme="light"] .action-directive-text {
+  color: #0f1210 !important;
+  text-shadow: none;
+}
+

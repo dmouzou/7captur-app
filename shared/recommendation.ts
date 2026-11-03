@@ -108,12 +108,13 @@ export const generateRecommendationInput = z.object({
   workspaceId: z.string().min(1).max(128),
   businessId: z.string().min(1).max(128),
   requestId: z.string().min(8).max(64),
+  overrideSafetyNet: z.boolean().optional(),
 });
 
 export const recordActionInput = z.object({
   workspaceId: z.string().min(1).max(128),
   recommendationId: z.string().min(1).max(128),
   action: z.enum(RECOMMENDATION_ACTIONS),
-  reason: z.string().trim().max(300).optional(),
-  outcomeNote: z.string().trim().max(1000).optional(),
+  reason: z.union([z.string().trim().max(300), z.literal(""), z.null(), z.undefined()]).optional(),
+  outcomeNote: z.union([z.string().trim().max(1000), z.literal(""), z.null(), z.undefined()]).optional(),
 });

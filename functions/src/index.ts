@@ -3,7 +3,7 @@ import { setGlobalOptions } from "firebase-functions/v2";
 import { onRequest } from "firebase-functions/v2/https";
 
 initializeApp();
-setGlobalOptions({ region: "us-central1", maxInstances: 10 });
+setGlobalOptions({ region: "us-central1", maxInstances: 10, invoker: "public" });
 
 export { createWorkspace } from "./workspaces/createWorkspace";
 export { updateWorkspaceDetails } from "./workspaces/updateWorkspace";
@@ -12,6 +12,7 @@ export { recordRecommendationAction } from "./recommendations/action";
 export { createDecision } from "./decisions/create";
 export { askAboutDecision } from "./decisions/followup";
 export { recordDecisionUpdate } from "./decisions/respond";
+export { deleteDecision } from "./decisions/delete";
 export { importRecords } from "./imports/importRecords";
 export { refreshFxRates } from "./fx/refresh";
 export { exportData } from "./exports/exportData";

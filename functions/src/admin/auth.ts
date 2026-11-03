@@ -75,10 +75,20 @@ const SECRET_KEYS = /secret|token|password|apikey|api_key|credential/i;
 const SAFE_KEYS = /^(inputTokens|outputTokens|totalTokens|tokensUsed|tokenUsage)$/;
 const isSecretKey = (k: string) => SECRET_KEYS.test(k) && !SAFE_KEYS.test(k);
 export function plain(v: unknown): unknown {
+  if (v === null || v === undefined) return v;
   if (v instanceof Timestamp) return v.toDate().toISOString();
+  if (v instanceof Date) return v.toISOString();
   if (Array.isArray(v)) return v.map(plain);
-  if (v && typeof v === "object") {
-    return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k]) => !isSecretKey(k)).map(([k, x]) => [k, plain(x)]));
+  if (typeof v === "object") {
+    try {
+      return Object.fromEntries(
+        Object.entries(v as Record<string, unknown>)
+          .filter(([k]) => !isSecretKey(k))
+          .map(([k, x]) => [k, plain(x)])
+      );
+    } catch {
+      return String(v);
+    }
   }
   return v;
 }

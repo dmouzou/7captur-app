@@ -14,10 +14,51 @@ type Row = Record<string, unknown> & { id: string };
 function useRows(coll: RecordCollection) {
   const { workspaceId, businessId } = useWorkspace();
   const [rows, setRows] = useState<Row[]>([]);
-  useEffect(() => onSnapshot(
-    query(collection(db, `workspaces/${workspaceId}/${coll}`), where("businessId", "==", businessId), orderBy("createdAt", "desc")),
-    (s) => setRows(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
-  ), [workspaceId, businessId, coll]);
+  useEffect(() => {
+    if (!workspaceId) return;
+    const colRef = collection(db, `workspaces/${workspaceId}/${coll}`);
+    let active = true;
+    let fallbackUnsub: (() => void) | null = null;
+
+    const qWithOrder = businessId
+      ? query(colRef, where("businessId", "==", businessId), orderBy("createdAt", "desc"))
+      : query(colRef, orderBy("createdAt", "desc"));
+
+    const primaryUnsub = onSnapshot(
+      qWithOrder,
+      (s) => {
+        if (!active) return;
+        setRows(s.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (err) => {
+        console.warn(`Query on ${coll} failed, falling back to local ordering:`, err);
+        const qFallback = businessId ? query(colRef, where("businessId", "==", businessId)) : colRef;
+        fallbackUnsub = onSnapshot(
+          qFallback,
+          (s) => {
+            if (!active) return;
+            const list: Row[] = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+            list.sort((a, b) => {
+              const timeA = (a.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() || (typeof a.date === "string" ? new Date(a.date).getTime() : 0);
+              const timeB = (b.createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() || (typeof b.date === "string" ? new Date(b.date).getTime() : 0);
+              return timeB - timeA;
+            });
+            setRows(list);
+          },
+          (fErr) => {
+            console.error(`Fallback query on ${coll} also failed:`, fErr);
+            if (active) setRows([]);
+          }
+        );
+      }
+    );
+
+    return () => {
+      active = false;
+      primaryUnsub();
+      if (fallbackUnsub) fallbackUnsub();
+    };
+  }, [workspaceId, businessId, coll]);
   return rows;
 }
 

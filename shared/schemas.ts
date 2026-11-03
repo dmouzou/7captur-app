@@ -17,7 +17,7 @@ export const PROVENANCE = [
 
 /** Lifecycle states from spec 6.1. */
 export const RECOMMENDATION_STATUS = [
-  "draft", "ready", "generated", "viewed", "marked_to_try", "dismissed",
+  "draft", "ready", "generated", "viewed", "marked_to_try", "dismissed", "deferred",
   "completed", "outcome_recorded", "superseded", "failed",
 ] as const;
 

@@ -16,7 +16,19 @@ const EVIDENCE_LABEL = {
   optimize: "Optimize: spend, sales and costs",
 };
 
-export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId: string) => void }) {
+const MODE_ACTION_BADGE: Record<string, string> = {
+  optimize: "ACTION DIRECTIVE • OPTIMIZE",
+  improve: "ACTION DIRECTIVE • IMPROVE",
+  explore: "ACTION DIRECTIVE • EXPLORE",
+};
+
+export function RecommendationsPanel({
+  onNavigate,
+  onReportIssue,
+}: {
+  onNavigate?: (tab: string) => void;
+  onReportIssue?: (recId: string) => void;
+}) {
   const ws = useWorkspace();
   const plan = PLANS[ws.plan] ?? PLANS.starter;
   const [recs, setRecs] = useState<Rec[]>([]);
@@ -38,6 +50,11 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
   const [outcomeNote, setOutcomeNote] = useState("");
   const [outcomeAssessment, setOutcomeAssessment] = useState<"positive" | "neutral" | "negative">("positive");
   const [recordingOutcome, setRecordingOutcome] = useState(false);
+  const [safetyModal, setSafetyModal] = useState<{
+    reason: "recent_recommendation" | "no_records" | "no_new_data" | "general";
+    message: string;
+    minutesAgo?: number;
+  } | null>(null);
 
   useEffect(() => {
     return onSnapshot(
@@ -54,24 +71,55 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
     );
   }, [ws.workspaceId, ws.timezone]);
 
-  async function generate() {
+  async function triggerGenerate(override = false) {
     setError("");
+
+    if (!override) {
+      // Client-side quick check: if newest rec is <30 min old
+      if (recs.length > 0) {
+        let maxMs = 0;
+        for (const r of recs) {
+          const rawTs = (r as any).createdAt;
+          const ms = rawTs?.toMillis ? rawTs.toMillis() : rawTs ? new Date(rawTs).getTime() : 0;
+          if (ms > maxMs) maxMs = ms;
+        }
+        if (maxMs > 0 && Date.now() - maxMs < 30 * 60 * 1000) {
+          const diffMinutes = Math.max(0, Math.round((Date.now() - maxMs) / 60000));
+          setSafetyModal({
+            reason: "recent_recommendation",
+            message: `A recommendation was generated ${diffMinutes <= 1 ? "just now" : `${diffMinutes} minutes ago`}. We recommend reviewing your existing recommendations before generating another.`,
+            minutesAgo: diffMinutes,
+          });
+          return;
+        }
+      }
+    }
+
     setBusy(true);
+    setSafetyModal(null);
     try {
       await httpsCallable(functions, "generateRecommendation")({
         workspaceId: ws.workspaceId,
         businessId: ws.businessId,
         requestId: crypto.randomUUID(),
+        overrideSafetyNet: override,
       });
-    } catch (e) {
-      const err = e as { code?: string; details?: { resetsOn?: string }; message?: string };
-      setError(
-        err.code === "functions/resource-exhausted"
-          ? `You have used this week's recommendations. They reset on ${
-              err.details?.resetsOn ?? "Monday"
-            }. You can still review your history.`
-          : (err.message || "Could not generate a recommendation. Your credit was not used.")
-      );
+    } catch (e: any) {
+      const err = e as { code?: string; details?: { resetsOn?: string; reason?: string }; message?: string };
+      if (err.code === "functions/failed-precondition") {
+        setSafetyModal({
+          reason: (err.details?.reason as any) || "general",
+          message: err.message || "A safety check prevented generation. You can still insist to generate a new recommendation.",
+        });
+      } else if (err.code === "functions/resource-exhausted") {
+        setError(
+          `You have used this week's recommendations. They reset on ${
+            err.details?.resetsOn ?? "Monday"
+          }. You can still review your history.`
+        );
+      } else {
+        setError(err.message || "Could not generate a recommendation. Your credit was not used.");
+      }
     } finally {
       setBusy(false);
     }
@@ -84,11 +132,12 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
         workspaceId: ws.workspaceId,
         recommendationId: id,
         action,
-        reason,
-        outcomeNote: note,
+        reason: reason || undefined,
+        outcomeNote: note || undefined,
       });
-    } catch {
-      setError("Could not save your choice.");
+    } catch (e: any) {
+      console.error("Failed to record recommendation action:", e);
+      setError(e?.message || "Could not save your choice.");
     }
   }
 
@@ -105,12 +154,28 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
   }
 
   const filteredRecs = useMemo(() => {
-    return recs.filter((r) => {
-      if (filterMode !== "all" && r.mode !== filterMode) return false;
-      if (filterStatus !== "all" && r.status !== filterStatus) return false;
-      if (filterCategory !== "all" && r.category !== filterCategory) return false;
-      return true;
-    });
+    const getMs = (r: Rec) => {
+      const c = (r as any).createdAt;
+      if (!c) return Date.now();
+      if (typeof c?.toMillis === "function") return c.toMillis();
+      if (typeof c?.toDate === "function") return c.toDate().getTime();
+      if (c?.seconds) return c.seconds * 1000 + (c.nanoseconds ? c.nanoseconds / 1e6 : 0);
+      if (typeof c === "string") {
+        const ms = new Date(c).getTime();
+        return isNaN(ms) ? 0 : ms;
+      }
+      if (typeof c === "number") return c;
+      return 0;
+    };
+
+    return recs
+      .filter((r) => {
+        if (filterMode !== "all" && r.mode !== filterMode) return false;
+        if (filterStatus !== "all" && r.status !== filterStatus) return false;
+        if (filterCategory !== "all" && r.category !== filterCategory) return false;
+        return true;
+      })
+      .sort((a, b) => getMs(b) - getMs(a));
   }, [recs, filterMode, filterStatus, filterCategory]);
 
   return (
@@ -159,7 +224,7 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
 
           <button
             type="button"
-            onClick={generate}
+            onClick={() => triggerGenerate(false)}
             disabled={busy}
             style={{
               padding: "10px 22px",
@@ -349,6 +414,7 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
           const modeColor =
             r.mode === "optimize" ? "badge-primary" : r.mode === "improve" ? "badge-pop" : "badge-warning";
           const statusLabel = r.status.replace(/_/g, " ");
+          const badgeText = MODE_ACTION_BADGE[r.mode] ?? MODE_ACTION_BADGE.optimize;
 
           return (
             <article
@@ -430,30 +496,26 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
                 </div>
               )}
 
-              {/* Next Move Callout Box */}
-              <div
-                style={{
-                  padding: "18px 20px",
-                  borderRadius: 12,
-                  background: "var(--surface-hover)",
-                  border: "1px solid var(--line-strong)",
-                  marginBottom: 20,
-                }}
-              >
-                <span
+              {/* Distinctive Next Move Action Directive (Spec Item 9) */}
+              <div className={`action-directive-card mode-${r.mode}`}>
+                <div
                   style={{
-                    display: "block",
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "var(--muted)",
-                    marginBottom: 6,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 10,
+                    flexWrap: "wrap",
                   }}
                 >
-                  Recommended Next Move
-                </span>
-                <h3 style={{ margin: 0, fontSize: "1.25rem", color: "var(--ink)", lineHeight: 1.4 }}>
+                  <div className={`action-directive-badge mode-${r.mode}`}>
+                    <span>⚡ {badgeText}</span>
+                  </div>
+                  <span className="action-directive-sub">
+                    Recommended Next Move
+                  </span>
+                </div>
+                <h3 className="action-directive-text">
                   {r.action}
                 </h3>
               </div>
@@ -634,7 +696,26 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
                   You decide. Recommendations never alter external ad campaigns automatically.
                 </span>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  {onNavigate && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => onNavigate("decisions")}
+                      style={{
+                        padding: "8px 16px",
+                        fontSize: 13.5,
+                        borderRadius: 8,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                      title="Review and track this decision in the Decision Center"
+                    >
+                      <Icon name="compass" size={14} inline /> Investigate Decision →
+                    </button>
+                  )}
+
                   {["generated", "viewed", "deferred"].includes(r.status) && (
                     <>
                       <button
@@ -722,7 +803,7 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
             </p>
             <button
               type="button"
-              onClick={generate}
+              onClick={() => triggerGenerate(false)}
               disabled={busy}
               style={{ borderRadius: 10, padding: "10px 22px" }}
             >
@@ -731,6 +812,106 @@ export function RecommendationsPanel({ onReportIssue }: { onReportIssue?: (recId
           </div>
         )}
       </div>
+
+      {/* Safety Net Confirmation Modal (Spec Item 2) */}
+      {safetyModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.65)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 20,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSafetyModal(null);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 480,
+              width: "100%",
+              padding: "28px 24px",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+              border: "1px solid var(--line-strong)",
+              borderRadius: 16,
+              background: "var(--surface)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              <div
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: "50%",
+                  background: "rgba(245, 158, 11, 0.15)",
+                  border: "1px solid rgba(245, 158, 11, 0.3)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#fbbf24",
+                  fontSize: 20,
+                  flexShrink: 0,
+                }}
+              >
+                ⚠️
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.2rem", color: "var(--ink)" }}>
+                  {safetyModal.reason === "recent_recommendation"
+                    ? "Recent Recommendation Active"
+                    : safetyModal.reason === "no_records"
+                    ? "No Recent Records Found"
+                    : "No New Data Since Last Run"}
+                </h3>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  Safety Check Triggered
+                </span>
+              </div>
+            </div>
+
+            <p style={{ margin: "0 0 20px 0", fontSize: 14, color: "var(--body)", lineHeight: 1.55 }}>
+              {safetyModal.message}
+            </p>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setSafetyModal(null)}
+                style={{ padding: "9px 18px", fontSize: 13.5, borderRadius: 8 }}
+              >
+                Review Current Recommendations
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setSafetyModal(null);
+                  triggerGenerate(true);
+                }}
+                style={{
+                  padding: "9px 18px",
+                  fontSize: 13.5,
+                  borderRadius: 8,
+                  background: "var(--accent-fill)",
+                  color: "var(--on-accent)",
+                  fontWeight: 600,
+                }}
+              >
+                {busy ? "Generating…" : "Generate Anyway"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

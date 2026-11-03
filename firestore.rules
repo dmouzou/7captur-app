@@ -52,17 +52,9 @@ service cloud.firestore {
         && d.updatedAt == request.time;
     }
 
-<<<<<<< ours
     // Server-written only. config/ai holds the model API key, so nothing here is public except the FX rates.
     match /config/fx {
       allow read: if signedIn();
-=======
-    // Public pricing / feature config, server-written only.
-    // KNOWN AND ACCEPTED FOR NOW: config/ai holds the Anthropic key and is therefore readable by anyone through this rule.
-    // Planned fix: move the key to Secret Manager, then narrow this match to the public docs only.
-    match /config/{doc} {
-      allow read: if true;
->>>>>>> theirs
       allow write: if false;
     }
     match /config/{doc} {

@@ -85,13 +85,24 @@ function Table({ rows, cols, onRow, search = true, empty = "Nothing to show." }:
   );
 }
 
+function extractError(e: unknown): string {
+  if (!e) return "Failed";
+  const err = e as { message?: string; details?: unknown; code?: string };
+  if (err.message === "internal" || err.code === "functions/internal") {
+    return "Internal server error. Deploy functions with invoker: public or check Cloud Logs.";
+  }
+  return err.message ?? "Failed";
+}
+
 /* ---------- loading helpers ---------- */
 function useCallable<T>(name: string, data?: unknown) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: true });
   const key = JSON.stringify(data ?? {});
   const load = useCallback(() => {
     setState((s) => ({ ...s, loading: true, error: undefined }));
-    call<T>(name, JSON.parse(key)).then((d) => setState({ data: d, loading: false })).catch((e) => setState({ loading: false, error: (e as { message?: string }).message ?? "Failed" }));
+    call<T>(name, JSON.parse(key))
+      .then((d) => setState({ data: d, loading: false }))
+      .catch((e) => setState({ loading: false, error: extractError(e) }));
   }, [name, key]);
   useEffect(load, [load]);
   return { ...state, reload: load };
@@ -111,7 +122,7 @@ function usePaged(name: string, params: Record<string, unknown>) {
     setS((x) => (cursor ? { ...x, loadingMore: true, error: undefined } : { rows: [], next: null, loading: true, loadingMore: false }));
     call<{ items: Row[]; next?: string | null }>(name, { ...JSON.parse(key), before: cursor })
       .then((d) => setS((x) => ({ rows: cursor ? [...x.rows, ...d.items] : d.items, next: d.next ?? null, loading: false, loadingMore: false })))
-      .catch((e) => setS((x) => ({ ...x, loading: false, loadingMore: false, error: (e as { message?: string }).message ?? "Failed" })));
+      .catch((e) => setS((x) => ({ ...x, loading: false, loadingMore: false, error: extractError(e) })));
   }, [name, key]);
   useEffect(() => { load(); }, [load]);
   return { ...s, reload: () => load(), more: () => { if (s.next) load(s.next); } };

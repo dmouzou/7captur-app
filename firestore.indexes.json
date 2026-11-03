@@ -113,6 +113,20 @@
       ]
     },
     {
+      "collectionGroup": "recommendations",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "auditEvents",
       "queryScope": "COLLECTION",
       "fields": [
@@ -127,7 +141,6 @@
       ]
     },
     {
-<<<<<<< ours
       "collectionGroup": "posts",
       "queryScope": "COLLECTION",
       "fields": [
@@ -138,23 +151,10 @@
         {
           "fieldPath": "publishedAt",
           "order": "ASCENDING"
-=======
-      "collectionGroup": "supportTickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
->>>>>>> theirs
         }
       ]
     },
     {
-<<<<<<< ours
       "collectionGroup": "promotions",
       "queryScope": "COLLECTION",
       "fields": [
@@ -165,23 +165,10 @@
         {
           "fieldPath": "startDate",
           "order": "ASCENDING"
-=======
-      "collectionGroup": "supportTickets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "type",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "createdAt",
-          "order": "DESCENDING"
->>>>>>> theirs
         }
       ]
     },
     {
-<<<<<<< ours
       "collectionGroup": "leads",
       "queryScope": "COLLECTION",
       "fields": [
@@ -192,7 +179,52 @@
         {
           "fieldPath": "date",
           "order": "ASCENDING"
-=======
+        }
+      ]
+    },
+    {
+      "collectionGroup": "sales",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "businessId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "supportTickets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "supportTickets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "supportTickets",
       "queryScope": "COLLECTION",
       "fields": [
@@ -217,23 +249,10 @@
         {
           "fieldPath": "createdAt",
           "order": "DESCENDING"
->>>>>>> theirs
         }
       ]
     },
     {
-<<<<<<< ours
-      "collectionGroup": "sales",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "businessId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "date",
-          "order": "ASCENDING"
-=======
       "collectionGroup": "imports",
       "queryScope": "COLLECTION",
       "fields": [
@@ -258,7 +277,42 @@
         {
           "fieldPath": "createdAt",
           "order": "DESCENDING"
->>>>>>> theirs
+        }
+      ]
+    },
+    {
+      "collectionGroup": "workspaces",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "plan",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billingStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "supportTickets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "type",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
         }
       ]
     }

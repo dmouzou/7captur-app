@@ -104,3 +104,9 @@ export const createDecisionInput = z.object({
   workspaceId: z.string().min(1).max(128),
   recommendationId: z.string().min(1).max(128),
 });
+
+export const deleteDecisionInput = z.object({
+  workspaceId: z.string().min(1).max(128),
+  decisionId: z.string().min(1).max(160),
+});
+export type DeleteDecisionInput = z.infer<typeof deleteDecisionInput>;

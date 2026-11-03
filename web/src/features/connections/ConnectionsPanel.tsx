@@ -36,11 +36,15 @@ export function ConnectionsPanel() {
 
   const active = conns.filter((c) => c.status === "connected" || c.status === "needs_reconnect");
 
-  async function sync(id: string, quiet = false) {
+  async function sync(id: string, quiet = false, fullResync = false) {
     setError(""); if (!quiet) setNote(""); setBusy(`sync_${id}`);
     const google = conns.find((c) => c.id === id)?.provider === "google_ads";
     try {
-      const r = await httpsCallable<unknown, { upserted: number }>(functions, google ? "syncGoogleAdsNow" : "syncShopifyNow")({ workspaceId: ws.workspaceId, connectionId: id });
+      const r = await httpsCallable<unknown, { upserted: number }>(functions, google ? "syncGoogleAdsNow" : "syncShopifyNow")({
+        workspaceId: ws.workspaceId,
+        connectionId: id,
+        fullResync,
+      });
       setNote(`Synced ${r.data.upserted} ${google ? "daily campaign record" : "order"}${r.data.upserted === 1 ? "" : "s"}.`);
     } catch (e) { setError((e as { message?: string }).message ?? "Sync failed."); }
     finally { setBusy(""); }
@@ -115,7 +119,14 @@ export function ConnectionsPanel() {
               <strong>{c.label}</strong> · {c.status === "connected" ? "Connected" : "Needs reconnecting"}
               <div className="muted">{c.lastSyncedMs ? `Last synced ${new Date(c.lastSyncedMs).toLocaleString()}` : "Not synced yet"}{c.partial ? " · more history is still being read" : ""}</div>
               {c.lastError && <div className="error">{c.lastError}</div>}
-              {c.status === "connected" && <button type="button" disabled={!!busy} onClick={() => sync(c.id)}>Sync now</button>}{" "}
+              {c.status === "connected" && (
+                <>
+                  <button type="button" disabled={!!busy} onClick={() => sync(c.id)}>Sync now</button>{" "}
+                  {c.provider === "shopify" && (
+                    <button type="button" className="btn-secondary" disabled={!!busy} onClick={() => sync(c.id, false, true)} title="Re-fetch all orders from Shopify">Full Resync</button>
+                  )}{" "}
+                </>
+              )}
               <button type="button" className="btn-secondary" disabled={!!busy} onClick={() => disconnect(c)}>Disconnect</button>
             </li>
           ))}

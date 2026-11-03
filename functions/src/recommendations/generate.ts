@@ -53,7 +53,7 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
   if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
   const parsed = generateRecommendationInput.safeParse(request.data);
   if (!parsed.success) throw new HttpsError("invalid-argument", "Invalid request.");
-  const { workspaceId, businessId, requestId } = parsed.data;
+  const { workspaceId, businessId, requestId, overrideSafetyNet } = parsed.data;
 
   const db = getFirestore();
   await requireMember(db, workspaceId, uid, true);
@@ -64,6 +64,66 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
   const biz = await db.doc(`workspaces/${workspaceId}/businesses/${businessId}`).get();
   const ws = await db.doc(`workspaces/${workspaceId}`).get();
   if (!biz.exists || !ws.exists) throw new HttpsError("not-found", "Business not found.");
+
+  const today = localToday(new Date(), ws.data()!.timezone);
+  const from = addDays(today, -(WINDOW_DAYS - 1));
+  const [posts, promotions, leads, sales, costs] = await Promise.all(
+    (["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => loadWindow(db, workspaceId, businessId, c, from, today))
+  );
+
+  // Safety net: check for recent recommendation (<30 min), zero data, or no new data since last recommendation
+  if (!overrideSafetyNet) {
+    const lastRecSnap = await db.collection(`workspaces/${workspaceId}/recommendations`)
+      .orderBy("createdAt", "desc")
+      .limit(1)
+      .get()
+      .catch(() => null);
+
+    let lastRecTime: number | null = null;
+    if (lastRecSnap && !lastRecSnap.empty) {
+      const lastRecDoc = lastRecSnap.docs[0];
+      const createdTs = lastRecDoc.data().createdAt;
+      const ms = createdTs?.toMillis ? createdTs.toMillis() : createdTs ? new Date(createdTs).getTime() : 0;
+      if (ms > 0) {
+        lastRecTime = ms;
+        const diffMinutes = Math.max(0, Math.round((Date.now() - ms) / 60000));
+        if (Date.now() - ms < 30 * 60 * 1000) {
+          throw new HttpsError(
+            "failed-precondition",
+            `A recommendation was generated ${diffMinutes <= 1 ? "just now" : `${diffMinutes} minutes ago`}. We recommend reviewing existing recommendations before generating a new one.`,
+            { reason: "recent_recommendation", minutesAgo: diffMinutes }
+          );
+        }
+      }
+    }
+
+    const totalRecords = posts.rows.length + promotions.rows.length + leads.rows.length + sales.rows.length + costs.rows.length;
+    if (totalRecords === 0) {
+      throw new HttpsError(
+        "failed-precondition",
+        "No marketing, enquiry, sales, or cost records were found in the 28-day window. Generating without data will lack actionable calibration.",
+        { reason: "no_records" }
+      );
+    }
+
+    if (lastRecTime !== null) {
+      let newestRecordMs = 0;
+      for (const set of [posts.rows, promotions.rows, leads.rows, sales.rows, costs.rows]) {
+        for (const row of set as Array<{ createdAt?: { toMillis?: () => number } | string | number }>) {
+          const raw = row.createdAt;
+          const rMs = (raw as any)?.toMillis ? (raw as any).toMillis() : raw ? new Date(raw as string).getTime() : 0;
+          if (rMs > newestRecordMs) newestRecordMs = rMs;
+        }
+      }
+      if (newestRecordMs > 0 && newestRecordMs <= lastRecTime) {
+        throw new HttpsError(
+          "failed-precondition",
+          "No new records have been added since your last recommendation was generated.",
+          { reason: "no_new_data" }
+        );
+      }
+    }
+  }
 
   const reservation = await reserveRecommendation(db, workspaceId, requestId);
   if (!reservation.ok) {
@@ -86,11 +146,6 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
   if (reservation.duplicate) return { recommendationId: requestId, duplicate: true };
 
   try {
-    const today = localToday(new Date(), ws.data()!.timezone);
-    const from = addDays(today, -(WINDOW_DAYS - 1));
-    const [posts, promotions, leads, sales, costs] = await Promise.all(
-      (["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => loadWindow(db, workspaceId, businessId, c, from, today))
-    );
     const b = biz.data()!;
     const [fxSnap, procSnap] = await Promise.all([
       db.doc("config/fx").get(),

@@ -43,6 +43,8 @@ export function DecisionCenter() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
+  const [deleteTarget, setDeleteTarget] = useState<Decision | null>(null);
+
   const today = useMemo(() => localToday(new Date(), ws.timezone), [ws.timezone]);
 
   useEffect(() => onSnapshot(
@@ -122,16 +124,47 @@ export function DecisionCenter() {
 
       {pending.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3>Ready to turn into decisions</h3>
-          <p className="muted" style={{ marginBottom: 12 }}>This uses no extra recommendation credit.</p>
-          {pending.map((r) => (
-            <div key={r.id} style={{ display: "flex", gap: 12, justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid var(--line)", flexWrap: "wrap" }}>
-              <span style={{ flex: "1 1 240px", color: "var(--ink)" }}>{r.action}</span>
-              <button type="button" disabled={busy === r.id} onClick={() => call("createDecision", { recommendationId: r.id }, r.id)}>
-                {busy === r.id ? "Working" : "Create decision"}
-              </button>
-            </div>
-          ))}
+          <h3 style={{ marginBottom: 4 }}>Ready to turn into decisions</h3>
+          <p className="muted" style={{ marginBottom: 14 }}>This uses no extra recommendation credit.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {pending.map((r) => {
+              const mode = r.mode || "optimize";
+              return (
+                <div
+                  key={r.id}
+                  className={`action-directive-card mode-${mode}`}
+                  style={{
+                    margin: 0,
+                    display: "flex",
+                    gap: 16,
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    padding: "16px 20px",
+                  }}
+                >
+                  <div style={{ flex: "1 1 260px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span className={`action-directive-badge mode-${mode}`}>
+                        ⚡ ACTION DIRECTIVE • {mode.toUpperCase()}
+                      </span>
+                    </div>
+                    <h4 className="action-directive-text" style={{ fontSize: "1.08rem", margin: 0 }}>
+                      {r.action}
+                    </h4>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy === r.id}
+                    onClick={() => call("createDecision", { recommendationId: r.id }, r.id)}
+                    style={{ padding: "8px 20px", fontSize: 13.5, borderRadius: 8, whiteSpace: "nowrap" }}
+                  >
+                    {busy === r.id ? "Working…" : "Review Decision"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -153,11 +186,132 @@ export function DecisionCenter() {
                 currency={ws.currency}
                 busy={busy}
                 call={call}
+                onDelete={(target) => setDeleteTarget(target)}
               />
             ))}
           </div>
         </div>
       ))}
+
+      {/* Confirmation Modal for Deleting Decision */}
+      {deleteTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.65)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 480,
+              width: "100%",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.35)",
+              border: "1px solid var(--danger-line, rgba(239, 68, 68, 0.4))",
+              background: "var(--surface)",
+              color: "var(--ink)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  background: "rgba(239, 68, 68, 0.15)",
+                  color: "#ef4444",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <h3 style={{ margin: 0, fontSize: "1.2rem", color: "var(--ink)" }}>Delete Decision?</h3>
+            </div>
+
+            <p style={{ margin: "0 0 14px", color: "var(--ink)", lineHeight: 1.5 }}>
+              Are you sure you want to permanently delete this decision?
+            </p>
+
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 8,
+                background: "var(--surface-subtle)",
+                border: "1px solid var(--border)",
+                marginBottom: 16,
+              }}
+            >
+              <strong style={{ display: "block", color: "var(--ink)", marginBottom: 4 }}>
+                {deleteTarget.headline}
+              </strong>
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                Queue: {QUEUE_TITLE[deleteTarget.queueStatus]} · Scheduled review: {deleteTarget.reviewOn}
+              </span>
+            </div>
+
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                marginBottom: 20,
+                fontSize: 12.5,
+                color: "var(--ink)",
+                lineHeight: 1.45,
+              }}
+            >
+              <strong>⚠️ Warning:</strong> This will remove the decision, its execution progress, and its follow-up question history from your review queues and track record.
+              Your underlying commercial records and recommendation history will remain safe and untouched. This action cannot be undone.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={busy === `${deleteTarget.id}:delete`}
+                onClick={() => setDeleteTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy === `${deleteTarget.id}:delete`}
+                onClick={async () => {
+                  await call("deleteDecision", { decisionId: deleteTarget.id }, `${deleteTarget.id}:delete`);
+                  setDeleteTarget(null);
+                }}
+                style={{
+                  background: "#dc2626",
+                  color: "#ffffff",
+                  borderColor: "#dc2626",
+                  fontWeight: 600,
+                }}
+              >
+                {busy === `${deleteTarget.id}:delete` ? "Deleting…" : "Delete Decision"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -169,6 +323,7 @@ function DecisionCard({
   currency,
   busy,
   call,
+  onDelete,
 }: {
   d: Decision;
   records: ReviewRecords;
@@ -176,6 +331,7 @@ function DecisionCard({
   currency: string;
   busy: string;
   call: (n: string, p: object, k: string) => Promise<void>;
+  onDelete: (d: Decision) => void;
 }) {
   const [follow, setFollow] = useState("followed_fully");
   const [note, setNote] = useState("");
@@ -209,14 +365,50 @@ function DecisionCard({
     }
   }, [sufficiency]);
 
+  const cardMode = d.queueStatus === "act" ? "optimize" : d.queueStatus === "investigate" ? "improve" : "explore";
+
   return (
     <article className="card">
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-        <span className={QUALITY_BADGE[d.evidenceQuality]}>Evidence: {d.evidenceQuality}</span>
-        <span className="badge">Review by {d.reviewOn}</span>
-        {d.response !== "pending" && <span className="badge badge-primary">{LABEL[d.response]}</span>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className={QUALITY_BADGE[d.evidenceQuality]}>Evidence: {d.evidenceQuality}</span>
+          <span className="badge">Review by {d.reviewOn}</span>
+          {d.response !== "pending" && <span className="badge badge-primary">{LABEL[d.response]}</span>}
+        </div>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => onDelete(d)}
+          disabled={busy === `${d.id}:delete`}
+          style={{
+            fontSize: 12,
+            padding: "4px 10px",
+            color: "var(--danger, #ef4444)",
+            borderColor: "var(--danger-line, rgba(239, 68, 68, 0.3))",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+          title="Delete this decision"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+          Delete
+        </button>
       </div>
-      <h3 style={{ marginBottom: 8 }}>{d.headline}</h3>
+
+      <div className={`action-directive-card mode-${cardMode}`} style={{ margin: "0 0 16px", padding: "16px 18px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+          <span className={`action-directive-badge mode-${cardMode}`}>
+            ⚡ DECISION DIRECTIVE • {QUEUE_TITLE[d.queueStatus].toUpperCase()}
+          </span>
+          <span className="action-directive-sub">Strategic Priority</span>
+        </div>
+        <h3 className="action-directive-text" style={{ fontSize: "1.24rem" }}>{d.headline}</h3>
+      </div>
+
       <p><strong style={{ color: "var(--ink)" }}>Next step:</strong> {d.nextStep}</p>
 
       <details style={{ marginTop: 14 }}>

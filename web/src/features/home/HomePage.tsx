@@ -957,6 +957,7 @@ export function HomePage() {
           {/* Detailed Section Panels */}
           {tab === "recommendations" && (
             <RecommendationsPanel
+              onNavigate={(t) => setTab(t as Tab)}
               onReportIssue={(recId) => {
                 setHelpRecId(recId);
                 setTab("help");
