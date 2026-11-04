@@ -11,6 +11,7 @@ import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../../services/firebase";
 import { Logo } from "../../components/Logo";
 import { ThemeToggle } from "../../components/ThemeContext";
+import { APPLE_SIGNIN_ENABLED, appleProvider } from "../../services/authProviders";
 
 type Mode = "signin" | "signup" | "reset";
 
@@ -104,11 +105,11 @@ export function AuthPage() {
     }
   }
 
-  async function google() {
+  async function social(provider: "google" | "apple") {
     setError("");
     setBusy(true);
     try {
-      const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+      const cred = await signInWithPopup(auth, provider === "apple" ? appleProvider() : new GoogleAuthProvider());
       const uRef = doc(db, "users", cred.user.uid);
       const snap = await getDoc(uRef);
       if (!snap.exists()) {
@@ -121,12 +122,15 @@ export function AuthPage() {
         });
       }
     } catch (err: unknown) {
-      console.error("Google sign-in error:", err);
+      const code = (err as { code?: string })?.code;
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return;
+      console.error(`${provider} sign-in error:`, err);
       setError(getErrorMessage(err));
     } finally {
       setBusy(false);
     }
   }
+  const google = () => social("google");
 
   return (
     <div
@@ -234,6 +238,21 @@ export function AuthPage() {
                 </svg>
                 Continue with Google
               </button>
+
+              {APPLE_SIGNIN_ENABLED && (
+                <button
+                  type="button"
+                  onClick={() => social("apple")}
+                  disabled={busy}
+                  className="btn-secondary"
+                  style={{ width: "100%", padding: "12px 16px", fontSize: 14, fontWeight: 600, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "10px 0 0" }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M16.37 12.6c-.02-2.3 1.88-3.4 1.97-3.46-1.07-1.57-2.74-1.78-3.33-1.8-1.42-.14-2.77.84-3.49.84-.72 0-1.83-.82-3.01-.8-1.55.02-2.98.9-3.78 2.28-1.61 2.8-.41 6.94 1.16 9.21.77 1.11 1.69 2.36 2.89 2.31 1.16-.05 1.6-.75 3-.75 1.4 0 1.8.75 3.03.73 1.25-.02 2.04-1.13 2.8-2.25.88-1.29 1.24-2.54 1.26-2.6-.03-.01-2.42-.93-2.5-3.71zM14.1 5.8c.64-.78 1.07-1.85.95-2.92-.92.04-2.04.61-2.7 1.39-.59.69-1.11 1.78-.97 2.83 1.03.08 2.08-.52 2.72-1.3z" />
+                  </svg>
+                  Continue with Apple
+                </button>
+              )}
 
               <div
                 style={{

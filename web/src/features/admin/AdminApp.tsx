@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { EmailAuthProvider, GoogleAuthProvider, reauthenticateWithCredential, reauthenticateWithPopup, signOut } from "firebase/auth";
+import { EmailAuthProvider, reauthenticateWithCredential, signOut } from "firebase/auth";
+import { reauthWithSocial } from "../../services/authProviders";
 import { httpsCallable } from "firebase/functions";
 import { auth, functions } from "../../services/firebase";
 import { AuthPage } from "../auth/AuthPage";
@@ -143,7 +144,7 @@ function PagedTable({ r, cols, onRow, empty }: { r: ReturnType<typeof usePaged>;
 async function reauth(password: string) {
   const user = auth.currentUser!;
   if (user.providerData.some((p) => p.providerId === "password")) await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email!, password));
-  else await reauthenticateWithPopup(user, new GoogleAuthProvider());
+  else await reauthWithSocial(user);
   await user.getIdToken(true);
 }
 

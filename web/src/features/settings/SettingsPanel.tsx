@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { EmailAuthProvider, GoogleAuthProvider, reauthenticateWithCredential, reauthenticateWithPopup } from "firebase/auth";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { reauthWithSocial } from "../../services/authProviders";
 import { useAuth } from "../auth/AuthProvider";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../../services/firebase";
@@ -51,7 +52,7 @@ export function SettingsPanel() {
       if (usesPassword) {
         if (!user.email || !password) { setDelErr("Enter your password to confirm."); return; }
         await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
-      } else await reauthenticateWithPopup(user, new GoogleAuthProvider());
+      } else await reauthWithSocial(user);
       await user.getIdToken(true);
       await httpsCallable(functions, "requestAccountDeletion")({ workspaceId: ws.workspaceId });
       setPassword(""); setConfirmText("");
