@@ -167,11 +167,9 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
     if (dropped > 0) rec.evidence.warnings.push(`${dropped} record(s) had invalid values and were ignored.`);
 
     // Optional AI phrasing. Never blocks or fails the recommendation; rejected output is dropped.
-    let secretKey: string | undefined;
-    try { secretKey = ANTHROPIC_API_KEY.value(); } catch { secretKey = undefined; }
     let ai = null;
     try {
-      ai = await explainWithAI(rec, secretKey);
+      ai = await explainWithAI(rec);
     } catch (aiErr) {
       logger.warn("explainWithAI caught non-fatal error", { err: String(aiErr) });
     }

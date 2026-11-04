@@ -1,5 +1,6 @@
 import type { Recommendation } from "../shared/recommendation";
-import { getActiveAiConfig, DEFAULT_AI_MODEL } from "../config/aiConfig";
+import { getActiveAiConfig, DEFAULT_AI_MODEL, normalizeAiModel } from "../config/aiConfig";
+import { logger } from "firebase-functions/v2";
 
 export const PROMPT_VERSION = "explain-v2";
 export const DEFAULT_MODEL = DEFAULT_AI_MODEL;
@@ -55,14 +56,18 @@ export async function explainWithAI(
   rec: Recommendation, passedApiKey?: string, opts: { model?: string; fetchImpl?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<AiResult | null> {
   const f = opts.fetchImpl ?? fetch;
-  let apiKey = passedApiKey;
+  let apiKey = passedApiKey?.trim();
   let model = opts.model;
-  if (!apiKey || apiKey.trim() === "" || !apiKey.startsWith("sk-")) {
+  if (!apiKey) {
     const cfg = await getActiveAiConfig();
     apiKey = cfg.apiKey;
     model = model ?? cfg.model;
   }
-  model = model ?? DEFAULT_MODEL;
+  if (!apiKey) {
+    logger.warn("explainWithAI: no Anthropic API key configured (checked config/ai, secret, and env)");
+    return null;
+  }
+  model = normalizeAiModel(model ?? DEFAULT_MODEL);
   const { system, user } = buildPrompt(rec);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -73,14 +78,22 @@ export async function explainWithAI(
         signal: AbortSignal.timeout(opts.timeoutMs ?? 8000),
       });
       if (res.status === 429 || res.status >= 500) { await new Promise((r) => setTimeout(r, 400 * (attempt + 1))); continue; }
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        logger.warn("explainWithAI: Anthropic API returned non-200", { status: res.status, error: errText, model });
+        return null;
+      }
       const body = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       const raw = body.content?.find((c) => c.type === "text")?.text ?? "";
       const json = JSON.parse(raw.replace(/^```(?:json)?|```$/g, "").trim()) as { summary?: unknown };
       const text = validateSummary(json.summary, rec);
-      if (!text) return null;
+      if (!text) {
+        logger.warn("explainWithAI: summary failed fail-closed validation", { rawSummary: json.summary });
+        return null;
+      }
       return { text, model, promptVersion: PROMPT_VERSION, inputTokens: body.usage?.input_tokens, outputTokens: body.usage?.output_tokens };
-    } catch {
+    } catch (e) {
+      logger.warn("explainWithAI: request caught error", { err: String(e), attempt });
       if (attempt === 1) return null;
     }
   }

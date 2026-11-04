@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { signOut } from "firebase/auth";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
 import { auth, db } from "../../services/firebase";
 import { RecordsPanel } from "../records/RecordsPanel";
 import { ImportPanel } from "../imports/ImportPanel";
@@ -21,6 +21,10 @@ import { Logo } from "../../components/Logo";
 import { ThemeToggle } from "../../components/ThemeContext";
 import { AccountPreferencesPanel } from "../account/AccountPreferencesPanel";
 import { GlobalSearchModal } from "../search/GlobalSearchModal";
+import { evaluateHomeBanner } from "../../shared/homeBanner";
+import { AddHub } from "../add/AddHub";
+import { UnderstandPanel } from "../understand/UnderstandPanel";
+import { AssistantPanel } from "../chat/AssistantPanel";
 
 function useCollectionCount(coll: string) {
   const ws = useWorkspace();
@@ -36,8 +40,15 @@ function useCollectionCount(coll: string) {
   return count;
 }
 
-type Tab =
+export type Tab =
   | "overview"
+  | "add"
+  | "add/connect"
+  | "add/import"
+  | "add/manual"
+  | "add/connect/shopify"
+  | "understand"
+  | "decide"
   | "recommendations"
   | "decisions"
   | "reports"
@@ -67,20 +78,172 @@ interface NavGroup {
 export function HomePage() {
   const ws = useWorkspace();
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("shopify") || params.has("googleads")) return "connections";
+  const getTabFromPath = (): Tab => {
+    const p = window.location.pathname.replace(/^\/w\/[^/]+/, "");
+    const search = new URLSearchParams(window.location.search);
+    if (search.has("shopify") || search.has("googleads")) return "connections";
+    if (p === "/add" || p.startsWith("/add")) {
+      if (p === "/add/connect") return "add/connect";
+      if (p === "/add/connect/shopify") return "add/connect/shopify";
+      if (p === "/add/import") return "import";
+      if (p === "/add/manual") return "add/manual";
+      return "add";
+    }
+    if (p === "/understand") return "understand";
+    if (p === "/decide" || p.startsWith("/decide")) return "decisions";
+    if (p.startsWith("/data/")) {
+      const type = p.replace("/data/", "") as Tab;
+      if (["sales", "leads", "costs", "posts", "promotions"].includes(type)) return type;
+      return "sales";
+    }
+    if (p === "/data") return "sales";
+    if (p === "/account") return "account";
+    if (p === "/reports") return "reports";
+    if (p === "/billing") return "billing";
+    if (p === "/settings") return "settings";
+    if (p === "/notifications") return "notifications";
+    if (p === "/help") return "help";
     return "overview";
-  });
+  };
+
+  const [tab, setTab] = useState<Tab>(() => getTabFromPath());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [helpRecId, setHelpRecId] = useState<string | undefined>();
+  const [connections, setConnections] = useState<any[]>([]);
+  const [unviewedRecs, setUnviewedRecs] = useState<number>(0);
+  const [lastRecordTime, setLastRecordTime] = useState<number | null>(null);
+
   const unread = useUnreadCount();
   const leadsCount = useCollectionCount("leads");
   const salesCount = useCollectionCount("sales");
   const costsCount = useCollectionCount("costs");
   const postsCount = useCollectionCount("posts");
+  const promotionsCount = useCollectionCount("promotions");
+  const recordCounts = {
+    leads: leadsCount,
+    sales: salesCount,
+    costs: costsCount,
+    posts: postsCount,
+    promotions: promotionsCount,
+  };
+
+  const totalRecords =
+    (leadsCount ?? 0) + (salesCount ?? 0) + (costsCount ?? 0) + (postsCount ?? 0) + (promotionsCount ?? 0);
+
+  // Sync back/forward browser history
+  useEffect(() => {
+    function onPopState() {
+      setTab(getTabFromPath());
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  // Listen to connections to detect broken or revoked credentials (Section 8 Rule 2)
+  useEffect(() => {
+    if (!ws.workspaceId) return;
+    return onSnapshot(
+      collection(db, `workspaces/${ws.workspaceId}/connections`),
+      (s) => {
+        setConnections(s.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      () => setConnections([])
+    );
+  }, [ws.workspaceId]);
+
+  // Listen to unviewed recommendations (Section 8 Rule 4)
+  useEffect(() => {
+    if (!ws.workspaceId) return;
+    return onSnapshot(
+      query(collection(db, `workspaces/${ws.workspaceId}/recommendations`), limit(20)),
+      (s) => {
+        const unviewed = s.docs.filter((d) => !d.data().viewedAt && d.data().status !== "dismissed").length;
+        setUnviewedRecs(unviewed);
+      },
+      () => setUnviewedRecs(0)
+    );
+  }, [ws.workspaceId]);
+
+  // Track latest record/sync timestamp across connections & records (Section 8 Rule 3)
+  useEffect(() => {
+    let latest = 0;
+    for (const c of connections) {
+      const ms = c.lastSyncedAt?.toMillis?.() ?? null;
+      if (ms && ms > latest) latest = ms;
+    }
+    if (latest > 0) {
+      setLastRecordTime((prev) => Math.max(prev ?? 0, latest));
+    }
+  }, [connections]);
+
+  useEffect(() => {
+    if (!ws.workspaceId || !ws.businessId) return;
+    return onSnapshot(
+      query(collection(db, `workspaces/${ws.workspaceId}/sales`), where("businessId", "==", ws.businessId), limit(5)),
+      (s) => {
+        let maxMs = 0;
+        s.forEach((doc) => {
+          const d = doc.data();
+          const ms = d.createdAt?.toMillis?.() || (d.date ? new Date(d.date).getTime() : 0);
+          if (ms > maxMs) maxMs = ms;
+        });
+        if (maxMs > 0) {
+          setLastRecordTime((prev) => Math.max(prev ?? 0, maxMs));
+        }
+      },
+      () => {}
+    );
+  }, [ws.workspaceId, ws.businessId]);
+
+  // Compute deterministic home banner (Section 8)
+  const homeBanner = evaluateHomeBanner({
+    totalRecords,
+    connections: connections.map((c) => ({
+      id: c.id,
+      provider: c.provider || "shopify",
+      label: c.label || c.shop || c.accountName || c.provider,
+      status: c.status,
+      lastSyncedMs: c.lastSyncedAt?.toMillis?.() ?? null,
+    })),
+    staleThresholdDays: 14,
+    lastRecordOrSyncMs: lastRecordTime,
+    nowMs: Date.now(),
+    unviewedRecommendationsCount: unviewedRecs,
+  });
+
+  function handleNavigate(route: string) {
+    let nextTab: Tab = "overview";
+    if (route === "/" || route === "/overview" || route === "") nextTab = "overview";
+    else if (route === "/add") nextTab = "add";
+    else if (route === "/add/connect") nextTab = "add/connect";
+    else if (route === "/add/connect/shopify") nextTab = "add/connect/shopify";
+    else if (route === "/add/import" || route === "/import") nextTab = "import";
+    else if (route === "/add/manual") nextTab = "add/manual";
+    else if (route === "/understand") nextTab = "understand";
+    else if (route === "/decide" || route === "/decisions") nextTab = "decisions";
+    else if (route === "/recommendations") nextTab = "recommendations";
+    else if (route === "/data" || route === "/data/sales" || route === "sales") nextTab = "sales";
+    else if (route === "/data/leads" || route === "leads") nextTab = "leads";
+    else if (route === "/data/costs" || route === "costs") nextTab = "costs";
+    else if (route === "/data/posts" || route === "posts") nextTab = "posts";
+    else if (route === "/data/promotions" || route === "promotions") nextTab = "promotions";
+    else if (route === "/connections") nextTab = "connections";
+    else if (route === "/account") nextTab = "account";
+    else if (route === "/reports") nextTab = "reports";
+    else if (route === "/billing") nextTab = "billing";
+    else if (route === "/settings") nextTab = "settings";
+    else if (route === "/notifications") nextTab = "notifications";
+    else if (route === "/help") nextTab = "help";
+
+    setTab(nextTab);
+    const url = route.startsWith("/") ? route : `/${route}`;
+    if (window.location.pathname !== url) {
+      window.history.pushState({}, "", url);
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -95,11 +258,11 @@ export function HomePage() {
 
   const navGroups: NavGroup[] = [
     {
-      title: "Executive Intelligence",
+      title: "Core Operations",
       items: [
         {
           id: "overview",
-          name: "Dashboard",
+          name: "Home",
           icon: (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="9" />
@@ -110,44 +273,45 @@ export function HomePage() {
           ),
         },
         {
-          id: "recommendations",
-          name: "Recommendations",
+          id: "add",
+          name: "Add Data",
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          ),
+        },
+        {
+          id: "understand",
+          name: "Understand",
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4" />
+              <path d="M12 8h.01" />
+            </svg>
+          ),
+        },
+        {
+          id: "decisions",
+          name: "Decide",
+          badge: unviewedRecs > 0 ? unviewedRecs : undefined,
           icon: (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
           ),
         },
-        {
-          id: "decisions",
-          name: "Decision Center",
-          icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 11l3 3L22 4" />
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-            </svg>
-          ),
-        },
-        {
-          id: "reports",
-          name: "Weekly Summary",
-          icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-          ),
-        },
       ],
     },
     {
-      title: "Commercial Records",
+      title: "Your Data",
       items: [
         {
           id: "leads",
           name: "Enquiries & Leads",
+          badge: leadsCount !== null ? String(leadsCount) : undefined,
           icon: (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -160,6 +324,7 @@ export function HomePage() {
         {
           id: "sales",
           name: "Sales & Revenue",
+          badge: salesCount !== null ? String(salesCount) : undefined,
           icon: (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="1" x2="12" y2="23" />
@@ -170,6 +335,7 @@ export function HomePage() {
         {
           id: "costs",
           name: "Costs & Spend",
+          badge: costsCount !== null ? String(costsCount) : undefined,
           icon: (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
@@ -180,6 +346,7 @@ export function HomePage() {
         {
           id: "posts",
           name: "Marketing Posts",
+          badge: postsCount !== null ? String(postsCount) : undefined,
           icon: (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -189,36 +356,11 @@ export function HomePage() {
         {
           id: "promotions",
           name: "Promotions & Ads",
+          badge: promotionsCount !== null ? String(promotionsCount) : undefined,
           icon: (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
               <line x1="7" y1="7" x2="7.01" y2="7" />
-            </svg>
-          ),
-        },
-      ],
-    },
-    {
-      title: "Data Pipeline",
-      items: [
-        {
-          id: "import",
-          name: "Import CSV Data",
-          icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          ),
-        },
-        {
-          id: "connections",
-          name: "Connected Integrations",
-          icon: (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
             </svg>
           ),
         },
@@ -235,6 +377,18 @@ export function HomePage() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+          ),
+        },
+        {
+          id: "reports",
+          name: "Weekly Summary",
+          icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
             </svg>
           ),
         },
@@ -340,7 +494,7 @@ export function HomePage() {
             <input
               type="text"
               readOnly
-              placeholder="Search records, recommendations, metrics... (⌘K)"
+              placeholder="Search records, metrics... (⌘K)"
               style={{
                 paddingLeft: 36,
                 paddingRight: 14,
@@ -364,7 +518,7 @@ export function HomePage() {
           <button
             type="button"
             className="btn-secondary"
-            onClick={() => setTab("notifications")}
+            onClick={() => handleNavigate("/notifications")}
             style={{
               position: "relative",
               width: 38,
@@ -394,9 +548,9 @@ export function HomePage() {
             )}
           </button>
 
-          {/* User Profile Pill -> Navigates to Account & Preferences tab (no window) */}
+          {/* User Profile Pill -> Navigates to Account & Preferences tab */}
           <div
-            onClick={() => setTab("account")}
+            onClick={() => handleNavigate("/account")}
             title="Account & Preferences"
             style={{
               display: "flex",
@@ -421,7 +575,7 @@ export function HomePage() {
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 12,
-                fontWeight: 700,
+                fontWeight: 500,
               }}
             >
               {user?.email?.charAt(0).toUpperCase() || "U"}
@@ -473,14 +627,36 @@ export function HomePage() {
               <div className="nav-group-title">{group.title}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                 {group.items.map((item) => {
-                  const isActive = tab === item.id;
+                  const isActive =
+                    item.id === "add"
+                      ? tab.startsWith("add") || tab === "import"
+                      : item.id === "decisions"
+                      ? tab === "decisions" || tab === "decide" || tab === "recommendations"
+                      : tab === item.id;
                   return (
                     <button
                       key={item.id}
                       type="button"
                       className={`nav-item ${isActive ? "active" : ""}`}
                       onClick={() => {
-                        setTab(item.id);
+                        const routeMap: Record<string, string> = {
+                          overview: "/",
+                          add: "/add",
+                          understand: "/understand",
+                          decisions: "/decide",
+                          leads: "/data/leads",
+                          sales: "/data/sales",
+                          costs: "/data/costs",
+                          posts: "/data/posts",
+                          promotions: "/data/promotions",
+                          notifications: "/notifications",
+                          reports: "/reports",
+                          billing: "/billing",
+                          settings: "/settings",
+                          account: "/account",
+                          help: "/help",
+                        };
+                        handleNavigate(routeMap[item.id] || `/${item.id}`);
                         setMobileNavOpen(false);
                       }}
                     >
@@ -529,10 +705,7 @@ export function HomePage() {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span className="badge badge-primary">Starter Trial</span>
                 <span style={{ fontSize: 13.5, fontWeight: 500 }}>
-                  {ws.trialEndsAtMs
-                    ? Math.max(0, Math.ceil((ws.trialEndsAtMs - Date.now()) / (24 * 60 * 60 * 1000)))
-                    : 14}{" "}
-                  days remaining in your 14-day free trial.
+                  {ws.daysLeft} {ws.daysLeft === 1 ? "day" : "days"} remaining in your 14-day free trial.
                 </span>
               </div>
               <button
@@ -638,15 +811,83 @@ export function HomePage() {
             </div>
           )}
 
-          {/* Overview Dashboard Tab (Image 5 Inspiration) */}
+          {/* Overview Dashboard Tab */}
           {tab === "overview" && (
             <div>
+              {/* Deterministic Section 8 Priority Banner */}
+              {homeBanner && (() => {
+                const severity =
+                  homeBanner.rule === 2
+                    ? "danger"
+                    : homeBanner.rule === 3
+                    ? "warning"
+                    : homeBanner.rule === 5
+                    ? "success"
+                    : "primary";
+                return (
+                  <div
+                    className="card"
+                    style={{
+                      padding: "16px 20px",
+                      marginBottom: 24,
+                      borderRadius: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      flexWrap: "wrap",
+                      background:
+                        severity === "danger"
+                          ? "rgba(239, 68, 68, 0.08)"
+                          : severity === "warning"
+                          ? "rgba(245, 158, 11, 0.08)"
+                          : severity === "success"
+                          ? "rgba(34, 197, 94, 0.08)"
+                          : "var(--surface-subtle)",
+                      borderLeft: `4px solid ${
+                        severity === "danger"
+                          ? "var(--danger, #ef4444)"
+                          : severity === "warning"
+                          ? "var(--warning, #f59e0b)"
+                          : severity === "success"
+                          ? "var(--success, #22c55e)"
+                          : "var(--accent-fill)"
+                      }`,
+                    }}
+                    role="status"
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 260 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          className={`badge badge-${severity}`}
+                          style={{ fontSize: 11, textTransform: "uppercase" }}
+                        >
+                          Priority {homeBanner.rule}
+                        </span>
+                        <span style={{ fontSize: 14.5, fontWeight: 500, color: "var(--text)" }}>{homeBanner.title}</span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 13, color: "var(--text-dim)", lineHeight: 1.4 }}>
+                        {homeBanner.subtitle}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary"
+                      style={{ margin: 0, padding: "8px 16px", fontSize: 13 }}
+                      onClick={() => handleNavigate(homeBanner.ctaRoute)}
+                    >
+                      {homeBanner.ctaText} →
+                    </button>
+                  </div>
+                );
+              })()}
+
               {/* Executive Welcome Banner */}
               <div
                 className="card"
                 style={{
-                  padding: "32px 36px",
-                  marginBottom: 28,
+                  padding: "30px 32px",
+                  marginBottom: 24,
                   background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)",
                   border: "1px solid var(--border)",
                   position: "relative",
@@ -660,105 +901,18 @@ export function HomePage() {
                       {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
                     </span>
                   </div>
-                  <h1 style={{ fontSize: "1.9rem", marginBottom: 8 }}>
+                  <h1 style={{ fontSize: "1.85rem", marginBottom: 8, fontWeight: 500 }}>
                     Welcome, {user?.displayName || user?.email?.split("@")[0] || "Partner"}
                   </h1>
-                  <p className="muted" style={{ maxWidth: 650, fontSize: 15, margin: 0 }}>
+                  <p className="muted" style={{ maxWidth: 650, fontSize: 14.5, margin: 0 }}>
                     Here is your marketing intelligence overview. Track commercials, analyze campaign impact, and decide your next high-ROI moves.
                   </p>
                 </div>
               </div>
 
-              {/* 4 Core Commercial Metric Cards */}
-              <div className="dashboard-metrics-grid">
-                <div
-                  className="card"
-                  style={{
-                    padding: "20px 22px",
-                    cursor: "pointer",
-                    transition: "transform 0.15s, border-color 0.15s",
-                  }}
-                  onClick={() => setTab("leads")}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Enquiries & Leads</span>
-                    <Icon name="users" size={18} accent />
-                  </div>
-                  <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
-                    {leadsCount ?? 0}
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
-                    View enquiries →
-                  </span>
-                </div>
-
-                <div
-                  className="card"
-                  style={{
-                    padding: "20px 22px",
-                    cursor: "pointer",
-                    transition: "transform 0.15s, border-color 0.15s",
-                  }}
-                  onClick={() => setTab("sales")}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Sales & Orders</span>
-                    <Icon name="money" size={18} accent />
-                  </div>
-                  <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
-                    {salesCount ?? 0}
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
-                    View sales logs →
-                  </span>
-                </div>
-
-                <div
-                  className="card"
-                  style={{
-                    padding: "20px 22px",
-                    cursor: "pointer",
-                    transition: "transform 0.15s, border-color 0.15s",
-                  }}
-                  onClick={() => setTab("costs")}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Ad Spend & Costs</span>
-                    <Icon name="card" size={18} accent />
-                  </div>
-                  <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
-                    {costsCount ?? 0}
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
-                    View cost records →
-                  </span>
-                </div>
-
-                <div
-                  className="card"
-                  style={{
-                    padding: "20px 22px",
-                    cursor: "pointer",
-                    transition: "transform 0.15s, border-color 0.15s",
-                  }}
-                  onClick={() => setTab("posts")}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>Marketing Posts</span>
-                    <Icon name="megaphone" size={18} accent />
-                  </div>
-                  <div style={{ fontSize: "1.9rem", fontWeight: 700, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
-                    {postsCount ?? 0}
-                  </div>
-                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>
-                    View content posts →
-                  </span>
-                </div>
-              </div>
-
-              {/* 3 Executive Action Cards (matching Image 5 top row) */}
-              <div className="dashboard-actions-grid">
-                {/* Card 1: Next Move */}
+              {/* 3 Primary Action Entry Cards (Add, Understand, Decide) */}
+              <div className="dashboard-actions-grid" style={{ marginBottom: 24 }}>
+                {/* 1. Add Data */}
                 <div
                   className="card"
                   style={{
@@ -767,7 +921,92 @@ export function HomePage() {
                     flexDirection: "column",
                     justifyContent: "space-between",
                   }}
-                  onClick={() => setTab("recommendations")}
+                  onClick={() => handleNavigate("/add")}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: 10,
+                          background: "var(--lime-subtle)",
+                          color: "var(--lime)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                      </div>
+                      <span className="badge badge-success">1. Ingest</span>
+                    </div>
+                    <h3 style={{ fontSize: 16, marginBottom: 6, fontWeight: 500 }}>Add Data</h3>
+                    <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.4 }}>
+                      Connect Shopify or Google Ads, upload CSV files, or enter manual sales & leads records.
+                    </p>
+                  </div>
+                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--lime)" }}>Open Add Hub →</span>
+                  </div>
+                </div>
+
+                {/* 2. Understand Numbers */}
+                <div
+                  className="card"
+                  style={{
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                  }}
+                  onClick={() => handleNavigate("/understand")}
+                >
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: 10,
+                          background: "var(--gold-subtle)",
+                          color: "var(--gold)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="M12 16v-4" />
+                          <path d="M12 8h.01" />
+                        </svg>
+                      </div>
+                      <span className="badge badge-warning">2. Analyze</span>
+                    </div>
+                    <h3 style={{ fontSize: 16, marginBottom: 6, fontWeight: 500 }}>Understand Numbers</h3>
+                    <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.4 }}>
+                      Review data health, freshness, evidence level unlocks, and in-app weekly change summaries.
+                    </p>
+                  </div>
+                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--gold)" }}>Review Insights →</span>
+                  </div>
+                </div>
+
+                {/* 3. Decide Next Moves */}
+                <div
+                  className="card"
+                  style={{
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                  }}
+                  onClick={() => handleNavigate("/decide")}
                 >
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -787,152 +1026,152 @@ export function HomePage() {
                           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                         </svg>
                       </div>
-                      <span className="badge badge-primary">Intelligence</span>
+                      <span className="badge badge-primary">3. Execute</span>
                     </div>
-                    <h3 style={{ fontSize: 16, marginBottom: 6 }}>Predict Next Best Moves</h3>
-                    <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-                      Preview AI recommendations tuned to your {ws.objective?.replace(/_/g, " ") || "business"} goal.
+                    <h3 style={{ fontSize: 16, marginBottom: 6, fontWeight: 500 }}>Decide Next Moves</h3>
+                    <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.4 }}>
+                      High-confidence AI recommendations tuned to hit your {ws.objective?.replace(/_/g, " ") || "business"} goal.
                     </p>
                   </div>
                   <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--primary)" }}>View Recommendations →</span>
-                  </div>
-                </div>
-
-                {/* Card 2: Ingest Fresh Data */}
-                <div
-                  className="card"
-                  style={{
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                  }}
-                  onClick={() => setTab("import")}
-                >
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
-                          background: "var(--lime-subtle)",
-                          color: "var(--lime)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                      </div>
-                      <span className="badge badge-success">Pipeline</span>
-                    </div>
-                    <h3 style={{ fontSize: 16, marginBottom: 6 }}>Sync Sales & Ad Data</h3>
-                    <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-                      Upload CSV exports of orders, leads, ad metrics and creatives to extract metrics automatically.
-                    </p>
-                  </div>
-                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--lime)" }}>Import CSV Data →</span>
-                  </div>
-                </div>
-
-                {/* Card 3: Weekly Automated Health */}
-                <div
-                  className="card"
-                  style={{
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                  }}
-                  onClick={() => setTab("reports")}
-                >
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
-                          background: "var(--gold-subtle)",
-                          color: "var(--gold)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                          <line x1="16" y1="2" x2="16" y2="6" />
-                          <line x1="8" y1="2" x2="8" y2="6" />
-                          <line x1="3" y1="10" x2="21" y2="10" />
-                        </svg>
-                      </div>
-                      <span className="badge badge-warning">Every Monday</span>
-                    </div>
-                    <h3 style={{ fontSize: 16, marginBottom: 6 }}>Weekly Health Digest</h3>
-                    <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-                      Scheduled delivery at 8:00 AM ({ws.timezone}). Summarizes performance and missing telemetry.
-                    </p>
-                  </div>
-                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--gold)" }}>Configure Digest →</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--primary)" }}>Open Decision Center →</span>
                   </div>
                 </div>
               </div>
 
-              {/* Quick Jump Panels */}
+              {/* 4 Core Commercial Metric Cards */}
+              <div className="dashboard-metrics-grid" style={{ marginBottom: 24 }}>
+                <div
+                  className="card"
+                  style={{
+                    padding: "20px 22px",
+                    cursor: "pointer",
+                    transition: "transform 0.15s, border-color 0.15s",
+                  }}
+                  onClick={() => handleNavigate("/data/leads")}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>Enquiries & Leads</span>
+                    <Icon name="users" size={18} accent />
+                  </div>
+                  <div style={{ fontSize: "1.9rem", fontWeight: 500, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
+                    {leadsCount ?? 0}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>
+                    View enquiries →
+                  </span>
+                </div>
+
+                <div
+                  className="card"
+                  style={{
+                    padding: "20px 22px",
+                    cursor: "pointer",
+                    transition: "transform 0.15s, border-color 0.15s",
+                  }}
+                  onClick={() => handleNavigate("/data/sales")}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>Sales & Orders</span>
+                    <Icon name="money" size={18} accent />
+                  </div>
+                  <div style={{ fontSize: "1.9rem", fontWeight: 500, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
+                    {salesCount ?? 0}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>
+                    View sales logs →
+                  </span>
+                </div>
+
+                <div
+                  className="card"
+                  style={{
+                    padding: "20px 22px",
+                    cursor: "pointer",
+                    transition: "transform 0.15s, border-color 0.15s",
+                  }}
+                  onClick={() => handleNavigate("/data/costs")}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>Ad Spend & Costs</span>
+                    <Icon name="card" size={18} accent />
+                  </div>
+                  <div style={{ fontSize: "1.9rem", fontWeight: 500, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
+                    {costsCount ?? 0}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>
+                    View cost records →
+                  </span>
+                </div>
+
+                <div
+                  className="card"
+                  style={{
+                    padding: "20px 22px",
+                    cursor: "pointer",
+                    transition: "transform 0.15s, border-color 0.15s",
+                  }}
+                  onClick={() => handleNavigate("/data/posts")}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span className="muted" style={{ fontSize: 13, fontWeight: 500 }}>Marketing Posts</span>
+                    <Icon name="megaphone" size={18} accent />
+                  </div>
+                  <div style={{ fontSize: "1.9rem", fontWeight: 500, color: "var(--ink)", lineHeight: 1.1, marginBottom: 8 }}>
+                    {postsCount ?? 0}
+                  </div>
+                  <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500 }}>
+                    View content posts →
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Jump Panels: Commercial Record Hub */}
               <div className="card" style={{ padding: "26px 28px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-                  <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Commercial Record Hub</h3>
+                  <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 500 }}>Commercial Record Hub</h3>
                   <span className="muted" style={{ fontSize: 12.5 }}>Direct data management</span>
                 </div>
                 <div className="dashboard-hub-grid">
-                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("leads")}>
+                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => handleNavigate("/data/leads")}>
                     <Icon name="users" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Leads</div>
+                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>Record Leads</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>WhatsApp & DM enquiries</div>
                     </div>
                   </button>
-                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("sales")}>
+                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => handleNavigate("/data/sales")}>
                     <Icon name="money" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Sales</div>
+                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>Record Sales</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Track orders & gross revenue</div>
                     </div>
                   </button>
-                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("costs")}>
+                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => handleNavigate("/data/costs")}>
                     <Icon name="card" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Ad Spend</div>
+                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>Record Ad Spend</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Daily campaign expenditures</div>
                     </div>
                   </button>
-                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("posts")}>
+                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => handleNavigate("/data/posts")}>
                     <Icon name="megaphone" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Record Posts</div>
+                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>Record Posts</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Social media creatives & hooks</div>
                     </div>
                   </button>
-                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("connections")}>
+                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => handleNavigate("/add/connect")}>
                     <Icon name="plug" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Integrations</div>
+                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>Integrations</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Connect Shopify & Google Ads</div>
                     </div>
                   </button>
-                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => setTab("import")}>
+                  <button type="button" className="btn-secondary dashboard-hub-btn" onClick={() => handleNavigate("/add/import")}>
                     <Icon name="upload" size={20} accent />
                     <div style={{ textAlign: "left", minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>Import CSV Data</div>
+                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>Import CSV Data</div>
                       <div className="muted" style={{ fontSize: 11.5 }}>Bulk upload marketing & sales CSVs</div>
                     </div>
                   </button>
@@ -941,50 +1180,148 @@ export function HomePage() {
             </div>
           )}
 
-          {/* Detailed Section Panels */}
+          {/* Add Views */}
+          {tab === "add" && (
+            <AddHub
+              subview="root"
+              onNavigate={handleNavigate}
+              onOpenManualRecord={(coll) => handleNavigate(`/data/${coll}`)}
+            />
+          )}
+          {tab === "add/connect" && (
+            <AddHub
+              subview="connect"
+              onNavigate={handleNavigate}
+            />
+          )}
+          {tab === "add/manual" && (
+            <AddHub
+              subview="manual"
+              onNavigate={handleNavigate}
+              onOpenManualRecord={(coll) => handleNavigate(`/data/${coll}`)}
+            />
+          )}
+          {tab === "add/connect/shopify" && (
+            <AddHub
+              subview="connect.shopify"
+              onNavigate={handleNavigate}
+            />
+          )}
+
+          {/* Understand View */}
+          {tab === "understand" && (
+            <UnderstandPanel
+              onNavigate={handleNavigate}
+              onOpenChat={() => setChatOpen(true)}
+            />
+          )}
+
+          {/* Decide / Decisions View */}
+          {(tab === "decisions" || tab === "decide") && <DecisionCenter />}
           {tab === "recommendations" && (
             <RecommendationsPanel
-              onNavigate={(t) => setTab(t as Tab)}
+              onNavigate={(t) => handleNavigate(t)}
               onReportIssue={(recId) => {
                 setHelpRecId(recId);
-                setTab("help");
+                handleNavigate("/help");
               }}
             />
           )}
-          {tab === "decisions" && <DecisionCenter />}
-          {tab === "reports" && <ReportsPanel onNavigate={(t) => setTab(t as Tab)} />}
-          {tab === "leads" && <RecordsPanel coll="leads" />}
-          {tab === "sales" && <RecordsPanel coll="sales" />}
-          {tab === "costs" && <RecordsPanel coll="costs" />}
-          {tab === "posts" && <RecordsPanel coll="posts" />}
-          {tab === "promotions" && <RecordsPanel coll="promotions" />}
+
+          {/* Weekly Summary */}
+          {tab === "reports" && <ReportsPanel onNavigate={(t) => handleNavigate(t)} />}
+
+          {/* Commercial Records */}
+          {tab === "leads" && <RecordsPanel coll="leads" onSelectColl={(c) => handleNavigate(`/data/${c}`)} counts={recordCounts} />}
+          {tab === "sales" && <RecordsPanel coll="sales" onSelectColl={(c) => handleNavigate(`/data/${c}`)} counts={recordCounts} />}
+          {tab === "costs" && <RecordsPanel coll="costs" onSelectColl={(c) => handleNavigate(`/data/${c}`)} counts={recordCounts} />}
+          {tab === "posts" && <RecordsPanel coll="posts" onSelectColl={(c) => handleNavigate(`/data/${c}`)} counts={recordCounts} />}
+          {tab === "promotions" && <RecordsPanel coll="promotions" onSelectColl={(c) => handleNavigate(`/data/${c}`)} counts={recordCounts} />}
+
+          {/* Integrations & Import */}
           {tab === "connections" && <ConnectionsPanel />}
           {tab === "import" && <ImportPanel />}
+
+          {/* Workspace & Team */}
           {tab === "notifications" && <NotificationsPanel />}
           {tab === "billing" && <BillingPanel />}
           {tab === "settings" && <SettingsPanel />}
-          {tab === "account" && <AccountPreferencesPanel onOpenBilling={() => setTab("billing")} />}
+          {tab === "account" && <AccountPreferencesPanel onOpenBilling={() => handleNavigate("/billing")} />}
           {tab === "help" && <HelpFeedbackPanel initialRecommendationId={helpRecId} />}
         </main>
       </div>
 
       <MobileTabBar
-        items={(["overview", "recommendations", "decisions", "reports"] as const).map((id) => {
-          const it = navGroups.flatMap((g) => g.items).find((x) => x.id === id)!;
-          const label = { overview: "Home", recommendations: "Advice", decisions: "Decisions", reports: "Weekly" }[id];
-          return { id, label, icon: it.icon, badge: it.badge ?? undefined };
-        })}
-        active={tab}
+        items={[
+          {
+            id: "overview",
+            label: "Home",
+            icon: (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="7" height="9" />
+                <rect x="14" y="3" width="7" height="5" />
+                <rect x="14" y="12" width="7" height="9" />
+                <rect x="3" y="16" width="7" height="5" />
+              </svg>
+            ),
+          },
+          {
+            id: "add",
+            label: "Add",
+            icon: (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            ),
+          },
+          {
+            id: "understand",
+            label: "Understand",
+            icon: (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4" />
+                <path d="M12 8h.01" />
+              </svg>
+            ),
+          },
+          {
+            id: "decisions",
+            label: "Decide",
+            icon: (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            ),
+            badge: unviewedRecs > 0 ? unviewedRecs : undefined,
+          },
+        ]}
+        active={tab.startsWith("add") || tab === "import" ? "add" : tab === "decisions" || tab === "decide" || tab === "recommendations" ? "decisions" : tab}
         moreActive={mobileNavOpen}
-        onSelect={(id) => { setTab(id as Tab); setMobileNavOpen(false); }}
+        onSelect={(id) => {
+          if (id === "overview") handleNavigate("/");
+          else if (id === "add") handleNavigate("/add");
+          else if (id === "understand") handleNavigate("/understand");
+          else if (id === "decisions") handleNavigate("/decide");
+          setMobileNavOpen(false);
+        }}
         onMore={() => setMobileNavOpen((o) => !o)}
+      />
+
+      {/* Floating Persistent Assistant */}
+      <AssistantPanel
+        isOpen={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onToggle={() => setChatOpen((o) => !o)}
+        currentScreen={tab}
       />
 
       {/* Global Command Palette / Search Modal */}
       <GlobalSearchModal
         isOpen={showSearchModal}
         onClose={() => setShowSearchModal(false)}
-        onNavigate={(t) => setTab(t as Tab)}
+        onNavigate={(t) => handleNavigate(t)}
       />
 
       {/* Sign Out Confirmation Modal */}

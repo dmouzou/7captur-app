@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   addDoc, collection, deleteDoc, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where,
 } from "firebase/firestore";
@@ -10,6 +10,14 @@ import { PANELS, type Field } from "./config";
 import { Icon } from "../../components/Icon";
 
 type Row = Record<string, unknown> & { id: string };
+
+export const COMMERCIAL_TABS: { id: RecordCollection; label: string; icon: string }[] = [
+  { id: "leads", label: "Enquiries & Leads", icon: "user" },
+  { id: "sales", label: "Sales & Revenue", icon: "bars" },
+  { id: "costs", label: "Costs & Spend", icon: "clock" },
+  { id: "posts", label: "Marketing Posts", icon: "sparkle" },
+  { id: "promotions", label: "Promotions & Ads", icon: "tag" },
+];
 
 function useRows(coll: RecordCollection) {
   const { workspaceId, businessId } = useWorkspace();
@@ -68,7 +76,15 @@ function initial(fields: Field[], currency: string) {
   return v;
 }
 
-export function RecordsPanel({ coll }: { coll: RecordCollection }) {
+export function RecordsPanel({
+  coll,
+  onSelectColl,
+  counts,
+}: {
+  coll: RecordCollection;
+  onSelectColl?: (coll: RecordCollection) => void;
+  counts?: Partial<Record<RecordCollection, number | null>>;
+}) {
   const { user } = useAuth();
   const ws = useWorkspace();
   const cfg = PANELS[coll];
@@ -78,12 +94,34 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
   const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState("");
   const refRows = {
     posts: useRows("posts"), promotions: useRows("promotions"), leads: useRows("leads"),
     sales: [] as Row[], costs: [] as Row[],
   };
 
-  useEffect(() => { setValues(initial(cfg.fields, ws.currency)); setEditingId(null); setShowForm(false); }, [coll, cfg.fields, ws.currency]);
+  useEffect(() => {
+    setValues(initial(cfg.fields, ws.currency));
+    setEditingId(null);
+    setShowForm(false);
+    setSearch("");
+  }, [coll, cfg.fields, ws.currency]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const sum = cfg.summary(r).toLowerCase();
+      if (sum.includes(q)) return true;
+      const prov = String(r.provenance ?? "").toLowerCase();
+      if (prov.includes(q)) return true;
+      for (const v of Object.values(r)) {
+        if (v === null || v === undefined) continue;
+        if (String(v).toLowerCase().includes(q)) return true;
+      }
+      return false;
+    });
+  }, [rows, search, cfg]);
 
   function startEdit(r: Row) {
     const v: Record<string, string | boolean> = {};
@@ -129,6 +167,59 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
 
   return (
     <section>
+      {/* Commercial Records Tabs Navigation */}
+      <div
+        className="card"
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: 8,
+          marginBottom: 20,
+          overflowX: "auto",
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        {COMMERCIAL_TABS.map((t) => {
+          const isActive = coll === t.id;
+          const countVal = counts?.[t.id] ?? (t.id === coll ? rows.length : null);
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className={isActive ? "" : "btn-secondary"}
+              onClick={() => onSelectColl?.(t.id)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 14px",
+                fontSize: 13,
+                borderRadius: 8,
+                margin: 0,
+                whiteSpace: "nowrap",
+                border: isActive ? "1px solid transparent" : "1px solid var(--border)",
+              }}
+            >
+              <span>{t.label}</span>
+              {countVal !== null && countVal !== undefined && (
+                <span
+                  className={`badge ${isActive ? "badge-pop" : ""}`}
+                  style={{
+                    padding: "1px 6px",
+                    fontSize: 11,
+                    minWidth: 18,
+                    textAlign: "center",
+                  }}
+                >
+                  {countVal}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Panel Top Header Bar */}
       <div
         style={{
@@ -309,13 +400,69 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
             background: "var(--surface-subtle)",
           }}
         >
-          <span style={{ fontWeight: 600, fontSize: 14 }}>Recorded History</span>
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            Displaying {rows.length} {rows.length === 1 ? "record" : "records"}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 240, maxWidth: 440 }}>
+            <div style={{ position: "relative", width: "100%" }}>
+              <input
+                type="search"
+                placeholder={`Search ${cfg.title.toLowerCase()} (name, date, channel, amount, notes)...`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{
+                  padding: "8px 30px 8px 12px",
+                  fontSize: 13,
+                  borderRadius: 8,
+                  width: "100%",
+                }}
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  style={{
+                    position: "absolute",
+                    right: 8,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    color: "var(--muted)",
+                    fontSize: 16,
+                    lineHeight: 1,
+                  }}
+                  title="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              {search.trim() ? (
+                <>Showing {filteredRows.length} of {rows.length} {rows.length === 1 ? "record" : "records"}</>
+              ) : (
+                <>Displaying {rows.length} {rows.length === 1 ? "record" : "records"}</>
+              )}
+            </span>
+            {search.trim() && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setSearch("")}
+                style={{ padding: "4px 10px", fontSize: 12, margin: 0, borderRadius: 6 }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {rows.length === 0 ? (
@@ -326,24 +473,40 @@ export function RecordsPanel({ coll }: { coll: RecordCollection }) {
               Add your first {cfg.title.toLowerCase()} entry using the button above or import them in bulk via CSV.
             </p>
           </div>
+        ) : filteredRows.length === 0 ? (
+          <div style={{ padding: "48px 24px", textAlign: "center" }}>
+            <div className="empty-icon"><Icon name="search" size={32} /></div>
+            <h4 style={{ margin: "0 0 6px 0" }}>No matching records</h4>
+            <p className="muted" style={{ margin: "0 0 16px 0", fontSize: 13.5 }}>
+              No {cfg.title.toLowerCase()} matched your search for "{search}".
+            </p>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setSearch("")}
+              style={{ margin: "0 auto", fontSize: 13 }}
+            >
+              Clear Search Filter
+            </button>
+          </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 13.5 }}>
               <thead>
                 <tr style={{ background: "var(--bg2)", borderBottom: "1px solid var(--border)" }}>
-                  <th style={{ padding: "12px 20px", fontWeight: 600, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  <th style={{ padding: "12px 20px", fontWeight: 500, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                     Summary / Details
                   </th>
-                  <th style={{ padding: "12px 16px", fontWeight: 600, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", width: 140 }}>
+                  <th style={{ padding: "12px 16px", fontWeight: 500, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", width: 140 }}>
                     Source
                   </th>
-                  <th style={{ padding: "12px 20px", fontWeight: 600, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", width: 140, textAlign: "right" }}>
+                  <th style={{ padding: "12px 20px", fontWeight: 500, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", width: 140, textAlign: "right" }}>
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {filteredRows.map((r) => {
                   const prov = String(r.provenance ?? "manual");
                   return (
                     <tr key={r.id} style={{ borderBottom: "1px solid var(--border)", transition: "background 0.15s" }}>

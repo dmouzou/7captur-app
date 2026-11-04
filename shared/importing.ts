@@ -2,8 +2,8 @@ import { z } from "zod";
 import { PLATFORMS, recordSchemas, type RecordCollection } from "./records";
 import { OBJECTIVES } from "./schemas";
 
-export const IMPORT_LIMITS = { maxBytes: 2 * 1024 * 1024, maxRows: 2000, maxColumns: 50 } as const;
-
+export const IMPORT_LIMITS = { maxBytes: 25 * 1024 * 1024, maxRows: 10000, maxColumns: 100 } as const;
+export const DEFAULT_REJECTED_ROW_WARNING_THRESHOLD = 0.5; // 50% threshold for warning modal
 export type DateFormat = "iso" | "mdy" | "dmy";
 export type NumberFormat = "us" | "eu"; // us: 1,234.56  eu: 1.234,56
 export interface ImportOptions {
@@ -328,6 +328,25 @@ export function analyzeRows(
   });
   a.defaultsApplied = [...defaults];
   return a;
+}
+
+export function sanitizeCsvCell(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  let str = String(val);
+  // Neutralize CSV formula injection: prefix =, +, -, @, \t, \r with single quote
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export function buildSafeCsv(headers: string[], rows: (string | number | boolean | null | undefined)[][]): string {
+  const headerLine = headers.map(sanitizeCsvCell).join(",");
+  const dataLines = rows.map((row) => row.map(sanitizeCsvCell).join(","));
+  return [headerLine, ...dataLines].join("\n");
 }
 
 export function buildTemplate(coll: RecordCollection): string {

@@ -52,12 +52,26 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
   }
   const toWrite = withIds.filter((v) => !existing.has(v.id));
 
+  // Compute dateRange and currencies for Section 9 spec
+  const dates: string[] = [];
+  const currencySet = new Set<string>();
+  a.valid.forEach((v) => {
+    const rec = v.record as Record<string, unknown>;
+    const d = (rec.date || rec.startDate || rec.publishedAt || rec.effectiveDate) as string | undefined;
+    if (d) dates.push(d);
+    if (typeof rec.currency === "string" && rec.currency) currencySet.add(rec.currency);
+  });
+  dates.sort();
+  const dateRange = dates.length ? { start: dates[0], end: dates[dates.length - 1] } : null;
+  const currencies = Array.from(currencySet);
+
   const counts = {
-    received: a.total, valid: a.valid.length, invalid: a.invalid.length,
-    duplicatesInFile: a.duplicatesInFile.length, duplicatesSaved: existing.size, toImport: toWrite.length, imported: 0,
+    received: a.total, valid: a.valid.length, rejected: a.invalid.length, invalid: a.invalid.length,
+    duplicate: a.duplicatesInFile.length + existing.size, duplicatesInFile: a.duplicatesInFile.length,
+    duplicatesSaved: existing.size, toImport: toWrite.length, imported: 0,
   };
   const report = {
-    counts, defaultsApplied: a.defaultsApplied,
+    counts, defaultsApplied: a.defaultsApplied, dateRange, currencies,
     rowErrors: a.invalid.slice(0, MAX_ERRORS_STORED).map((r) => ({ line: r.line, errors: r.errors.map((e) => `${e.field ?? ""} ${e.message}`.trim()) })),
   };
   if (inp.dryRun) return { dryRun: true, ...report };

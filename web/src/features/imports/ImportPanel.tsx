@@ -77,9 +77,52 @@ export function ImportPanel() {
     } finally { setBusy(false); }
   }
 
+  const [showThresholdWarning, setShowThresholdWarning] = useState(false);
+
+  const previewMetadata = useMemo(() => {
+    if (!analysis || analysis.valid.length === 0) return null;
+    const dates: string[] = [];
+    const currencies = new Set<string>();
+    analysis.valid.forEach((v) => {
+      const rec = v.record as Record<string, unknown>;
+      const d = (rec.date || rec.startDate || rec.publishedAt || rec.effectiveDate) as string | undefined;
+      if (d) dates.push(d);
+      if (typeof rec.currency === "string" && rec.currency) currencies.add(rec.currency);
+    });
+    dates.sort();
+    return {
+      dateRange: dates.length ? `${dates[0]} to ${dates[dates.length - 1]}` : "No dates",
+      currencies: currencies.size ? Array.from(currencies).join(", ") : ws.currency,
+    };
+  }, [analysis, ws.currency]);
+
   const required = IMPORT_SPECS[coll].filter((f) => f.required && !mapping[f.name]);
-  const errorsCsv = () => download("import-errors.csv", "line,problems\n" + (analysis?.invalid ?? []).map((r) => `${r.line},"${r.errors.map((e) => `${e.field ?? ""} ${e.message}`.trim()).join("; ").replace(/"/g, '""')}"`).join("\n"));
+  const errorsCsv = () => {
+    const errorRows: (string | number)[][] = [];
+    (analysis?.invalid ?? []).forEach((r) => {
+      r.errors.forEach((e) => {
+        errorRows.push([r.line, e.field ?? "general", e.message]);
+      });
+    });
+    const csvContent = "Row Number,Field,Problem Reason\n" +
+      errorRows.map((row) => row.map((c) => {
+        let str = String(c);
+        if (/^[=+\-@\t\r]/.test(str)) str = "'" + str;
+        return `"${str.replace(/"/g, '""')}"`;
+      }).join(",")).join("\n");
+    download(`${coll}-import-errors.csv`, csvContent);
+  };
   const done = serverReport && !serverReport.dryRun;
+
+  function attemptImport() {
+    if (!analysis) return;
+    const rejectedRate = analysis.invalid.length / (analysis.total || 1);
+    if (rejectedRate > 0.5) {
+      setShowThresholdWarning(true);
+      return;
+    }
+    void run(false);
+  }
 
   return (
     <section>
@@ -91,7 +134,7 @@ export function ImportPanel() {
           {COLLECTIONS.map((c) => <option key={c} value={c}>{PANELS[c].title}</option>)}
         </select>
         <p><button type="button" className="link" onClick={() => download(`${coll}-template.csv`, buildTemplate(coll))}>Download the {PANELS[coll].title.toLowerCase()} template</button></p>
-        <label htmlFor="imp-file">CSV file (max {IMPORT_LIMITS.maxRows} rows, 2 MB)</label>
+        <label htmlFor="imp-file">CSV file (up to {IMPORT_LIMITS.maxBytes / 1024 / 1024} MB, max {IMPORT_LIMITS.maxRows} rows)</label>
         <input id="imp-file" type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target.files?.[0])} />
         <div role="alert" className="error">{error}</div>
       </div>
@@ -124,7 +167,13 @@ export function ImportPanel() {
 
         <div className="card" style={{ marginTop: 16 }}>
           <h3 style={{ marginTop: 0 }}>2. Check the preview</h3>
-          <p>{analysis.total} rows in <span className="mono">{fileName}</span>: <strong>{analysis.valid.length} ready</strong>, {analysis.invalid.length} with problems, {analysis.duplicatesInFile.length} repeated inside the file.</p>
+          <p>{analysis.total} rows in <span className="mono">{fileName}</span>: <strong>{analysis.valid.length} valid rows ready</strong>, {analysis.invalid.length} rejected rows, {analysis.duplicatesInFile.length} duplicates.</p>
+          {previewMetadata && (
+            <div style={{ padding: "8px 12px", background: "var(--surface-subtle)", borderRadius: 8, margin: "10px 0", fontSize: 13 }}>
+              <span>Date range: <strong className="mono">{previewMetadata.dateRange}</strong></span> ·{" "}
+              <span>Currencies found: <strong className="mono">{previewMetadata.currencies}</strong></span>
+            </div>
+          )}
           {analysis.defaultsApplied.length > 0 && <p className="muted">Defaults applied where a cell is empty or the column is missing: {analysis.defaultsApplied.join(", ")}.</p>}
           {analysis.valid.length > 0 && (
             <ul style={{ paddingLeft: 18 }}>{analysis.valid.slice(0, 5).map((v) => <li key={v.line}>Line {v.line}: {PANELS[coll].summary(v.record)}</li>)}</ul>
@@ -135,18 +184,109 @@ export function ImportPanel() {
               {analysis.invalid.slice(0, 10).map((r) => <li key={r.line} className="error">Line {r.line}: {r.errors.map((e) => `${e.field ?? ""} ${e.message}`.trim()).join("; ")}</li>)}
             </ul>
             {analysis.invalid.length > 10 && <p className="muted">…and {analysis.invalid.length - 10} more.</p>}
-            <button type="button" className="link" onClick={errorsCsv}>Download all problems as CSV</button>
+            <button type="button" className="link" onClick={errorsCsv}>Download error report (CSV)</button>
           </>)}
           {serverReport?.dryRun && serverReport.counts && (
             <p className="muted">Already saved earlier: {serverReport.counts.duplicatesSaved} row(s) will be skipped. New rows to import: {serverReport.counts.toImport}.</p>
           )}
-          <button type="button" disabled={busy || required.length > 0 || analysis.valid.length === 0} onClick={() => run(false)}>
-            {busy ? "Importing…" : `Import ${analysis.valid.length} row(s)`}
-          </button>{" "}
-          <button type="button" disabled={busy || required.length > 0 || analysis.valid.length === 0} onClick={() => run(true)}
-            style={{ background: "transparent", color: "var(--text)", border: "1px solid var(--border)" }}>Check for rows already saved</button>
+          <div style={{ marginTop: 14 }}>
+            <button type="button" disabled={busy || required.length > 0 || analysis.valid.length === 0} onClick={attemptImport}>
+              {busy ? "Importing…" : `Import ${analysis.valid.length} valid row(s)`}
+            </button>{" "}
+            <button type="button" disabled={busy || required.length > 0 || analysis.valid.length === 0} onClick={() => run(true)}
+              style={{ background: "transparent", color: "var(--text)", border: "1px solid var(--border)" }}>Check for rows already saved</button>
+          </div>
         </div>
       </>)}
+
+      {/* 50% Rejected Row Warning Modal */}
+      {showThresholdWarning && analysis && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.7)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+          onClick={() => setShowThresholdWarning(false)}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 500,
+              width: "100%",
+              background: "var(--surface)",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.35)",
+              border: "1px solid var(--warning, #f59e0b)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  background: "rgba(245, 158, 11, 0.15)",
+                  color: "var(--warning, #f59e0b)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                ⚠️
+              </div>
+              <h3 style={{ margin: 0, fontSize: "1.2rem", color: "var(--ink)" }}>High Rejection Warning</h3>
+            </div>
+
+            <p style={{ margin: "0 0 14px", lineHeight: 1.5, color: "var(--ink)" }}>
+              <strong>{Math.round((analysis.invalid.length / analysis.total) * 100)}% of rows ({analysis.invalid.length} of {analysis.total})</strong> in <span className="mono">{fileName}</span> have validation errors and will be rejected.
+            </p>
+
+            <p className="muted" style={{ fontSize: 13, margin: "0 0 18px", lineHeight: 1.5 }}>
+              Only the {analysis.valid.length} valid rows will be persisted into your workspace records. Rejected rows will not be saved. You can download an error report CSV to inspect the invalid lines.
+            </p>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={errorsCsv}
+                style={{ margin: 0 }}
+              >
+                Download Error Report
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowThresholdWarning(false)}
+                style={{ margin: 0 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  setShowThresholdWarning(false);
+                  void run(false);
+                }}
+                style={{ margin: 0 }}
+              >
+                Proceed with Valid Rows
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {done && serverReport.counts && (
         <div className="card" style={{ marginTop: 16 }} role="status">

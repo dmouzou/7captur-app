@@ -70,6 +70,12 @@ service cloud.firestore {
       allow update: if signedIn() && request.auth.uid == uid
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'defaultWorkspaceId']);
       allow delete: if false;
+
+      match /prefs/{docId} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow write: if signedIn() && request.auth.uid == uid
+          && (request.resource == null || !request.resource.data.keys().hasAny(['role', 'defaultWorkspaceId']));
+      }
     }
 
     // The account (accounts/{ownerUid}) owns the plan, subscription and the shared usage counters.
@@ -177,6 +183,15 @@ service cloud.firestore {
       match /feedback/{id} {
         allow read: if isMember(wid);
         allow write: if false;
+      }
+
+      // Recent source usage tracking for cards: member-readable, client-writable only for own recents
+      match /recentSources/{cardId} {
+        allow read: if isMember(wid);
+        allow write: if isMember(wid)
+          && request.resource.data.keys().hasOnly(['lastUsedAt', 'updatedAt'])
+          && notSuspended(wid)
+          && notReadOnly(wid);
       }
     }
 

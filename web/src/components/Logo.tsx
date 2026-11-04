@@ -17,8 +17,7 @@ export function Logo({ size = 24, showText = true, className = "", style, subtit
     <div
       className={`logo ${className}`}
       style={{
-        fontFamily: "'Inter Tight', system-ui, sans-serif",
-        fontWeight: 800,
+        fontFamily: "var(--font-sans)",
         fontSize: Math.max(18, Math.round(size * 0.85)),
         letterSpacing: "-0.03em",
         color: "var(--ink)",
@@ -52,15 +51,15 @@ export function Logo({ size = 24, showText = true, className = "", style, subtit
 
       {showText && (
         <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-          <span style={{ color: "var(--ink)", fontWeight: 800 }}>7Captur</span>
+          <span className="logo-wordmark" style={{ color: "var(--ink)", fontWeight: 700 }}>7Captur</span>
           {subtitle && (
             <span
               style={{
-                fontFamily: "'IBM Plex Mono', monospace",
+                fontFamily: "var(--font-mono)",
                 fontSize: 11,
                 color: "var(--muted)",
                 letterSpacing: "0.02em",
-                fontWeight: 500,
+                fontWeight: 400,
                 marginTop: 2,
               }}
             >

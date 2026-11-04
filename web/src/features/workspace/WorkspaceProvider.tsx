@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, setDoc, where } from "firebase/firestore";
 import { db } from "../../services/firebase";
 import { useAuth } from "../auth/AuthProvider";
 import { PLANS, type PlanId } from "../../shared/plans";
@@ -7,7 +7,8 @@ import { PLANS, type PlanId } from "../../shared/plans";
 export interface WorkspaceState {
   workspaceId: string; businessId: string; workspaceName: string; businessName: string;
   plan: PlanId; timezone: string; currency: string; convertCurrencies: boolean; objective: string; country: string;
-  ownerUid: string; billingStatus: string; restrictAtMs: number | null; trialEndsAtMs: number | null;
+  ownerUid: string; userRole: "owner" | "editor" | "viewer"; billingStatus: string; restrictAtMs: number | null; trialEndsAtMs: number | null;
+  daysLeft: number;
   isTrialing: boolean; isTrialExpired: boolean; isReadOnly: boolean; hasSubscription: boolean;
   deletionScheduledMs: number | null;
   /** Server flag: this workspace is beyond what the account's plan allows. It stays readable but not editable. */
@@ -15,7 +16,7 @@ export interface WorkspaceState {
   /** Timezone in which the account's weekly and monthly allowances reset. */
   accountTimezone: string;
   /** All business workspaces of this account, and how many the plan allows. */
-  workspaces: { id: string; name: string }[];
+  workspaces: { id: string; name: string; role?: string }[];
   maxWorkspaces: number;
   switchWorkspace: (workspaceId: string) => void;
   /** Re-read the list after a new workspace is created, optionally switching to it. */
@@ -27,6 +28,28 @@ export const useWorkspace = () => {
   if (!v) throw new Error("useWorkspace outside provider");
   return v;
 };
+
+export function parseTimestampMs(val: unknown): number | null {
+  if (!val) return null;
+  if (typeof val === "number") {
+    return val < 1e11 ? val * 1000 : val;
+  }
+  if (typeof val === "string") {
+    const ms = Date.parse(val);
+    return isNaN(ms) ? null : ms;
+  }
+  if (val instanceof Date) {
+    return val.getTime();
+  }
+  if (typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    if (typeof obj.toMillis === "function") return obj.toMillis();
+    if (typeof obj.toDate === "function") return (obj.toDate() as Date).getTime();
+    if (typeof obj.seconds === "number") return obj.seconds * 1000 + Math.round((Number(obj.nanoseconds) || 0) / 1e6);
+    if (typeof obj._seconds === "number") return obj._seconds * 1000 + Math.round((Number(obj._nanoseconds) || 0) / 1e6);
+  }
+  return null;
+}
 
 const activeKey = (uid: string) => `7captur.activeWorkspace.${uid}`;
 const readActive = (uid: string): string | null => { try { return localStorage.getItem(activeKey(uid)); } catch { return null; } };
@@ -48,21 +71,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const [u, owned] = await Promise.all([
+        const [u, prefsDoc, owned] = await Promise.all([
           getDoc(doc(db, "users", user.uid)),
+          getDoc(doc(db, "users", user.uid, "prefs", "main")).catch(() => null),
           // If the list cannot be read, the default workspace below still loads.
           getDocs(query(collection(db, "workspaces"), where("ownerUid", "==", user.uid))).catch(() => ({ docs: [] as never[] })),
         ]);
         if (cancelled) return;
         const rows = owned.docs
-          .map((d) => ({ id: d.id, name: String(d.data().name ?? "Workspace"), at: (d.data().createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? 0 }))
+          .map((d) => ({
+            id: d.id,
+            name: String(d.data().name ?? "Workspace"),
+            role: "Owner",
+            at: (d.data().createdAt as { toMillis?: () => number } | undefined)?.toMillis?.() ?? 0,
+          }))
           .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
-        const def = u.data()?.defaultWorkspaceId as string | undefined;
+        const prefsLast = prefsDoc?.exists() ? (prefsDoc.data()?.lastWorkspaceId as string | undefined) : undefined;
+        const def = prefsLast ?? (u.data()?.defaultWorkspaceId as string | undefined);
         const ids = rows.map((r) => r.id);
         // Workspaces the user is only a member of (not the owner) fall back to the default workspace.
-        if (def && !ids.includes(def)) rows.push({ id: def, name: "Workspace", at: Number.MAX_SAFE_INTEGER });
-        setList(rows.map(({ id, name }) => ({ id, name })));
-        const wanted = pendingSwitch ?? readActive(user.uid);
+        if (def && !ids.includes(def)) rows.push({ id: def, name: "Workspace", role: "Member", at: Number.MAX_SAFE_INTEGER });
+        setList(rows.map(({ id, name, role }) => ({ id, name, role })));
+        const wanted = pendingSwitch ?? prefsLast ?? readActive(user.uid);
         const all = rows.map((r) => r.id);
         setActiveId(wanted && all.includes(wanted) ? wanted : def && all.includes(def) ? def : all[0] ?? null);
         if (pendingSwitch) setPendingSwitch(null);
@@ -94,13 +124,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const updateCombinedState = () => {
           if (!curWsData) return;
           const billingStatus = (curWsData.billingStatus as string) ?? "none";
-          const restrictAt = curWsData.restrictAt as { toMillis?: () => number } | undefined;
-          const trialEndsAt = curWsData.trialEndsAt as { toMillis?: () => number } | undefined;
-          const deletionScheduledFor = curWsData.deletionScheduledFor as { toMillis?: () => number } | undefined;
-          const restrictAtMs = restrictAt?.toMillis?.() ?? null;
-          const trialEndsAtMs = trialEndsAt?.toMillis?.() ?? null;
-          const isTrialing = billingStatus === "trialing";
-          const isTrialExpired = billingStatus === "trial_expired";
+          const restrictAtMs = parseTimestampMs(curWsData.restrictAt);
+          const trialEndsAtMs = parseTimestampMs(curWsData.trialEndsAt) ?? (
+            curWsData.createdAt ? (parseTimestampMs(curWsData.createdAt) ?? 0) + 14 * 24 * 60 * 60 * 1000 : null
+          );
+          const deletionScheduledMs = parseTimestampMs(curWsData.deletionScheduledFor);
+          const hasSubscription = Boolean(curWsData.paddleSubscriptionId);
+          const isExpiredByTime = trialEndsAtMs !== null && trialEndsAtMs <= Date.now() && !hasSubscription;
+          const isTrialExpired = billingStatus === "trial_expired" || isExpiredByTime;
+          const isTrialing = !isTrialExpired && !hasSubscription && (billingStatus === "trialing" || billingStatus === "none");
+          const daysLeft = trialEndsAtMs ? Math.max(0, Math.ceil((trialEndsAtMs - Date.now()) / (24 * 60 * 60 * 1000))) : 14;
           const isRestricted = billingStatus === "restricted" || (restrictAtMs !== null && restrictAtMs <= Date.now());
           const isReadOnly = isTrialExpired || isRestricted;
 
@@ -119,20 +152,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             objective: String(curBizData.objective || "profitability"),
             country: String(curWsData.country || "US"),
             ownerUid: String(curWsData.ownerUid || ""),
+            userRole: curWsData.ownerUid === user.uid ? "owner" : "editor",
             billingStatus,
-            hasSubscription: Boolean(curWsData.paddleSubscriptionId),
+            hasSubscription,
             restrictAtMs,
             trialEndsAtMs,
+            daysLeft,
             isTrialing,
             isTrialExpired,
             isReadOnly,
-            deletionScheduledMs: deletionScheduledFor?.toMillis?.() ?? null,
+            deletionScheduledMs,
             overLimit: curWsData.overLimit === true,
             accountTimezone: String(curWsData.accountTimezone || curWsData.timezone || curBizData.timezone || "America/New_York"),
             workspaces: list,
             maxWorkspaces: PLANS[plan].maxBusinesses,
-            switchWorkspace: (id: string) => { writeActive(user.uid, id); setActiveId(id); },
-            refreshWorkspaces: (switchTo?: string) => { if (switchTo) { writeActive(user.uid, switchTo); setPendingSwitch(switchTo); } setListNonce((n) => n + 1); },
+            switchWorkspace: (id: string) => {
+              writeActive(user.uid, id);
+              setActiveId(id);
+              setDoc(doc(db, "users", user.uid, "prefs", "main"), { lastWorkspaceId: id, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+            },
+            refreshWorkspaces: (switchTo?: string) => {
+              if (switchTo) {
+                writeActive(user.uid, switchTo);
+                setPendingSwitch(switchTo);
+                setDoc(doc(db, "users", user.uid, "prefs", "main"), { lastWorkspaceId: switchTo, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+              }
+              setListNonce((n) => n + 1);
+            },
           });
         };
 

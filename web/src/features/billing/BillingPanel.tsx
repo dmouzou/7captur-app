@@ -43,9 +43,7 @@ export function BillingPanel() {
     if (waiting && ws.hasSubscription) setWaiting(false);
   }, [waiting, ws.hasSubscription]);
 
-  const daysLeft = ws.trialEndsAtMs
-    ? Math.max(0, Math.ceil((ws.trialEndsAtMs - Date.now()) / (24 * 60 * 60 * 1000)))
-    : 14;
+  const daysLeft = ws.daysLeft;
 
   async function subscribe(id: PlanId) {
     setError("");

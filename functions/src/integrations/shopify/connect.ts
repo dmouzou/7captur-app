@@ -105,11 +105,22 @@ async function registerUninstallWebhook(shop: string, token: string) {
 
 /** Revoke our access at Shopify when the customer disconnects (best effort). */
 revokers.shopify = async (db, workspaceId, connectionId, conn) => {
-  if (!conn.secretRef) return;
-  const blob = (await db.doc(conn.secretRef as string).get()).data()?.token as string | undefined;
-  if (!blob) return;
-  const token = decryptToken(blob, TOKEN_ENCRYPTION_KEY.value());
-  await fetch(`https://${conn.shop}/admin/api_permissions/current.json`, { method: "DELETE", headers: { "X-Shopify-Access-Token": token } });
+  try {
+    if (!conn.secretRef) return;
+    const p = typeof conn.secretRef === "string" ? conn.secretRef : (conn.secretRef as { path?: string })?.path;
+    if (!p) return;
+    const snap = await db.doc(p).get();
+    const blob = snap.data()?.token as string | undefined;
+    if (!blob) return;
+    let key: string | undefined;
+    try { key = TOKEN_ENCRYPTION_KEY.value(); } catch { return; }
+    if (!key) return;
+    const token = decryptToken(blob, key);
+    if (!conn.shop) return;
+    await fetch(`https://${conn.shop}/admin/api_permissions/current.json`, { method: "DELETE", headers: { "X-Shopify-Access-Token": token } }).catch(() => undefined);
+  } catch {
+    // Best-effort provider revocation; never block disconnecting in 7Captur
+  }
 };
 
 const discInput = z.object({ workspaceId: z.string().min(1).max(128), connectionId: z.string().min(1).max(128) });
@@ -119,7 +130,7 @@ export const disconnectIntegration = onCall({ secrets: [TOKEN_ENCRYPTION_KEY] },
   const p = discInput.safeParse(request.data);
   if (!p.success) throw new HttpsError("invalid-argument", "Invalid request.");
   const db = getFirestore();
-  await requireMember(db, p.data.workspaceId, uid, true, { allowSuspended: true });
+  await requireMember(db, p.data.workspaceId, uid, true, { allowSuspended: true, allowReadOnly: true });
   await disconnectConnection(db, p.data.workspaceId, p.data.connectionId);
   return { ok: true };
 });

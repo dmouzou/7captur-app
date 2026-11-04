@@ -1,4 +1,4 @@
-import type { Firestore } from "firebase-admin/firestore";
+import { FieldValue, type Firestore } from "firebase-admin/firestore";
 
 /** Provider-specific revocation hooks. Each provider module registers one (see shopify.ts). */
 export type Revoker = (db: Firestore, workspaceId: string, connectionId: string, conn: FirebaseFirestore.DocumentData) => Promise<void>;
@@ -14,8 +14,13 @@ export async function disconnectConnection(db: Firestore, workspaceId: string, c
   if (!snap.exists) return;
   const conn = snap.data()!;
   try { await revokers[conn.provider]?.(db, workspaceId, connectionId, conn); } catch { /* provider may already have revoked it */ }
-  if (conn.secretRef) await db.doc(conn.secretRef as string).delete();
-  await ref.update({ status: "disconnected", secretRef: null, disconnectedAt: new Date() });
+  if (conn.secretRef) {
+    try {
+      const p = typeof conn.secretRef === "string" ? conn.secretRef : (conn.secretRef as { path?: string })?.path;
+      if (p) await db.doc(p).delete();
+    } catch { /* secret may already be gone */ }
+  }
+  await ref.update({ status: "disconnected", secretRef: null, disconnectedAt: FieldValue.serverTimestamp() });
 }
 
 export async function disconnectAllConnections(db: Firestore, workspaceId: string): Promise<void> {

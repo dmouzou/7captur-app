@@ -94,9 +94,13 @@ export function ConnectionsPanel() {
   async function disconnect(c: Conn) {
     if (!window.confirm(`Disconnect ${c.label}? Data already synced stays in your records, labelled as connected data. New data stops syncing.`)) return;
     setError(""); setBusy(`d_${c.id}`);
-    try { await httpsCallable(functions, "disconnectIntegration")({ workspaceId: ws.workspaceId, connectionId: c.id }); }
-    catch { setError("Could not disconnect. Try again."); }
-    finally { setBusy(""); }
+    try {
+      await httpsCallable(functions, "disconnectIntegration")({ workspaceId: ws.workspaceId, connectionId: c.id });
+    } catch (e) {
+      setError((e as { message?: string }).message ?? "Could not disconnect. Try again.");
+    } finally {
+      setBusy("");
+    }
   }
 
   return (

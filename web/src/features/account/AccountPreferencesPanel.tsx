@@ -105,6 +105,20 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
 
   const currentPlan = PLANS[ws.plan] || PLANS.starter;
 
+  const subscriptionStatusLabel = (() => {
+    if (ws.isTrialing || ws.billingStatus === "trialing" || ws.billingStatus === "none") {
+      return `Trial · ${ws.daysLeft} ${ws.daysLeft === 1 ? "day" : "days"} left`;
+    }
+    if (ws.isTrialExpired || ws.billingStatus === "trial_expired") return "Trial Expired";
+    if (ws.billingStatus === "active") return "Active";
+    if (ws.billingStatus === "past_due") return "Past Due";
+    if (ws.billingStatus === "canceling") return "Canceling";
+    if (ws.billingStatus === "canceled") return "Canceled";
+    if (ws.billingStatus === "restricted") return "Restricted";
+    if (ws.billingStatus === "paused") return "Paused";
+    return ws.billingStatus ? ws.billingStatus.replace(/_/g, " ") : "Trial";
+  })();
+
   return (
     <div style={{ maxWidth: 860, margin: "0 auto" }}>
       {/* Page Header */}
@@ -118,7 +132,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          <h1 style={{ margin: 0, fontSize: "1.65rem" }}>Account & Preferences</h1>
+          <h1 style={{ margin: 0, fontSize: "1.65rem", fontWeight: 500 }}>Account & Preferences</h1>
           <span className="badge badge-primary">Workspace Profile</span>
         </div>
         <p className="muted" style={{ margin: 0, fontSize: 14 }}>
@@ -140,18 +154,23 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
         }}
       >
         <div>
-          <div style={{ fontSize: 12, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700, letterSpacing: 0.5 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", textTransform: "uppercase", fontWeight: 500, letterSpacing: 0.5 }}>
             Active Subscription
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-            <span style={{ fontSize: 18, fontWeight: 700, color: "var(--ink)" }}>{currentPlan.name} Plan</span>
-            <span className="badge badge-primary" style={{ textTransform: "capitalize" }}>
-              {ws.billingStatus || "Active"}
+            <span style={{ fontSize: 18, fontWeight: 500, color: "var(--ink)" }}>{currentPlan.name} Plan</span>
+            <span className="badge badge-primary">
+              {subscriptionStatusLabel}
             </span>
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
             {currentPlan.recommendations.weekly} recommendations/week · {currentPlan.maxConnections} platform connections per workspace · {currentPlan.maxBusinesses} business workspace{currentPlan.maxBusinesses === 1 ? "" : "s"}
           </div>
+          {ws.isTrialing && ws.trialEndsAtMs && (
+            <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>
+              Trial ends on {new Date(ws.trialEndsAtMs).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+            </div>
+          )}
         </div>
         {onOpenBilling && (
           <button

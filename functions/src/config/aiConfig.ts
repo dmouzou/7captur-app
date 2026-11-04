@@ -2,7 +2,16 @@ import { getFirestore } from "firebase-admin/firestore";
 import { ANTHROPIC_API_KEY } from "../config";
 
 export const DEFAULT_CLAUDE_KEY = process.env.DEFAULT_CLAUDE_KEY ?? "";
-export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
+export const DEFAULT_AI_MODEL = "claude-3-5-sonnet-latest";
+
+export function normalizeAiModel(model?: string): string {
+  if (!model) return DEFAULT_AI_MODEL;
+  const m = model.trim();
+  if (m === "claude-sonnet-5-5" || m === "claude-3-5-sonnet") return "claude-3-5-sonnet-latest";
+  if (m === "claude-haiku-5-5" || m === "claude-3-5-haiku") return "claude-3-5-haiku-latest";
+  if (m === "claude-opus-5-5" || m === "claude-3-opus") return "claude-3-opus-latest";
+  return m;
+}
 
 export interface AiConfigData {
   anthropicApiKey?: string;
@@ -24,7 +33,8 @@ export async function getActiveAiConfig(): Promise<{ apiKey: string; model: stri
     if (snap.exists) {
       const data = snap.data() as AiConfigData;
       const key = data.anthropicApiKey?.trim();
-      const model = data.model?.trim() || DEFAULT_AI_MODEL;
+      const rawModel = data.model?.trim() || DEFAULT_AI_MODEL;
+      const model = normalizeAiModel(rawModel);
       if (key) {
         return { apiKey: key, model };
       }

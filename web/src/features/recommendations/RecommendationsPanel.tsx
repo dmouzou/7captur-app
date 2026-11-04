@@ -419,7 +419,7 @@ export function RecommendationsPanel({
           return (
             <article
               key={r.id}
-              className="card"
+              className="card recommendation-card recommendation-text"
               style={{
                 padding: "26px 28px",
                 border: "1px solid var(--border)",

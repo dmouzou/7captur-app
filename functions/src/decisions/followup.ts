@@ -4,7 +4,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { askAboutDecisionInput } from "../shared/followup";
 import { periodIds } from "../shared/periods";
 import { requireMember } from "../workspaces/access";
-import { getActiveAiConfig } from "../config/aiConfig";
+import { getActiveAiConfig, normalizeAiModel } from "../config/aiConfig";
 import { ANTHROPIC_API_KEY } from "../config";
 import { buildFollowupPrompt, fallbackAnswer, FOLLOWUP_PROMPT_VERSION, validateAnswer, type Snapshot } from "./followupCore";
 import { addAiTokens, confirmFollowUp, releaseFollowUp, reserveFollowUp } from "./followupUsage";
@@ -20,6 +20,7 @@ export async function askModel(snapshot: Snapshot, question: string, opts: { fet
   let model = opts.model;
   if (!apiKey) { const cfg = await getActiveAiConfig(); apiKey = cfg.apiKey; model = model ?? cfg.model; }
   if (!apiKey) return null;
+  model = normalizeAiModel(model);
   const { system, user } = buildFollowupPrompt(snapshot, question);
   let tokens = { input: 0, output: 0 };
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -31,7 +32,11 @@ export async function askModel(snapshot: Snapshot, question: string, opts: { fet
         signal: AbortSignal.timeout(12000),
       });
       if (res.status === 429 || res.status >= 500) { await new Promise((r) => setTimeout(r, 400 * (attempt + 1))); continue; }
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        logger.warn("askAboutDecision: Anthropic API returned non-200", { status: res.status, error: errText, model });
+        return null;
+      }
       const body = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       tokens = { input: tokens.input + (body.usage?.input_tokens ?? 0), output: tokens.output + (body.usage?.output_tokens ?? 0) };
       const raw = body.content?.find((c) => c.type === "text")?.text ?? "";

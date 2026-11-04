@@ -173,3 +173,76 @@ describe("admin-only collections", () => {
     await assertFails(setDoc(doc(db, "workspaces/wsA/feedback/t1"), { status: "resolved" }));
   });
 });
+
+describe("user preferences and recent sources", () => {
+  it("user can read and write own preferences; cannot write privileged fields; cross-user is blocked", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+    const bob = env.authenticatedContext("bob").firestore();
+    const anon = env.unauthenticatedContext().firestore();
+
+    // Alice writes own pref
+    await assertSucceeds(setDoc(doc(alice, "users/alice/prefs/general"), { lastWorkspaceId: "wsA" }));
+    await assertSucceeds(getDoc(doc(alice, "users/alice/prefs/general")));
+
+    // Privileged fields like role or defaultWorkspaceId are rejected
+    await assertFails(setDoc(doc(alice, "users/alice/prefs/p1"), { role: "admin" }));
+    await assertFails(setDoc(doc(alice, "users/alice/prefs/p2"), { defaultWorkspaceId: "wsB" }));
+
+    // Bob cannot read or write Alice's prefs
+    await assertFails(getDoc(doc(bob, "users/alice/prefs/general")));
+    await assertFails(setDoc(doc(bob, "users/alice/prefs/general"), { lastWorkspaceId: "wsB" }));
+
+    // Unauthenticated access is blocked
+    await assertFails(getDoc(doc(anon, "users/alice/prefs/general")));
+    await assertFails(setDoc(doc(anon, "users/alice/prefs/general"), { lastWorkspaceId: "wsA" }));
+  });
+
+  it("workspace member can read and write recentSources with allowed keys; unallowed keys or non-member blocked", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+    const bob = env.authenticatedContext("bob").firestore();
+
+    // Alice (active member) writes recent source with allowed keys
+    await assertSucceeds(setDoc(doc(alice, "workspaces/wsA/recentSources/card1"), {
+      lastUsedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(getDoc(doc(alice, "workspaces/wsA/recentSources/card1")));
+
+    // Disallowed keys fail
+    await assertFails(setDoc(doc(alice, "workspaces/wsA/recentSources/card2"), {
+      lastUsedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      extraField: "bad",
+    }));
+
+    // Bob (not a member of wsA) cannot read or write
+    await assertFails(getDoc(doc(bob, "workspaces/wsA/recentSources/card1")));
+    await assertFails(setDoc(doc(bob, "workspaces/wsA/recentSources/card1"), {
+      lastUsedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+  });
+
+  it("blocks recentSources writes when workspace is suspended or read-only", async () => {
+    const alice = env.authenticatedContext("alice").firestore();
+
+    // Suspended workspace
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), "workspaces/wsA"), { suspended: true });
+    });
+    await assertFails(setDoc(doc(alice, "workspaces/wsA/recentSources/card1"), {
+      lastUsedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+
+    // Revert suspended, set trial_expired
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), "workspaces/wsA"), { suspended: false, billingStatus: "trial_expired" });
+    });
+    await assertFails(setDoc(doc(alice, "workspaces/wsA/recentSources/card1"), {
+      lastUsedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+  });
+});
+
