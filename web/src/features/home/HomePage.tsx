@@ -15,8 +15,8 @@ import { HelpFeedbackPanel } from "../help/HelpFeedbackPanel";
 import { MobileTabBar } from "./MobileTabBar";
 import { Icon } from "../../components/Icon";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
+import { WorkspaceSwitcher } from "../workspace/WorkspaceSwitcher";
 import { useAuth } from "../auth/AuthProvider";
-import { PLANS } from "../../shared/plans";
 import { Logo } from "../../components/Logo";
 import { ThemeToggle } from "../../components/ThemeContext";
 import { AccountPreferencesPanel } from "../account/AccountPreferencesPanel";
@@ -314,35 +314,7 @@ export function HomePage() {
               display: "inline-block",
             }}
           />
-          <div
-            className="topbar-ws-pill"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              background: "var(--surface-subtle)",
-              border: "1px solid var(--border)",
-              borderRadius: 20,
-              padding: "4px 12px 4px 10px",
-            }}
-          >
-            <span
-              style={{
-                fontWeight: 600,
-                fontSize: 13,
-                color: "var(--ink)",
-                maxWidth: 160,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {ws.workspaceName || "Workspace"}
-            </span>
-            <span className="badge badge-primary" style={{ fontSize: 10, padding: "2px 6px" }}>
-              {PLANS[ws.plan]?.name || "Starter"}
-            </span>
-          </div>
+          <WorkspaceSwitcher />
         </div>
 
         {/* Center: Global Search Bar */}
@@ -570,6 +542,21 @@ export function HomePage() {
                 onClick={() => setTab("billing")}
               >
                 Upgrade to Growth
+              </button>
+            </div>
+          )}
+
+          {ws.overLimit && (
+            <div
+              className="card"
+              style={{ background: "var(--surface-subtle)", borderLeft: "4px solid var(--accent-fill)", padding: "12px 20px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}
+              role="status"
+            >
+              <span style={{ fontSize: 13.5 }}>
+                This workspace is over your plan's limit of {ws.maxWorkspaces} business workspace{ws.maxWorkspaces === 1 ? "" : "s"}, so it is read-only. Nothing is deleted. Upgrade to Growth to edit it again.
+              </span>
+              <button type="button" className="primary" style={{ margin: 0, padding: "6px 14px", fontSize: 13 }} onClick={() => setTab("billing")}>
+                See plans
               </button>
             </div>
           )}

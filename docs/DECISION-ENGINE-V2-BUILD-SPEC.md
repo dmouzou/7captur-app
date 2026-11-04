@@ -518,7 +518,7 @@ Shared behaviour (copy exactly from Shopify and Google Ads):
 - Skip and remove rules per provider (tests, cancelled, voided). Remove previously synced docs that become skipped, but only if `provenance == "connected"`.
 - Time zone: use the account's own time zone from the provider; convert dates to the business day (same helper as Google Ads).
 - Disconnect (`connections/disconnect.ts`): delete the secret, keep existing records, mark `disconnected`.
-- Connection limit: one shared function `assertCanConnect(db, workspaceId)` counting every active or pending connection in the workspace across all businesses (Q5: all connectors count). Replace the separate checks in `shopify/connect.ts` and `googleads/connect.ts`. Message: `"Your plan allows N connected sources. Disconnect one or upgrade."` UI wording uses "connected sources".
+- Connection limit (amended 2026-11-03, see `ACCOUNT-LEVEL-PLANS.md`): counted PER business workspace, because each workspace is a separate business. One shared function `assertCanConnect(db, workspaceId)` counting every active or pending connection in that workspace (Q5: all connectors count). Replace the separate checks in `shopify/connect.ts` and `googleads/connect.ts`. Message: `"Your plan allows N connected sources. Disconnect one or upgrade."` UI wording uses "connected sources".
 - Account deletion deletes secrets, connections and all connector-written records.
 - Rate limits and pagination handled per provider, with exponential backoff on 429 and 5xx.
 
@@ -634,7 +634,7 @@ Matching by exact id; fallback to tagged; customer link preserved; unmatched sta
 
 ## 10. Plan, limits and copy consequences (Q5 answered)
 
-- All connectors count toward `maxConnections`: Starter 2, Growth 5, Custom per agreement. `assertCanConnect` counts every provider (section 6.1).
+- All connectors count toward `maxConnections`, per business workspace (amended 2026-11-03): Starter 2, Growth 7, Custom per agreement. `assertCanConnect` counts every provider (section 6.1).
 - Consequence: a Starter workspace can connect, for example, one store and one ad account. GA4 would not fit, so campaign-level true ROAS is not reachable on Starter. The engine must say so: `"Campaign-level true ROAS needs Google Analytics 4 or tagged orders. Your plan has no free connection slot."` The owner may revisit limits or add a GA4-friendly tier later.
 - Update `ConnectionsPanel.tsx`, `BillingPanel.tsx`, `shared/plans.json` wording from "Connected platforms" to "Connected sources", and the website pricing and FAQ.
 - Pricing page FAQ: define a connected source as any store, ad account, analytics, email, payment, search or spreadsheet connection.

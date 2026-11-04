@@ -8,7 +8,10 @@ import { COUNTRIES, CURRENCIES, TIMEZONES } from "./countriesAndTimezones";
 import { Icon } from "../../components/Icon";
 
 interface OnboardingProps {
-  onDone: () => void;
+  /** Called after the workspace is created, with its id. */
+  onDone: (workspaceId?: string) => void;
+  /** Set when adding another workspace to an existing account: shows a Cancel button. */
+  onCancel?: () => void;
 }
 
 // Visual definitions for Business Types (Canva-style cases, Image 3)
@@ -137,7 +140,7 @@ const BUYING_METHOD_OPTIONS = [
   },
 ] as const;
 
-export function OnboardingPage({ onDone }: OnboardingProps) {
+export function OnboardingPage({ onDone, onCancel }: OnboardingProps) {
   const [step, setStep] = useState(1);
   const totalSteps = 6;
 
@@ -218,8 +221,8 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
 
     setBusy(true);
     try {
-      await httpsCallable(functions, "createWorkspace")(parsed.data);
-      onDone();
+      const res = await httpsCallable<unknown, { workspaceId?: string }>(functions, "createWorkspace")(parsed.data);
+      onDone(res.data?.workspaceId);
     } catch (e: unknown) {
       console.error("Workspace creation failed:", e);
       setError((e as { message?: string })?.message ?? "Could not save your profile. Please try again.");
@@ -267,8 +270,11 @@ export function OnboardingPage({ onDone }: OnboardingProps) {
           background: "var(--surface)",
         }}
       >
-        <Logo size={34} subtitle="Onboarding Setup" />
-        <ThemeToggle />
+        <Logo size={34} subtitle={onCancel ? "New business workspace" : "Onboarding Setup"} />
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {onCancel && <button type="button" className="btn-secondary" style={{ margin: 0 }} onClick={onCancel}>Cancel</button>}
+          <ThemeToggle />
+        </div>
       </header>
 
       {/* Main Container */}

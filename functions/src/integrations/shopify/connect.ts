@@ -38,7 +38,7 @@ export const startShopifyConnect = onCall(async (request) => {
   const existing = await db.collection(`workspaces/${workspaceId}/connections`).where("status", "in", ["connected", "needs_reconnect"]).get();
   const others = existing.docs.filter((d) => d.id !== connId).length;
   const limit = getPlan(ws.plan).maxConnections;
-  if (others >= limit) throw new HttpsError("resource-exhausted", `Your plan allows ${limit} connected platform${limit === 1 ? "" : "s"}. Disconnect one or upgrade.`);
+  if (others >= limit) throw new HttpsError("resource-exhausted", `Your plan allows ${limit} connected platform${limit === 1 ? "" : "s"} in each business workspace. Disconnect one or upgrade.`);
 
   const nonce = randomBytes(24).toString("base64url");
   await db.doc(`oauthStates/${nonce}`).set({ workspaceId, businessId, uid, shop, expiresAt: Timestamp.fromMillis(Date.now() + STATE_TTL_MS) });

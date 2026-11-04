@@ -4,6 +4,7 @@ import { logger } from "firebase-functions/v2";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { addNotification, type NotificationKind } from "../notify/inapp";
 import { APP_URL, enqueueMail } from "../notify/mail";
+import { applyAccountPatchIf, bootstrapOwners } from "../accounts/account";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -169,28 +170,38 @@ export async function processWorkspaceTrial(
   return "none";
 }
 
-/** Scheduled job: runs daily to process trial reminders, expiration, and pre-deletion */
+/** Scheduled job: runs daily to process trial reminders, expiration, and pre-deletion. Trials belong to the account. */
 export const trialLifecycle = onSchedule("every day 04:00", async () => {
   const db = getFirestore();
   const now = new Date();
 
-  // Query trialing workspaces
-  const trialingSnap = await db.collection("workspaces")
+  // Workspaces that pre-date accounts get their account first, so they are never skipped.
+  await bootstrapOwners(db, (await db.collection("workspaces").where("billingStatus", "in", ["trialing", "trial_expired"]).limit(300).get()).docs);
+  const trialingSnap = await db.collection("accounts")
     .where("billingStatus", "in", ["trialing", "trial_expired"])
     .limit(300)
     .get();
 
   let count = 0;
-  for (const doc of trialingSnap.docs) {
+  for (const acc of trialingSnap.docs) {
     try {
-      if ((await db.doc(`planOverrides/${doc.id}`).get()).exists) continue; // override sticks until cleared
-      const ws = { id: doc.id, ...(doc.data() as Omit<WorkspaceDoc, "id">) };
+      if ((await db.doc(`planOverrides/${acc.id}`).get()).exists) continue; // override sticks until cleared
+      const a = acc.data();
+      const primaryId = a.primaryWorkspaceId as string | undefined;
+      if (!primaryId) continue;
+      const wsSnap = await db.doc(`workspaces/${primaryId}`).get();
+      if (!wsSnap.exists) continue;
+      // Reminders and notices go through the primary workspace; the plan state comes from the account.
+      const ws = { ...(wsSnap.data() as Omit<WorkspaceDoc, "id">), id: primaryId, billingStatus: a.billingStatus, plan: a.plan, trialEndsAt: a.trialEndsAt ?? null };
+      // Expire the trial on the account first, and only if it is still trialing: a subscription that just arrived wins.
+      const expiring = a.billingStatus === "trialing" && a.trialEndsAt && now.getTime() >= a.trialEndsAt.toMillis();
+      if (expiring && !(await applyAccountPatchIf(db, acc.id, { billingStatus: "trialing" }, { billingStatus: "trial_expired" }))) continue;
       await processWorkspaceTrial(db, ws, now);
       count++;
     } catch (err) {
-      logger.error("trialLifecycle failed for workspace", { workspaceId: doc.id, err: String(err) });
+      logger.error("trialLifecycle failed for account", { accountId: acc.id, err: String(err) });
     }
   }
 
-  logger.info(`trialLifecycle processed ${count} workspaces.`);
+  logger.info(`trialLifecycle processed ${count} accounts.`);
 });

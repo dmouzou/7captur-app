@@ -5,6 +5,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { analyzeRows, importRecordsInput } from "../shared/importing";
 import { requireMember } from "../workspaces/access";
 import { confirmImport, releaseImport, reserveImport } from "../recommendations/usage";
+import { ensureAccountForWorkspace } from "../accounts/account";
 import { addNotification } from "../notify/inapp";
 
 const MAX_ERRORS_STORED = 100;
@@ -76,6 +77,7 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
     return { ...report, status };
   }
 
+  await ensureAccountForWorkspace(db, inp.workspaceId);
   const reservation = await reserveImport(db, inp.workspaceId, inp.requestId);
   if (!reservation.ok) {
     throw new HttpsError("resource-exhausted", "Import limit reached for this month.", { limit: reservation.limit, resetsOn: reservation.resetsOn });

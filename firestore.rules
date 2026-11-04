@@ -20,8 +20,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/workspaces/$(wid)).data.get('suspended', false) != true;
     }
     function notReadOnly(wid) {
-      let b = get(/databases/$(database)/documents/workspaces/$(wid)).data.get('billingStatus', '');
-      return b != 'trial_expired' && b != 'restricted';
+      let w = get(/databases/$(database)/documents/workspaces/$(wid)).data;
+      let b = w.get('billingStatus', '');
+      // overLimit: this workspace is beyond what the account's plan allows (for example after a downgrade). Read-only, never deleted.
+      return b != 'trial_expired' && b != 'restricted' && w.get('overLimit', false) != true;
     }
     function canEdit(wid) {
       return isMember(wid) && memberDoc(wid).data.role in ['owner', 'editor'] && notSuspended(wid) && notReadOnly(wid);
@@ -70,9 +72,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // The account (accounts/{ownerUid}) owns the plan, subscription and the shared usage counters.
+    // Plan fields are mirrored onto each workspace doc by the server. Clients never write here.
+    match /accounts/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+      match /usage/{periodId} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow write: if false;
+      }
+      // billing/subscription and everything else under the account is server-only.
+    }
+
     match /workspaces/{wid} {
       // Workspace doc holds plan reference, so it is read-only for clients.
-      allow read: if isMember(wid) || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      allow get: if isMember(wid) || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      // An owner lists their own workspaces with where("ownerUid", "==", uid): provable from the query itself.
+      allow list: if signedIn() && resource.data.ownerUid == request.auth.uid;
       allow write: if false;
 
       match /members/{uid} {

@@ -100,6 +100,8 @@ they are versioned in `shared/plans.json` so the app and website cannot drift.
 
 **Support inbox.** Internal notes live only on `supportTickets` (admin-only). The customer-readable copy under the workspace gets the status and an optional reply, never notes.
 
+**Account-level plans (pricing v5).** After deploying, run once per project: `GOOGLE_CLOUD_PROJECT=<project> node scripts/migrate-accounts.mjs` (dry run), then add `--apply`. It moves each owner's plan, subscription, usage and admin override to `accounts/{ownerUid}`. See `docs/ACCOUNT-LEVEL-PLANS.md`. The daily billing jobs read `accounts/`, so do not skip it.
+
 **After deploying this version, run once per project:** `node scripts/scrub-admin-data.mjs --dry-run`, then without `--dry-run`. It removes old
 `internalNotes` from customer-readable feedback docs and moves any old `planOverride` field into `planOverrides/`. Then deploy indexes (`firebase deploy --only firestore:indexes`).
 

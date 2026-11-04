@@ -16,7 +16,7 @@ export function FollowUps({ decisionId }: { decisionId: string }) {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const monthId = periodIds(new Date(), ws.timezone).monthId;
+  const monthId = periodIds(new Date(), ws.accountTimezone).monthId;
 
   useEffect(() => onSnapshot(
     query(collection(db, `workspaces/${ws.workspaceId}/decisions/${decisionId}/followups`), orderBy("createdAt", "asc")),
@@ -25,10 +25,10 @@ export function FollowUps({ decisionId }: { decisionId: string }) {
   ), [ws.workspaceId, decisionId]);
 
   useEffect(() => onSnapshot(
-    doc(db, `workspaces/${ws.workspaceId}/usage/${monthId}`),
+    doc(db, `accounts/${ws.ownerUid}/usage/${monthId}`),
     (s) => setUsedMonth(Number(s.data()?.aiFollowUps ?? 0)),
     () => setUsedMonth(0),
-  ), [ws.workspaceId, monthId]);
+  ), [ws.ownerUid, monthId]);
 
   const usedHere = items.filter((i) => i.source === "ai").length;
   const leftDecision = Math.max(0, caps.perDecision - usedHere);

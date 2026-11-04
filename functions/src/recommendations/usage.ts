@@ -4,6 +4,27 @@ import { getPlan } from "../shared/plans";
 import { localDate, localToday, periodIds } from "../shared/periods";
 export { localDate, localToday, periodIds };
 
+export interface WsData { ownerUid?: string; plan?: string; timezone?: string }
+
+/**
+ * Allowances (recommendations, imports, AI follow-ups) are shared by all workspaces of an account, so the
+ * counters live at accounts/{ownerUid}/usage/{periodId}. The plan and the reset timezone come from the account.
+ * Callers run ensureAccountForWorkspace first, so the account exists for workspaces that pre-date accounts.
+ */
+export async function accountOfTx(db: Firestore, tx: FirebaseFirestore.Transaction, ws: WsData) {
+  if (!ws.ownerUid) throw new Error("workspace has no owner");
+  const accountRef = db.doc(`accounts/${ws.ownerUid}`);
+  const acct = await tx.get(accountRef);
+  if (!acct.exists) throw new Error("account not found");
+  const a = acct.data() as { plan?: string; timezone?: string };
+  return { accountRef, accountId: ws.ownerUid, plan: a.plan ?? "starter", timezone: a.timezone ?? ws.timezone ?? "UTC" };
+}
+
+/** Where a reservation's counters live. Reservations made before accounts existed used the workspace. */
+export function usageBase(db: Firestore, workspaceId: string, accountId?: string) {
+  return db.doc(accountId ? `accounts/${accountId}` : `workspaces/${workspaceId}`);
+}
+
 export type ReserveResult =
   | { ok: true; reservationId: string; duplicate: boolean }
   | { ok: false; reason: "weekly_limit" | "monthly_limit"; resetsOn: string };
@@ -26,11 +47,11 @@ export async function reserveRecommendation(
       return { ok: true as const, reservationId: requestId, duplicate: true };
     }
 
-    const { plan, timezone } = ws.data() as { plan: string; timezone: string };
+    const { accountRef, accountId, plan, timezone } = await accountOfTx(db, tx, ws.data() as WsData);
     const caps = getPlan(plan).recommendations;
     const ids = periodIds(now, timezone);
-    const weekRef = wsRef.collection("usage").doc(ids.weekId);
-    const monthRef = wsRef.collection("usage").doc(ids.monthId);
+    const weekRef = accountRef.collection("usage").doc(ids.weekId);
+    const monthRef = accountRef.collection("usage").doc(ids.monthId);
     const [week, month] = await Promise.all([tx.get(weekRef), tx.get(monthRef)]);
     const weekCount = (week.data()?.recommendations as number | undefined) ?? 0;
     const monthCount = (month.data()?.recommendations as number | undefined) ?? 0;
@@ -42,7 +63,7 @@ export async function reserveRecommendation(
 
     tx.set(weekRef, { kind: "week", recommendations: weekCount + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.set(monthRef, { kind: "month", recommendations: monthCount + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    tx.set(reqRef, { state: "reserved", weekId: ids.weekId, monthId: ids.monthId, createdAt: Timestamp.fromDate(now) });
+    tx.set(reqRef, { state: "reserved", accountId, weekId: ids.weekId, monthId: ids.monthId, createdAt: Timestamp.fromDate(now) });
     return { ok: true as const, reservationId: requestId, duplicate: false };
   });
 }
@@ -54,9 +75,10 @@ export async function releaseReservation(db: Firestore, workspaceId: string, req
   await db.runTransaction(async (tx) => {
     const req = await tx.get(reqRef);
     if (!req.exists || req.data()!.state !== "reserved") return;
-    const { weekId, monthId } = req.data() as { weekId: string; monthId: string };
-    const weekRef = wsRef.collection("usage").doc(weekId);
-    const monthRef = wsRef.collection("usage").doc(monthId);
+    const { weekId, monthId, accountId } = req.data() as { weekId: string; monthId: string; accountId?: string };
+    const base = usageBase(db, workspaceId, accountId);
+    const weekRef = base.collection("usage").doc(weekId);
+    const monthRef = base.collection("usage").doc(monthId);
     const [w, m] = await Promise.all([tx.get(weekRef), tx.get(monthRef)]);
     tx.update(weekRef, { recommendations: Math.max(0, ((w.data()?.recommendations as number) ?? 1) - 1) });
     tx.update(monthRef, { recommendations: Math.max(0, ((m.data()?.recommendations as number) ?? 1) - 1) });
@@ -81,15 +103,15 @@ export async function reserveImport(db: Firestore, workspaceId: string, requestI
     const [ws, existing] = await Promise.all([tx.get(wsRef), tx.get(reqRef)]);
     if (!ws.exists) throw new Error("workspace not found");
     if (existing.exists && existing.data()!.state !== "released") return { ok: true as const, duplicate: true };
-    const { plan, timezone } = ws.data() as { plan: string; timezone: string };
+    const { accountRef, accountId, plan, timezone } = await accountOfTx(db, tx, ws.data() as WsData);
     const limit = getPlan(plan).importsPerMonth;
     const ids = periodIds(now, timezone);
-    const monthRef = wsRef.collection("usage").doc(ids.monthId);
+    const monthRef = accountRef.collection("usage").doc(ids.monthId);
     const month = await tx.get(monthRef);
     const used = (month.data()?.imports as number | undefined) ?? 0;
     if (used >= limit) return { ok: false as const, limit, resetsOn: ids.monthlyResetsOn };
     tx.set(monthRef, { kind: "month", imports: used + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    tx.set(reqRef, { state: "reserved", monthId: ids.monthId, createdAt: Timestamp.fromDate(now) });
+    tx.set(reqRef, { state: "reserved", accountId, monthId: ids.monthId, createdAt: Timestamp.fromDate(now) });
     return { ok: true as const, duplicate: false };
   });
 }
@@ -100,7 +122,8 @@ export async function releaseImport(db: Firestore, workspaceId: string, requestI
   await db.runTransaction(async (tx) => {
     const req = await tx.get(reqRef);
     if (!req.exists || req.data()!.state !== "reserved") return;
-    const monthRef = wsRef.collection("usage").doc((req.data() as { monthId: string }).monthId);
+    const { monthId, accountId } = req.data() as { monthId: string; accountId?: string };
+    const monthRef = usageBase(db, workspaceId, accountId).collection("usage").doc(monthId);
     const m = await tx.get(monthRef);
     tx.update(monthRef, { imports: Math.max(0, ((m.data()?.imports as number) ?? 1) - 1) });
     tx.update(reqRef, { state: "released" });

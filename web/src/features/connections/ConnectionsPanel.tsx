@@ -103,7 +103,7 @@ export function ConnectionsPanel() {
     <section>
       <div className="card">
         <h2>Connections</h2>
-        <p className="muted">Connected platforms are read-only. 7Captur reads orders and never changes your store or your ads. We do not store customer names, emails or addresses. Your plan allows up to {limit} connected platform{limit === 1 ? "" : "s"}.</p>
+        <p className="muted">Connected platforms are read-only. 7Captur reads orders and never changes your store or your ads. We do not store customer names, emails or addresses. Your plan allows up to {limit} connected platform{limit === 1 ? "" : "s"} in each business workspace.</p>
         <ul style={{ listStyle: "none", padding: 0 }}>
           {conns.filter((c) => c.status === "pending_account").map((c) => (
             <li key={c.id} className="card" style={{ margin: "12px 0" }}>

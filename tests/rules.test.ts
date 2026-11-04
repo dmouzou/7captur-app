@@ -117,6 +117,42 @@ describe("read-only enforcement", () => {
   });
 });
 
+describe("accounts and over-limit workspaces", () => {
+  it("the owner can read their account usage; others cannot; nobody can write", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), "accounts/alice"), { plan: "growth" });
+      await setDoc(doc(ctx.firestore(), "accounts/alice/usage/2026-W45"), { recommendations: 3 });
+      await setDoc(doc(ctx.firestore(), "accounts/alice/billing/subscription"), { subscriptionId: "sub_x" });
+    });
+    const alice = env.authenticatedContext("alice").firestore();
+    const bob = env.authenticatedContext("bob").firestore();
+    await assertSucceeds(getDoc(doc(alice, "accounts/alice")));
+    await assertSucceeds(getDoc(doc(alice, "accounts/alice/usage/2026-W45")));
+    await assertFails(getDoc(doc(bob, "accounts/alice")));
+    await assertFails(getDoc(doc(bob, "accounts/alice/usage/2026-W45")));
+    await assertFails(getDoc(doc(alice, "accounts/alice/billing/subscription")));
+    await assertFails(setDoc(doc(alice, "accounts/alice"), { plan: "custom" }));
+    await assertFails(setDoc(doc(alice, "accounts/alice/usage/2026-W45"), { recommendations: 0 }));
+  });
+
+  it("an owner can list only their own workspaces", async () => {
+    const { collection, getDocs, query, where } = await import("firebase/firestore");
+    const alice = env.authenticatedContext("alice").firestore();
+    await assertSucceeds(getDocs(query(collection(alice, "workspaces"), where("ownerUid", "==", "alice"))));
+    await assertFails(getDocs(query(collection(alice, "workspaces"), where("ownerUid", "==", "bob"))));
+    await assertFails(getDocs(collection(alice, "workspaces")));
+  });
+
+  it("blocks record writes on a workspace beyond the plan limit, but still allows reads", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), "workspaces/wsA"), { overLimit: true });
+    });
+    const db = env.authenticatedContext("alice").firestore();
+    await assertSucceeds(getDoc(doc(db, "workspaces/wsA/posts/p1")));
+    await assertFails(setDoc(doc(db, "workspaces/wsA/posts/p_over"), post("wsA", "alice")));
+  });
+});
+
 describe("admin-only collections", () => {
   it("members and anonymous users cannot read or write planOverrides, supportTickets or auditEvents", async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {

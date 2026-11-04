@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp, type Firestore } from "firebase-admin/firestore";
 import { getPlan } from "../shared/plans";
 import { periodIds } from "../shared/periods";
+import { accountOfTx, usageBase, type WsData } from "../recommendations/usage";
 
 export type FollowUpReserve =
   | { ok: true; duplicate: boolean }
@@ -18,10 +19,10 @@ export async function reserveFollowUp(db: Firestore, workspaceId: string, decisi
     const [ws, existing, count] = await Promise.all([tx.get(wsRef), tx.get(reqRef), tx.get(countRef)]);
     if (!ws.exists) throw new Error("workspace not found");
     if (existing.exists && existing.data()!.state !== "released") return { ok: true as const, duplicate: true };
-    const { plan, timezone } = ws.data() as { plan: string; timezone: string };
+    const { accountRef, accountId, plan, timezone } = await accountOfTx(db, tx, ws.data() as WsData);
     const caps = getPlan(plan).aiFollowUps;
     const ids = periodIds(now, timezone);
-    const monthRef = wsRef.collection("usage").doc(ids.monthId);
+    const monthRef = accountRef.collection("usage").doc(ids.monthId);
     const month = await tx.get(monthRef);
     const usedMonth = (month.data()?.aiFollowUps as number | undefined) ?? 0;
     const usedDecision = (count.data()?.count as number | undefined) ?? 0;
@@ -29,7 +30,7 @@ export async function reserveFollowUp(db: Firestore, workspaceId: string, decisi
     if (usedDecision >= caps.perDecision) return { ok: false as const, reason: "decision_limit" as const, limit: caps.perDecision, resetsOn: ids.monthlyResetsOn };
     tx.set(monthRef, { kind: "month", aiFollowUps: usedMonth + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     tx.set(countRef, { count: usedDecision + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    tx.set(reqRef, { state: "reserved", monthId: ids.monthId, decisionId, createdAt: Timestamp.fromDate(now) });
+    tx.set(reqRef, { state: "reserved", accountId, monthId: ids.monthId, decisionId, createdAt: Timestamp.fromDate(now) });
     return { ok: true as const, duplicate: false };
   });
 }
@@ -41,8 +42,8 @@ export async function releaseFollowUp(db: Firestore, workspaceId: string, reques
   await db.runTransaction(async (tx) => {
     const req = await tx.get(reqRef);
     if (!req.exists || req.data()!.state !== "reserved") return;
-    const { monthId, decisionId } = req.data() as { monthId: string; decisionId: string };
-    const monthRef = wsRef.collection("usage").doc(monthId);
+    const { monthId, decisionId, accountId } = req.data() as { monthId: string; decisionId: string; accountId?: string };
+    const monthRef = usageBase(db, workspaceId, accountId).collection("usage").doc(monthId);
     const countRef = wsRef.collection("followupCounts").doc(decisionId);
     const [m, c] = await Promise.all([tx.get(monthRef), tx.get(countRef)]);
     tx.update(monthRef, { aiFollowUps: Math.max(0, ((m.data()?.aiFollowUps as number) ?? 1) - 1) });
@@ -51,10 +52,17 @@ export async function releaseFollowUp(db: Firestore, workspaceId: string, reques
   });
 }
 
+/** Adds real token usage to the account's month for cost tracking. */
+export async function addAiTokens(db: Firestore, workspaceId: string, requestId: string, monthId: string, tokens: { input: number; output: number }) {
+  const reqRef = db.doc(`workspaces/${workspaceId}`).collection("usageRequests").doc(`fu_${requestId}`);
+  const req = (await reqRef.get()).data() as { accountId?: string; monthId?: string } | undefined;
+  // The reservation knows the account and the month it was counted in (account timezone); trust it over the caller's guess.
+  await usageBase(db, workspaceId, req?.accountId).collection("usage").doc(req?.monthId ?? monthId).set(
+    { aiInputTokens: FieldValue.increment(tokens.input), aiOutputTokens: FieldValue.increment(tokens.output) }, { merge: true });
+}
+
 /** Answer stored: the credit is final, and real token usage is added to the month for cost tracking. */
 export async function confirmFollowUp(db: Firestore, workspaceId: string, requestId: string, monthId: string, tokens: { input: number; output: number }) {
-  const wsRef = db.doc(`workspaces/${workspaceId}`);
-  await wsRef.collection("usageRequests").doc(`fu_${requestId}`).update({ state: "consumed" });
-  await wsRef.collection("usage").doc(monthId).set(
-    { aiInputTokens: FieldValue.increment(tokens.input), aiOutputTokens: FieldValue.increment(tokens.output) }, { merge: true });
+  await db.doc(`workspaces/${workspaceId}`).collection("usageRequests").doc(`fu_${requestId}`).update({ state: "consumed" });
+  await addAiTokens(db, workspaceId, requestId, monthId, tokens);
 }

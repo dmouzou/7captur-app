@@ -65,11 +65,11 @@ export function RecommendationsPanel({
 
   // Usage doc id is the ISO week id in the workspace timezone
   useEffect(() => {
-    const { weekId } = periodIds(new Date(), ws.timezone);
-    return onSnapshot(doc(db, `workspaces/${ws.workspaceId}/usage/${weekId}`), (s) =>
-      setUsed((s.data()?.recommendations as number | undefined) ?? 0)
+    const { weekId } = periodIds(new Date(), ws.accountTimezone);
+    return onSnapshot(doc(db, `accounts/${ws.ownerUid}/usage/${weekId}`), (s) =>
+      setUsed((s.data()?.recommendations as number | undefined) ?? 0), () => undefined
     );
-  }, [ws.workspaceId, ws.timezone]);
+  }, [ws.ownerUid, ws.accountTimezone]);
 
   async function triggerGenerate(override = false) {
     setError("");

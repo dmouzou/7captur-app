@@ -7,7 +7,8 @@ import { requireMember } from "../workspaces/access";
 import { getActiveAiConfig } from "../config/aiConfig";
 import { ANTHROPIC_API_KEY } from "../config";
 import { buildFollowupPrompt, fallbackAnswer, FOLLOWUP_PROMPT_VERSION, validateAnswer, type Snapshot } from "./followupCore";
-import { confirmFollowUp, releaseFollowUp, reserveFollowUp } from "./followupUsage";
+import { addAiTokens, confirmFollowUp, releaseFollowUp, reserveFollowUp } from "./followupUsage";
+import { ensureAccountForWorkspace } from "../accounts/account";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 
@@ -70,6 +71,7 @@ export const askAboutDecision = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSe
   const snapshot = (dec.data()!.snapshot ?? null) as Snapshot | null;
   if (!snapshot) throw new HttpsError("failed-precondition", "This decision has no saved evidence to answer from.");
 
+  await ensureAccountForWorkspace(db, workspaceId);
   const reservation = await reserveFollowUp(db, workspaceId, decisionId, requestId);
   if (!reservation.ok) {
     throw new HttpsError("resource-exhausted", reservation.reason === "decision_limit"
@@ -99,8 +101,7 @@ export const askAboutDecision = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSe
     });
     await releaseFollowUp(db, workspaceId, requestId);
     if (tokens.input + tokens.output > 0) {
-      await db.doc(`workspaces/${workspaceId}/usage/${monthId}`).set(
-        { aiInputTokens: FieldValue.increment(tokens.input), aiOutputTokens: FieldValue.increment(tokens.output) }, { merge: true });
+      await addAiTokens(db, workspaceId, requestId, monthId, tokens);
     }
     return { followUpId: requestId, duplicate: false, source: "engine" };
   } catch (err) {

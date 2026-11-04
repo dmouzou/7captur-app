@@ -27,7 +27,7 @@ describe("AI follow-ups: prompt and plan", () => {
   it("plan caps: Starter 10 monthly and 3 per decision, Growth 100 and 10", () => {
     expect(getPlan("starter").aiFollowUps).toEqual({ monthly: 10, perDecision: 3 });
     expect(getPlan("growth").aiFollowUps).toEqual({ monthly: 100, perDecision: 10 });
-    expect(getPlan("growth").recommendations.weekly).toBe(30);
+    expect(getPlan("growth").recommendations.weekly).toBe(15);
     expect(getPlan("starter").recommendations.weekly).toBe(3);
   });
 

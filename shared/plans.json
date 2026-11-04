@@ -1,8 +1,8 @@
 {
-  "version": 4,
+  "version": 5,
   "currency": "USD",
   "billingCadence": "monthly",
-  "notes": "v3 plan set: Starter, Growth, Custom. No Free plan. Every new workspace gets a 14-day trial of Starter. Connections are counted per workspace, across all businesses; e-commerce platforms and ad accounts share one pool.",
+  "notes": "v5 plan set: Starter, Growth, Custom. No Free plan. Every new account gets a 14-day trial of Starter. The plan and subscription belong to the ACCOUNT (accounts/{ownerUid}); maxBusinesses is the number of business workspaces the account can have. Each workspace is a separate business: maxConnections applies PER WORKSPACE (e-commerce platforms and ad accounts share that pool), so Growth can connect 7 per workspace across 3 workspaces. Recommendation, import and AI follow-up allowances are shared by all workspaces of the account.",
   "plans": {
     "starter": {
       "name": "Starter",
@@ -35,10 +35,10 @@
       "prioritySupport": true,
       "weeklySummary": true,
       "strategyCall": false,
-      "maxConnections": 5,
-      "maxBusinesses": 2,
+      "maxConnections": 7,
+      "maxBusinesses": 3,
       "recommendations": {
-        "weekly": 30,
+        "weekly": 15,
         "monthly": null
       },
       "importsPerMonth": 50,

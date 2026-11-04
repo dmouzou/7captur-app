@@ -150,7 +150,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
             </span>
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            {currentPlan.recommendations.weekly} recommendations/week · {currentPlan.maxConnections} platform connections
+            {currentPlan.recommendations.weekly} recommendations/week · {currentPlan.maxConnections} platform connections per workspace · {currentPlan.maxBusinesses} business workspace{currentPlan.maxBusinesses === 1 ? "" : "s"}
           </div>
         </div>
         {onOpenBilling && (

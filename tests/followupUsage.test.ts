@@ -3,7 +3,11 @@ import { releaseFollowUp, reserveFollowUp } from "../functions/src/decisions/fol
 
 /** Minimal in-memory Firestore: just enough surface for the reservation transaction. */
 function fakeDb(plan: string) {
-  const store = new Map<string, Record<string, unknown>>([["workspaces/w1", { plan, timezone: "UTC" }]]);
+  // Allowances live on the account (accounts/{ownerUid}); the workspace only points at its owner.
+  const store = new Map<string, Record<string, unknown>>([
+    ["workspaces/w1", { ownerUid: "u1", timezone: "UTC" }],
+    ["accounts/u1", { plan, timezone: "UTC" }],
+  ]);
   const ref = (path: string): any => ({
     path,
     collection: (name: string) => ({ doc: (id: string) => ref(`${path}/${name}/${id}`) }),
@@ -45,7 +49,7 @@ describe("AI follow-up credits", () => {
     const { db, store } = fakeDb("starter");
     await reserveFollowUp(db, "w1", "d1", "req-1", now);
     expect(await reserveFollowUp(db, "w1", "d1", "req-1", now)).toEqual({ ok: true, duplicate: true });
-    const month = [...store.entries()].find(([k]) => k.startsWith("workspaces/w1/usage/"))![1];
+    const month = [...store.entries()].find(([k]) => k.startsWith("accounts/u1/usage/"))![1];
     expect(month.aiFollowUps).toBe(1);
     expect(month.recommendations).toBeUndefined();
   });
@@ -56,7 +60,18 @@ describe("AI follow-up credits", () => {
     await releaseFollowUp(db, "w1", "req-1");
     await releaseFollowUp(db, "w1", "req-1");
     expect(store.get("workspaces/w1/followupCounts/d1")?.count).toBe(0);
-    expect([...store.entries()].find(([k]) => k.startsWith("workspaces/w1/usage/"))![1].aiFollowUps).toBe(0);
+    expect([...store.entries()].find(([k]) => k.startsWith("accounts/u1/usage/"))![1].aiFollowUps).toBe(0);
     expect(await reserveFollowUp(db, "w1", "d1", "req-2", now)).toEqual({ ok: true, duplicate: false });
+  });
+
+  it("is shared by every workspace of the account", async () => {
+    const { db, store } = fakeDb("growth");
+    store.set("workspaces/w2", { ownerUid: "u1", timezone: "UTC" });
+    for (let i = 0; i < 100; i++) {
+      const ws = i % 2 === 0 ? "w1" : "w2";
+      expect((await reserveFollowUp(db, ws, `d${i}`, `req-${i}`, now)).ok).toBe(true);
+    }
+    expect(await reserveFollowUp(db, "w2", "d-new", "req-over", now)).toMatchObject({ ok: false, reason: "monthly_limit", limit: 100 });
+    expect(await reserveFollowUp(db, "w1", "d-new2", "req-over2", now)).toMatchObject({ ok: false, reason: "monthly_limit", limit: 100 });
   });
 });

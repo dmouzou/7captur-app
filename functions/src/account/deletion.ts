@@ -11,6 +11,7 @@ import { addNotification } from "../notify/inapp";
 import { APP_URL, enqueueMail } from "../notify/mail";
 import { cancelNow } from "../billing/paddle";
 import { disconnectAllConnections } from "../connections/disconnect";
+import { applyAccountPatch, mirrorAccountToWorkspaces, workspacesOfOwner } from "../accounts/account";
 
 export const DELETION_GRACE_DAYS = defineInt("DELETION_GRACE_DAYS", { default: 14 });
 const PADDLE_ENV = defineString("PADDLE_ENV", { default: "sandbox" });
@@ -86,20 +87,42 @@ export const processDeletions = onSchedule({ schedule: "every day 02:30", secret
       const wsRef = db.doc(`workspaces/${wid}`);
       const ws = (await wsRef.get()).data();
       const memberUids = (await wsRef.collection("members").get()).docs.map((d) => d.id);
-      const billing = (await wsRef.collection("billing").doc("subscription").get()).data();
-      if (billing?.subscriptionId && ["active", "past_due", "paused"].includes(billing.status)) {
-        await cancelNow(PADDLE_ENV.value(), PADDLE_API_KEY.value(), billing.subscriptionId);
+      // An owner may have other workspaces under the same account. Only the LAST workspace takes the subscription,
+      // the account record, the user and the login with it.
+      // On a retry the workspace may already be gone; the request still remembers the owner.
+      const ownerUid = (ws?.ownerUid ?? req.data().ownerUid) as string | undefined;
+      const siblings = ownerUid ? (await workspacesOfOwner(db, ownerUid)).filter((d) => d.id !== wid) : [];
+      const lastOfAccount = siblings.length === 0;
+      if (ownerUid && lastOfAccount) {
+        const billing = (await db.doc(`accounts/${ownerUid}/billing/subscription`).get()).data()
+          ?? (await wsRef.collection("billing").doc("subscription").get()).data();
+        if (billing?.subscriptionId && ["active", "past_due", "paused"].includes(billing.status)) {
+          await cancelNow(PADDLE_ENV.value(), PADDLE_API_KEY.value(), billing.subscriptionId);
+        }
       }
       await disconnectAllConnections(db, wid);
       await getStorage().bucket().deleteFiles({ prefix: `workspaces/${wid}/`, force: true });
       const mails = await db.collection("mail").where("meta.workspaceId", "==", wid).get();
       await Promise.all(mails.docs.map((d) => d.ref.delete()));
       await db.recursiveDelete(wsRef);
-      for (const uid of memberUids) {
+      if (ownerUid && !lastOfAccount) {
+        // Keep the account and the login. Point the account and the user at a workspace that still exists.
+        const next = siblings[0].id;
+        const acc = (await db.doc(`accounts/${ownerUid}`).get()).data();
+        if (acc?.primaryWorkspaceId === wid) await applyAccountPatch(db, ownerUid, { primaryWorkspaceId: next });
+        else await mirrorAccountToWorkspaces(db, ownerUid);
+        const u = (await db.doc(`users/${ownerUid}`).get()).data();
+        if (u?.defaultWorkspaceId === wid) await db.doc(`users/${ownerUid}`).set({ defaultWorkspaceId: next }, { merge: true });
+      } else if (ownerUid) {
+        await db.recursiveDelete(db.doc(`accounts/${ownerUid}`));
+        await db.doc(`planOverrides/${ownerUid}`).delete().catch(() => undefined);
+      }
+      for (const uid of new Set([...memberUids, ...(ownerUid && lastOfAccount ? [ownerUid] : [])])) {
+        if (uid === ownerUid && !lastOfAccount) continue;
         await db.doc(`users/${uid}`).delete();
         await getAuth().deleteUser(uid).catch((e) => { if ((e as { code?: string }).code !== "auth/user-not-found") throw e; });
       }
-      await db.collection("auditEvents").add({ action: "account_deleted", workspaceId: wid, requestedAt: req.data().requestedAt, completedAt: FieldValue.serverTimestamp(), hadPlan: ws?.plan ?? null });
+      await db.collection("auditEvents").add({ action: "account_deleted", workspaceId: wid, requestedAt: req.data().requestedAt, completedAt: FieldValue.serverTimestamp(), hadPlan: ws?.plan ?? null, accountClosed: lastOfAccount });
       await req.ref.set({ status: "completed", completedAt: FieldValue.serverTimestamp(), ownerUid: FieldValue.delete() }, { merge: true });
     } catch (err) {
       logger.error("deletion failed, will retry", { workspaceId: wid, err: String(err) });

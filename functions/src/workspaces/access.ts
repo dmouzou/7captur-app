@@ -12,6 +12,9 @@ export async function requireMember(db: Firestore, workspaceId: string, uid: str
     if (!opts.allowSuspended && ws?.suspended) {
       throw new HttpsError("failed-precondition", "This workspace is suspended. Contact support.");
     }
+    if (ws?.overLimit === true) {
+      throw new HttpsError("failed-precondition", "This workspace is over your plan's workspace limit and is read-only. Upgrade to keep editing it. Nothing is deleted.");
+    }
     if (ws?.billingStatus === "trial_expired" || ws?.billingStatus === "restricted") {
       throw new HttpsError("failed-precondition", "This workspace is read-only. Subscribe to continue making changes.");
     }

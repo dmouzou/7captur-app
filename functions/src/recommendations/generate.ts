@@ -9,6 +9,7 @@ import type { FxRates } from "../shared/fx";
 import { explainWithAI } from "./explain";
 import { ANTHROPIC_API_KEY } from "../config";
 import { confirmReservation, localToday, releaseReservation, reserveRecommendation } from "./usage";
+import { ensureAccountForWorkspace } from "../accounts/account";
 import { addNotification } from "../notify/inapp";
 
 const PAGE = 500;
@@ -125,6 +126,7 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
     }
   }
 
+  await ensureAccountForWorkspace(db, workspaceId);
   const reservation = await reserveRecommendation(db, workspaceId, requestId);
   if (!reservation.ok) {
     await addNotification(

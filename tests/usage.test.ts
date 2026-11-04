@@ -19,8 +19,8 @@ describe("plan config", () => {
     expect(PLANS.growth.priceAnnualMonthly).toBe(159);
     expect(PLANS.growth.priceAnnual).toBe(1908);
     expect(PLANS.growth.trialDays).toBe(14);
-    expect(PLANS.growth.maxConnections).toBe(5);
-    expect(PLANS.growth.maxBusinesses).toBe(2);
+    expect(PLANS.growth.maxConnections).toBe(7); // per workspace
+    expect(PLANS.growth.maxBusinesses).toBe(3); // business workspaces per account
     expect(PLANS.growth.importsPerMonth).toBe(50);
     expect(PLANS.growth.historyDays).toBe(365);
     expect(PLANS.growth.weeklySummary).toBe(true);
@@ -49,8 +49,8 @@ describe("periodIds", () => {
 });
 
 describe("locked weekly allowances", () => {
-  it("Starter 3, Growth 30, Custom 999", () => {
+  it("Starter 3, Growth 15, Custom 999", () => {
     expect([PLANS.starter, PLANS.growth, PLANS.custom].map((p) => p.recommendations.weekly))
-      .toEqual([3, 30, 999]);
+      .toEqual([3, 15, 999]);
   });
 });

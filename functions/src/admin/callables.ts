@@ -4,6 +4,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { z } from "zod";
 import { PLANS, PLAN_IDS } from "../shared/plans";
 import { ADMIN_ROLES, audit, auditInBatch, hasSecondFactor, mfaEnforced, plain, requireAdmin } from "./auth";
+import { applyAccountPatch, bootstrapAccount } from "../accounts/account";
 import { getActiveAiConfig, maskApiKey, DEFAULT_AI_MODEL } from "../config/aiConfig";
 
 const db = () => getFirestore();
@@ -58,14 +59,14 @@ export const adminOverview = onCall(async (request) => {
     const now = Date.now();
     const since7 = Timestamp.fromMillis(now - 7 * DAY), since30 = Timestamp.fromMillis(now - 30 * DAY);
     const byPlan: Record<string, number> = {};
-    await Promise.all(PLAN_IDS.map(async (p) => { byPlan[p] = await count(db().collection("workspaces").where("plan", "==", p)); }));
+    await Promise.all(PLAN_IDS.map(async (p) => { byPlan[p] = await count(db().collection("accounts").where("plan", "==", p)); }));
     const [workspaces, new30, recs7, recsFailed7, pastDue, canceling, needsReconnect, pendingDeletions, suspended, openFeedback] = await Promise.all([
       count(db().collection("workspaces")),
       count(db().collection("workspaces").where("createdAt", ">=", since30)),
       count(db().collectionGroup("recommendations").where("createdAt", ">=", since7)),
       count(db().collectionGroup("recommendations").where("status", "==", "failed").where("createdAt", ">=", since7)),
-      count(db().collection("workspaces").where("billingStatus", "==", "past_due")),
-      count(db().collection("workspaces").where("billingStatus", "==", "canceling")),
+      count(db().collection("accounts").where("billingStatus", "==", "past_due")),
+      count(db().collection("accounts").where("billingStatus", "==", "canceling")),
       count(db().collectionGroup("connections").where("status", "==", "needs_reconnect")),
       count(db().collection("deletionRequests").where("status", "==", "pending")),
       count(db().collection("workspaces").where("suspended", "==", true)),
@@ -113,10 +114,10 @@ export const adminAnalytics = onCall(async (request) => {
     }));
 
     const byPlan: Record<string, number> = {};
-    await Promise.all(PLAN_IDS.map(async (p) => { byPlan[p] = await count(db().collection("workspaces").where("plan", "==", p)); }));
+    await Promise.all(PLAN_IDS.map(async (p) => { byPlan[p] = await count(db().collection("accounts").where("plan", "==", p)); }));
     const total = Object.values(byPlan).reduce((s, v) => s + v, 0);
     const [activePaid, trialing, canceling, canceled, pastDue] = await Promise.all(
-      (["active", "trialing", "canceling", "canceled", "past_due"] as const).map((s) => count(db().collection("workspaces").where("billingStatus", "==", s))),
+      (["active", "trialing", "canceling", "canceled", "past_due"] as const).map((s) => count(db().collection("accounts").where("billingStatus", "==", s))),
     );
 
     // Time to first recommendation, from the 100 newest workspaces.
@@ -238,14 +239,15 @@ export const adminWorkspaceDetail = onCall(async (request) => {
     const ref = db().doc(`workspaces/${p.data.workspaceId}`);
     const w = await ref.get();
     if (!w.exists) throw new HttpsError("not-found", "Workspace not found.");
+    const ownerUid = String(w.data()!.ownerUid ?? "");
     const [conns, usage, imports, recs, billing, members, override, ...counts] = await Promise.all([
       ref.collection("connections").get().catch(() => ({ docs: [] } as any)),
-      ref.collection("usage").orderBy("__name__", "desc").limit(6).get().catch(() => ({ docs: [] } as any)),
+      db().collection(`accounts/${ownerUid}/usage`).orderBy("__name__", "desc").limit(6).get().catch(() => ({ docs: [] } as any)),
       ref.collection("imports").orderBy("createdAt", "desc").limit(10).get().catch(() => ({ docs: [] } as any)),
       ref.collection("recommendations").orderBy("createdAt", "desc").limit(10).get().catch(() => ({ docs: [] } as any)),
-      ref.collection("billing").doc("subscription").get().catch(() => ({ exists: false, data: () => null } as any)),
+      db().doc(`accounts/${ownerUid}/billing/subscription`).get().catch(() => ({ exists: false, data: () => null } as any)),
       ref.collection("members").get().catch(() => ({ docs: [] } as any)),
-      db().doc(`planOverrides/${p.data.workspaceId}`).get().catch(() => ({ exists: false, data: () => null } as any)),
+      db().doc(`planOverrides/${ownerUid}`).get().catch(() => ({ exists: false, data: () => null } as any)),
       ...["posts", "promotions", "leads", "sales", "costs"].map((c) => count(ref.collection(c))),
     ]);
     await audit(admin, "view_workspace", p.data.workspaceId).catch(() => undefined);
@@ -289,9 +291,9 @@ export const adminSetSuspension = onCall(async (request) => {
 });
 
 /**
- * Super admin only. Sets a workspace's plan and billing status by hand.
- * The override is recorded in planOverrides/{workspaceId} (server-only: never readable by customers) and STICKS:
- * the Paddle webhook, enforceBilling and trialLifecycle leave an overridden workspace alone until a super admin
+ * Super admin only. Sets an account's plan and billing status by hand (the account that owns the given workspace;
+ * all of its workspaces follow). The override is recorded in planOverrides/{ownerUid} (server-only: never readable
+ * by customers) and STICKS: the Paddle webhook, enforceBilling and trialLifecycle leave an overridden account alone until a super admin
  * clears the override with adminClearPlanOverride.
  */
 export const adminChangePlan = onCall(async (request) => {
@@ -302,34 +304,40 @@ export const adminChangePlan = onCall(async (request) => {
     reason,
   }).safeParse(request.data);
   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
-  const ref = db().doc(`workspaces/${p.data.workspaceId}`);
-  const w = await ref.get();
+  const w = await db().doc(`workspaces/${p.data.workspaceId}`).get();
   if (!w.exists) throw new HttpsError("not-found", "Workspace not found.");
+  // The plan belongs to the account, so the change covers every workspace of the same owner.
+  const uid = String(w.data()!.ownerUid);
+  const account = await bootstrapAccount(db(), uid);
 
-  const beforePlan = w.data()!.plan;
-  const beforeStatus = w.data()!.billingStatus ?? "none";
+  const beforePlan = account.plan;
+  const beforeStatus = account.billingStatus ?? "none";
   const nextStatus = p.data.billingStatus ?? beforeStatus;
   const updates: Record<string, unknown> = { plan: p.data.plan, billingStatus: nextStatus };
-  if (nextStatus === "active" || nextStatus === "trialing") updates.restrictAt = FieldValue.delete();
+  if (nextStatus === "active" || nextStatus === "trialing") updates.restrictAt = null;
 
   const batch = db().batch();
-  batch.update(ref, updates);
-  batch.set(db().doc(`planOverrides/${p.data.workspaceId}`), {
+  batch.set(db().doc(`planOverrides/${uid}`), {
     plan: p.data.plan, billingStatus: nextStatus, reason: p.data.reason, by: admin.uid, byEmail: admin.email, at: FieldValue.serverTimestamp(),
+    workspaceId: p.data.workspaceId,
   });
   auditInBatch(batch, admin, "change_plan", p.data.workspaceId, {
     reason: p.data.reason, before: { plan: beforePlan, billingStatus: beforeStatus }, after: { plan: p.data.plan, billingStatus: nextStatus, overrideSticks: true },
   });
   await batch.commit();
+  await applyAccountPatch(db(), uid, updates);
   return { ok: true };
 });
 
-/** Super admin only. Removes the override so Paddle and the billing jobs manage the workspace again from their next event. */
+/** Super admin only. Removes the override so Paddle and the billing jobs manage the account again from their next event. */
 export const adminClearPlanOverride = onCall(async (request) => {
   const admin = requireAdmin(request, "change_plan", { fresh: true });
   const p = wsId.extend({ reason }).safeParse(request.data);
   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
-  const oRef = db().doc(`planOverrides/${p.data.workspaceId}`);
+  // Overrides are keyed by account (owner uid). The admin UI passes a workspace id, so resolve its owner.
+  const w = await db().doc(`workspaces/${p.data.workspaceId}`).get();
+  const uid = w.exists ? String(w.data()!.ownerUid) : p.data.workspaceId;
+  const oRef = db().doc(`planOverrides/${uid}`);
   const o = await oRef.get();
   if (!o.exists) throw new HttpsError("failed-precondition", "No override to clear.");
   const batch = db().batch();
@@ -589,7 +597,7 @@ export const adminBilling = onCall(async (request) => {
     return {
       workspaces: await summarizeAll(problem.docs),
       events: events.docs.map((e: any) => plain({ id: e.id, type: e.data().type, workspaceId: e.data().workspaceId, outcome: e.data().outcome, receivedAt: e.data().receivedAt })),
-      overrides: overrides.docs.map((o: any) => plain({ workspaceId: o.id, plan: o.data().plan, billingStatus: o.data().billingStatus, reason: o.data().reason, by: o.data().byEmail, at: o.data().at })),
+      overrides: overrides.docs.map((o: any) => plain({ workspaceId: o.data().workspaceId ?? o.id, plan: o.data().plan, billingStatus: o.data().billingStatus, reason: o.data().reason, by: o.data().byEmail, at: o.data().at })),
     };
   } catch (err) {
     if (err instanceof HttpsError) throw err;

@@ -26,18 +26,18 @@ export function BillingPanel() {
   const [note, setNote] = useState("");
 
   useEffect(() => {
-    const ids = periodIds(new Date(), ws.timezone);
-    const u1 = onSnapshot(doc(db, `workspaces/${ws.workspaceId}/usage/${ids.weekId}`), (s) =>
-      setUsage((u) => ({ ...u, week: s.data()?.recommendations ?? 0 }))
+    const ids = periodIds(new Date(), ws.accountTimezone);
+    const u1 = onSnapshot(doc(db, `accounts/${ws.ownerUid}/usage/${ids.weekId}`), (s) =>
+      setUsage((u) => ({ ...u, week: s.data()?.recommendations ?? 0 })), () => undefined
     );
-    const u2 = onSnapshot(doc(db, `workspaces/${ws.workspaceId}/usage/${ids.monthId}`), (s) =>
-      setUsage((u) => ({ ...u, imports: s.data()?.imports ?? 0 }))
+    const u2 = onSnapshot(doc(db, `accounts/${ws.ownerUid}/usage/${ids.monthId}`), (s) =>
+      setUsage((u) => ({ ...u, imports: s.data()?.imports ?? 0 })), () => undefined
     );
     return () => {
       u1();
       u2();
     };
-  }, [ws.workspaceId, ws.timezone]);
+  }, [ws.ownerUid, ws.accountTimezone]);
 
   useEffect(() => {
     if (waiting && ws.hasSubscription) setWaiting(false);
@@ -203,10 +203,10 @@ export function BillingPanel() {
         )}
         <p className="muted">
           This week: {usage.week} of {plan.recommendations.weekly} recommendations · This month: {usage.imports} of{" "}
-          {plan.importsPerMonth} imports · Connected platforms: up to {plan.maxConnections}
+          {plan.importsPerMonth} imports · Connected platforms: up to {plan.maxConnections} per workspace · Business workspaces: up to {plan.maxBusinesses}
         </p>
         <p className="muted">
-          Allowances reset every Monday in {ws.timezone}. Same recommendation engine on every plan; plans differ in capacity and history.
+          Allowances are shared by all your business workspaces and reset every Monday in {ws.accountTimezone}. Same recommendation engine on every plan; plans differ in capacity and history.
         </p>
         {ws.hasSubscription && isOwner && (
           <button type="button" disabled={!!busy} onClick={portal}>
@@ -290,9 +290,9 @@ export function BillingPanel() {
                 {cycle === "annual" && <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>$1,908 billed annually</div>}
                 {cycle === "monthly" && <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>Billed monthly</div>}
                 <ul style={{ listStyle: "none", padding: 0, margin: "16px 0", fontSize: "0.9rem", lineHeight: 1.6 }}>
-                  <li>✓ 5 connected platforms</li>
-                  <li>✓ 2 business workspaces</li>
-                  <li>✓ 30 recommendations a week</li>
+                  <li>✓ 7 connected platforms per workspace</li>
+                  <li>✓ 3 business workspaces</li>
+                  <li>✓ 15 recommendations a week, shared</li>
                   <li>✓ 50 imports a month</li>
                   <li>✓ 365 days of history</li>
                   <li>✓ Weekly summary & smart reviews</li>

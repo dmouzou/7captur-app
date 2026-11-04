@@ -6,6 +6,7 @@ import { defineString } from "firebase-functions/params";
 import { z } from "zod";
 import { PADDLE_API_KEY } from "../config";
 import { requireMember } from "../workspaces/access";
+import { accountPath, applyAccountPatchIf, bootstrapOwners, ensureAccountForWorkspace } from "../accounts/account";
 import { PADDLE_PRICE_MAP, notifyOwner } from "./webhook";
 import { cancelAtPeriodEnd, changeMode, changeSubscriptionPrice, createPortalSession, parsePriceMap } from "./paddle";
 
@@ -16,9 +17,11 @@ const changeInput = wsInput.extend({ targetPlan: z.enum(["starter", "growth", "c
 async function ownerBilling(uid: string, workspaceId: string) {
   const db = getFirestore();
   await requireMember(db, workspaceId, uid, false);
-  const ws = (await db.doc(`workspaces/${workspaceId}`).get()).data();
-  if (!ws || ws.ownerUid !== uid) throw new HttpsError("permission-denied", "Only the workspace owner can manage billing.");
-  const billing = (await db.doc(`workspaces/${workspaceId}/billing/subscription`).get()).data();
+  const owned = (await db.doc(`workspaces/${workspaceId}`).get()).data();
+  if (!owned || owned.ownerUid !== uid) throw new HttpsError("permission-denied", "Only the workspace owner can manage billing.");
+  // Billing belongs to the account, not to one workspace. `ws` below is the account state (plan, billingStatus).
+  const { account: ws } = await ensureAccountForWorkspace(db, workspaceId);
+  const billing = (await db.doc(`${accountPath(uid)}/billing/subscription`).get()).data();
   return { ws, billing };
 }
 
@@ -64,17 +67,22 @@ export const changeSubscriptionPlan = onCall({ secrets: [PADDLE_API_KEY] }, asyn
 /** Daily: restrict paid features once a grace period or paid-through date has passed. History is never deleted. */
 export const enforceBilling = onSchedule("every day 03:30", async () => {
   const db = getFirestore();
-  const due = await db.collection("workspaces").where("restrictAt", "<=", Timestamp.now()).limit(200).get();
+  // Workspaces that pre-date accounts get their account first, so they are never skipped.
+  await bootstrapOwners(db, (await db.collection("workspaces").where("restrictAt", "<=", Timestamp.now()).limit(200).get()).docs);
+  const due = await db.collection("accounts").where("restrictAt", "<=", Timestamp.now()).limit(200).get();
   for (const doc of due.docs) {
     try {
       // A super admin plan override sticks until a super admin clears it.
       if ((await db.doc(`planOverrides/${doc.id}`).get()).exists) continue;
       const status = doc.data().billingStatus === "past_due" ? "restricted" : "canceled";
-      await doc.ref.update({ billingStatus: status, restrictAt: null });
-      await db.doc(`workspaces/${doc.id}/billing/subscription`).set({ restrictedAt: FieldValue.serverTimestamp() }, { merge: true });
+      // Only if nothing changed since we read it: a Paddle event that just arrived wins.
+      const applied = await applyAccountPatchIf(db, doc.id, { billingStatus: doc.data().billingStatus, restrictAtMs: doc.data().restrictAt?.toMillis?.() ?? null }, { billingStatus: status, restrictAt: null });
+      if (!applied) continue;
+      await db.doc(`${accountPath(doc.id)}/billing/subscription`).set({ restrictedAt: FieldValue.serverTimestamp() }, { merge: true });
+      const primary = (doc.data().primaryWorkspaceId as string | undefined) ?? "";
       // A scheduled cancellation also gets Paddle's own subscription.canceled event, which sends the email.
-      if (status === "restricted") await notifyOwner(doc.id, "subscription_ended", `${doc.id}_restrict_${doc.data().paddleSubscriptionId ?? ""}`);
-    } catch (err) { logger.error("enforceBilling failed", { workspaceId: doc.id, err: String(err) }); }
+      if (status === "restricted" && primary) await notifyOwner(primary, "subscription_ended", `${primary}_restrict_${doc.data().paddleSubscriptionId ?? ""}`);
+    } catch (err) { logger.error("enforceBilling failed", { accountId: doc.id, err: String(err) }); }
   }
-  logger.info(`enforceBilling processed ${due.size} workspace(s).`);
+  logger.info(`enforceBilling processed ${due.size} account(s).`);
 });
