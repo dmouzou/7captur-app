@@ -2,14 +2,19 @@ import { getFirestore } from "firebase-admin/firestore";
 import { ANTHROPIC_API_KEY } from "../config";
 
 export const DEFAULT_CLAUDE_KEY = process.env.DEFAULT_CLAUDE_KEY ?? "";
-export const DEFAULT_AI_MODEL = "claude-3-5-sonnet-latest";
+export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
 
+/**
+ * Claude 3.x models are retired on the Anthropic API (3.5 Sonnet 2025-10-28, Opus 3 2026-01-05, 3.5 Haiku 2026-02-19),
+ * so a request to them fails. A model id saved earlier (admin panel) is mapped to the current replacement instead.
+ * Source: https://platform.claude.com/docs/en/about-claude/model-deprecations
+ */
 export function normalizeAiModel(model?: string): string {
   if (!model) return DEFAULT_AI_MODEL;
   const m = model.trim();
-  if (m === "claude-sonnet-5-5" || m === "claude-3-5-sonnet") return "claude-3-5-sonnet-latest";
-  if (m === "claude-haiku-5-5" || m === "claude-3-5-haiku") return "claude-3-5-haiku-latest";
-  if (m === "claude-opus-5-5" || m === "claude-3-opus") return "claude-3-opus-latest";
+  if (/^claude-3-5-sonnet/.test(m) || /^claude-3-7-sonnet/.test(m) || /^claude-3-sonnet/.test(m)) return "claude-sonnet-5-5";
+  if (/^claude-3-5-haiku/.test(m) || /^claude-3-haiku/.test(m)) return "claude-haiku-5-5";
+  if (/^claude-3-opus/.test(m)) return "claude-opus-5-5";
   return m;
 }
 

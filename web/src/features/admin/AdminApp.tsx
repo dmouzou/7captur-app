@@ -609,7 +609,7 @@ function Feedback() {
   );
 }
 
-const AI_MODELS = ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest", "claude-3-opus-latest"];
+const AI_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"];
 function AiEngine() {
   const r = useCallable<{ configured: boolean; maskedKey: string; model: string; updatedAt: string | null; updatedBy: string | null }>("adminGetAiConfig");
   const [apiKey, setApiKey] = useState("");
