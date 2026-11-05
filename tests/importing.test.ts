@@ -122,3 +122,10 @@ describe("Meta Ads Manager export headers", () => {
     expect(m.clicks).toBe("Link clicks");
   });
 });
+
+import { IMPORT_LIMITS as LIMITS_FOR_CHECK } from "../shared/importing";
+describe("import limits", () => {
+  it("are 2 MB, 2,000 rows and 50 columns", () => {
+    expect(LIMITS_FOR_CHECK).toEqual({ maxBytes: 2 * 1024 * 1024, maxRows: 2000, maxColumns: 50 });
+  });
+});

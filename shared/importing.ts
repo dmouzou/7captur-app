@@ -2,7 +2,7 @@ import { z } from "zod";
 import { PLATFORMS, recordSchemas, type RecordCollection } from "./records";
 import { OBJECTIVES } from "./schemas";
 
-export const IMPORT_LIMITS = { maxBytes: 25 * 1024 * 1024, maxRows: 10000, maxColumns: 100 } as const;
+export const IMPORT_LIMITS = { maxBytes: 2 * 1024 * 1024, maxRows: 2000, maxColumns: 50 } as const;
 export const DEFAULT_REJECTED_ROW_WARNING_THRESHOLD = 0.5; // 50% threshold for warning modal
 export type DateFormat = "iso" | "mdy" | "dmy";
 export type NumberFormat = "us" | "eu"; // us: 1,234.56  eu: 1.234,56
