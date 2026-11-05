@@ -24,6 +24,7 @@ import { evaluateHomeBanner } from "../../shared/homeBanner";
 import { AddHub } from "../add/AddHub";
 import { UnderstandPanel } from "../understand/UnderstandPanel";
 import { AssistantPanel } from "../chat/AssistantPanel";
+import { AddArt, DecideArt, UnderstandArt } from "../../components/art";
 
 function useCollectionCount(coll: string) {
   const ws = useWorkspace();
@@ -861,7 +862,7 @@ export function HomePage() {
                           className={`badge badge-${severity}`}
                           style={{ fontSize: 11, textTransform: "uppercase" }}
                         >
-                          Priority {homeBanner.rule}
+                          {homeBanner.action === "add" ? "Start here" : homeBanner.action === "decide" ? "Waiting" : homeBanner.action === "status" ? "All good" : "Needs attention"}
                         </span>
                         <span style={{ fontSize: 14.5, fontWeight: 500, color: "var(--text)" }}>{homeBanner.title}</span>
                       </div>
@@ -895,7 +896,7 @@ export function HomePage() {
               >
                 <div style={{ position: "relative", zIndex: 2 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                    <span className="badge badge-success">Workspace Active</span>
+                    <span className="badge badge-success">{ws.workspaceName}</span>
                     <span className="muted" style={{ fontSize: 13 }}>
                       {new Date().toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
                     </span>
@@ -904,138 +905,38 @@ export function HomePage() {
                     Welcome, {user?.displayName || user?.email?.split("@")[0] || "Partner"}
                   </h1>
                   <p className="muted" style={{ maxWidth: 650, fontSize: 14.5, margin: 0 }}>
-                    Here is your marketing intelligence overview. Track commercials, analyze campaign impact, and decide your next high-ROI moves.
+                    Add what happened, see where your numbers stand and decide your next step. One clear move at a time.
                   </p>
                 </div>
               </div>
 
-              {/* 3 Primary Action Entry Cards (Add, Understand, Decide) */}
+              {/* The three verbs: Add, Understand, Decide */}
               <div className="dashboard-actions-grid" style={{ marginBottom: 24 }}>
-                {/* 1. Add Data */}
-                <div
-                  className="card"
-                  style={{
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                  }}
-                  onClick={() => handleNavigate("/add")}
-                >
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
-                          background: "var(--lime-subtle)",
-                          color: "var(--lime)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <line x1="12" y1="5" x2="12" y2="19" />
-                          <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
+                {([
+                  { step: "Step 1", title: "Add", route: "/add", cta: "Add your data →", Art: AddArt, text: "Connect a store, import a CSV file or type it in. Whatever fits your day." },
+                  { step: "Step 2", title: "Understand", route: "/understand", cta: "See where you stand →", Art: UnderstandArt, text: "See how complete and fresh your data is, how strong the evidence is and what changed this week." },
+                  { step: "Step 3", title: "Decide", route: "/decide", cta: "Open your decisions →", Art: DecideArt, text: `One clear next step, based on your ${ws.objective?.replace(/_/g, " ") || "business"} goal and the data you have.` },
+                ] as const).map(({ step, title, route, cta, Art, text }) => (
+                  <button
+                    key={title}
+                    type="button"
+                    className="card home-verb-card"
+                    onClick={() => handleNavigate(route)}
+                    style={{ cursor: "pointer", textAlign: "left", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "space-between", gap: 14, margin: 0, font: "inherit", color: "inherit" }}
+                  >
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                        <span className="badge badge-primary">{step}</span>
+                        <Art size={112} />
                       </div>
-                      <span className="badge badge-success">1. Ingest</span>
+                      <h3 style={{ fontSize: 19, margin: "0 0 6px", fontWeight: 500 }}>{title}</h3>
+                      <p className="muted" style={{ fontSize: 13.5, margin: 0, lineHeight: 1.5 }}>{text}</p>
                     </div>
-                    <h3 style={{ fontSize: 16, marginBottom: 6, fontWeight: 500 }}>Add Data</h3>
-                    <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.4 }}>
-                      Connect Shopify or Google Ads, upload CSV files, or enter manual sales & leads records.
-                    </p>
-                  </div>
-                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--lime)" }}>Open Add Hub →</span>
-                  </div>
-                </div>
-
-                {/* 2. Understand Numbers */}
-                <div
-                  className="card"
-                  style={{
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                  }}
-                  onClick={() => handleNavigate("/understand")}
-                >
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
-                          background: "var(--gold-subtle)",
-                          color: "var(--gold)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M12 16v-4" />
-                          <path d="M12 8h.01" />
-                        </svg>
-                      </div>
-                      <span className="badge badge-warning">2. Analyze</span>
+                    <div style={{ paddingTop: 12, borderTop: "1px solid var(--border)", textAlign: "left", width: "100%" }}>
+                      <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--accent)" }}>{cta}</span>
                     </div>
-                    <h3 style={{ fontSize: 16, marginBottom: 6, fontWeight: 500 }}>Understand Numbers</h3>
-                    <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.4 }}>
-                      Review data health, freshness, evidence level unlocks, and in-app weekly change summaries.
-                    </p>
-                  </div>
-                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--gold)" }}>Review Insights →</span>
-                  </div>
-                </div>
-
-                {/* 3. Decide Next Moves */}
-                <div
-                  className="card"
-                  style={{
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                  }}
-                  onClick={() => handleNavigate("/decide")}
-                >
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                      <div
-                        style={{
-                          width: 38,
-                          height: 38,
-                          borderRadius: 10,
-                          background: "var(--primary-subtle)",
-                          color: "var(--primary)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                        </svg>
-                      </div>
-                      <span className="badge badge-primary">3. Execute</span>
-                    </div>
-                    <h3 style={{ fontSize: 16, marginBottom: 6, fontWeight: 500 }}>Decide Next Moves</h3>
-                    <p className="muted" style={{ fontSize: 13, margin: 0, lineHeight: 1.4 }}>
-                      High-confidence AI recommendations tuned to hit your {ws.objective?.replace(/_/g, " ") || "business"} goal.
-                    </p>
-                  </div>
-                  <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--primary)" }}>Open Decision Center →</span>
-                  </div>
-                </div>
+                  </button>
+                ))}
               </div>
 
               {/* 4 Core Commercial Metric Cards */}

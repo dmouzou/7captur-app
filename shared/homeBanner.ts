@@ -74,7 +74,7 @@ export function evaluateHomeBanner(input: HomeBannerInput): HomeBannerResult {
     return {
       rule: 4,
       title: count === 1 ? "1 decision waiting" : `${count} decisions waiting`,
-      subtitle: "New intelligence recommendations are ready for your review in the decision queue.",
+      subtitle: "A new recommendation is ready for your review in Decide.",
       ctaText: "Review Decisions",
       ctaRoute: "/decide",
       action: "decide",
@@ -89,7 +89,7 @@ export function evaluateHomeBanner(input: HomeBannerInput): HomeBannerResult {
   return {
     rule: 5,
     title: lastUpdatedStr,
-    subtitle: "Your workspace is ready. Explore your data health, add new sources, or review recommendations.",
+    subtitle: "Your workspace is ready. Check your data health, add new data or review your recommendations.",
     ctaText: "Go to Decisions",
     ctaRoute: "/decide",
     action: "status",

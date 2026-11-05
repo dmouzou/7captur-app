@@ -140,7 +140,7 @@ export function GlobalSearchModal({ isOpen, onClose, onNavigate }: GlobalSearchM
         id: "nav-recs",
         category: "Navigation",
         title: "Recommendations",
-        subtitle: "Engine recommendations with Beginner & Advanced Telemetry views",
+        subtitle: "Recommendations with Beginner and Advanced views",
         keywords: ["recommendations", "engine", "actions", "intelligence", "advice"],
         onSelect: () => {
           onNavigate("recommendations");

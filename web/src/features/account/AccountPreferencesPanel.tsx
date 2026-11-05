@@ -349,7 +349,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 3 }}>
-                    Beginner View
+                    Beginner view
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45 }}>
                     Plain language, clear single action, key unknowns, and safeguards.
@@ -390,7 +390,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 3 }}>
-                    Advanced Telemetry
+                    Advanced view
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45 }}>
                     Formula breakdowns, exact sample counts, attribution breakdown, gate conditions, and deterministic trace.

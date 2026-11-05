@@ -1,13 +1,12 @@
 import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
-import { Icon } from "../../components/Icon";
-import { PLANS } from "../../shared/plans";
-import { periodIds } from "../../shared/periods";
 import type { Recommendation } from "../../shared/recommendation";
+import { computeDataHealth } from "../../shared/dataHealth";
+import { EvidenceCard, FreshnessCard, SourcesCard, UnderstandHero, WeekCard, type Delta, type Level } from "./UnderstandSections";
 
 interface UnderstandPanelProps {
   onNavigate: (route: string) => void;
@@ -40,7 +39,6 @@ export function UnderstandPanel({ onNavigate, onOpenChat, onReportIssue }: Under
 
   // Recommendation engine state
   const [recs, setRecs] = useState<(Recommendation & { id: string })[]>([]);
-  const [used, setUsed] = useState<number>(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [safetyModal, setSafetyModal] = useState<{
@@ -49,8 +47,6 @@ export function UnderstandPanel({ onNavigate, onOpenChat, onReportIssue }: Under
     minutesAgo?: number;
   } | null>(null);
 
-  const plan = PLANS[ws.plan] ?? PLANS.starter;
-  const weeklyQuota = plan?.recommendations?.weekly ?? 1;
 
   // Listen to recommendations
   useEffect(() => {
@@ -60,19 +56,6 @@ export function UnderstandPanel({ onNavigate, onOpenChat, onReportIssue }: Under
       (s) => setRecs(s.docs.map((d) => ({ id: d.id, ...(d.data() as Recommendation) })))
     );
   }, [ws.workspaceId]);
-
-  // Listen to weekly quota usage
-  useEffect(() => {
-    if (!ws.ownerUid) return;
-    const { weekId } = periodIds(new Date(), ws.accountTimezone || ws.timezone);
-    return onSnapshot(
-      doc(db, `accounts/${ws.ownerUid}/usage/${weekId}`),
-      (s) => {
-        setUsed((s.data()?.recommendations as number | undefined) ?? 0);
-      },
-      () => undefined
-    );
-  }, [ws.ownerUid, ws.accountTimezone, ws.timezone]);
 
   async function triggerGenerate(override = false) {
     setError("");
@@ -141,413 +124,87 @@ export function UnderstandPanel({ onNavigate, onOpenChat, onReportIssue }: Under
     return () => unsubs.forEach((u) => u());
   }, [ws.workspaceId, ws.businessId]);
 
+  // One source of truth for data health: the same deterministic rules the assistant uses (shared/dataHealth.ts)
   const health = useMemo<TelemetryHealth>(() => {
-    const allDates: string[] = [];
-    const sourceSet = new Set<string>();
-    const currencySet = new Set<string>();
-
-    let salesNoAttr = 0;
-    sales.forEach((s) => {
-      if (s.date) allDates.push(s.date);
-      if (s.provenance) sourceSet.add(s.provenance);
-      if (s.currency) currencySet.add(s.currency);
-      if (!s.attribution || s.attribution === "unknown") salesNoAttr++;
-    });
-
-    let promosNoObj = 0;
-    promotions.forEach((p) => {
-      if (p.startDate) allDates.push(p.startDate);
-      if (p.platform) sourceSet.add(p.platform);
-      if (p.currency) currencySet.add(p.currency);
-      if (!p.objective) promosNoObj++;
-    });
-
-    let leadsNoSource = 0;
-    leads.forEach((l) => {
-      if (l.date) allDates.push(l.date);
-      if (l.source) sourceSet.add(l.source);
-      if (!l.source) leadsNoSource++;
-    });
-
-    costs.forEach((c) => {
-      if (c.effectiveDate) allDates.push(c.effectiveDate);
-      if (c.category) sourceSet.add(c.category);
-    });
-
-    posts.forEach((pt) => {
-      if (pt.publishedAt) allDates.push(pt.publishedAt);
-      if (pt.platform) sourceSet.add(pt.platform);
-    });
-
-    allDates.sort();
-    const minDate = allDates[0] ?? null;
-    const maxDate = allDates[allDates.length - 1] ?? null;
-
-    let freshnessDays: number | null = null;
-    let isStale = false;
-    if (maxDate) {
-      const maxMs = Date.parse(maxDate);
-      if (!isNaN(maxMs)) {
-        freshnessDays = Math.max(0, Math.floor((Date.now() - maxMs) / (24 * 60 * 60 * 1000)));
-        isStale = freshnessDays > 14;
-      }
-    }
-
-    const totalRecords = sales.length + costs.length + leads.length + promotions.length + posts.length;
-    let evidenceLevel: "Explore" | "Improve" | "Optimize" = "Explore";
-    let nextLevelUnlock = "Log at least 14 days of commercial data to unlock trend detection.";
-
-    if (totalRecords >= 20 && freshnessDays !== null && freshnessDays <= 14) {
-      if (sourceSet.has("connected") || totalRecords >= 50) {
-        evidenceLevel = "Optimize";
-        nextLevelUnlock = "Telemetry fully optimized for high-certainty algorithmic decisions.";
-      } else {
-        evidenceLevel = "Improve";
-        nextLevelUnlock = "Connect a live platform (Shopify) or import cost-of-goods (COGS) to reach Optimize.";
-      }
-    }
-
+    const h = computeDataHealth({ sales, promotions, leads, costs, posts }, Date.now());
     return {
-      freshnessDays,
-      isStale,
-      minDate,
-      maxDate,
-      sources: Array.from(sourceSet),
-      currencies: Array.from(currencySet),
-      missingFieldsCount: salesNoAttr + promosNoObj + leadsNoSource,
-      salesWithoutAttribution: salesNoAttr,
-      promosWithoutObjective: promosNoObj,
-      leadsWithoutSource: leadsNoSource,
-      evidenceLevel,
-      nextLevelUnlock,
+      freshnessDays: h.freshnessDays, isStale: h.isStale, minDate: h.oldestDate, maxDate: h.newestDate,
+      sources: h.sources, currencies: h.currencies,
+      missingFieldsCount: h.salesWithoutAttribution + h.promotionsWithoutObjective + h.leadsWithoutSource,
+      salesWithoutAttribution: h.salesWithoutAttribution, promosWithoutObjective: h.promotionsWithoutObjective, leadsWithoutSource: h.leadsWithoutSource,
+      evidenceLevel: h.evidenceLevel, nextLevelUnlock: h.nextLevelUnlock,
     };
   }, [sales, costs, leads, promotions, posts]);
 
-  // Weekly Changes Calculation (What Changed)
-  const weeklySummary = useMemo(() => {
-    const totalRev = sales.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
-    const totalSpend = promotions.reduce((sum, p) => sum + (Number(p.spend) || 0), 0) + costs.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
-    const roas = totalSpend > 0 ? (totalRev / totalSpend).toFixed(2) : "N/A";
+  // Connected platforms (for the logos)
+  const [connected, setConnected] = useState<string[]>([]);
+  useEffect(() => {
+    if (!ws.workspaceId) return;
+    return onSnapshot(collection(db, `workspaces/${ws.workspaceId}/connections`), (s) =>
+      setConnected(s.docs.filter((d) => d.data().status === "connected").map((d) => String(d.data().provider))), () => undefined);
+  }, [ws.workspaceId]);
 
-    return {
-      revenue: totalRev,
-      spend: totalSpend,
-      roas,
-      leadsCount: leads.length,
-      ordersCount: sales.length,
+  // What changed: the last 7 days against the 7 before, same currency only. Plain sums of real records.
+  const week = useMemo(() => {
+    const today = Date.now();
+    const dayIdx = (iso?: string) => { const t = iso ? Date.parse(iso) : NaN; return Number.isNaN(t) ? null : Math.floor((today - t) / 86400000); };
+    const inWin = (i: number | null, w: 0 | 1) => i !== null && i >= w * 7 && i < w * 7 + 7;
+    let skipped = 0;
+    const sum = (rows: any[], dateKey: string, valKey: string | null): Delta => {
+      const d: Delta = { now: 0, before: 0 };
+      for (const r of rows) {
+        const i = dayIdx(r[dateKey]);
+        const w = inWin(i, 0) ? 0 : inWin(i, 1) ? 1 : -1;
+        if (w < 0) continue;
+        if (valKey && r.currency && r.currency !== ws.currency) { skipped++; continue; }
+        const v = valKey ? Number(r[valKey]) || 0 : 1;
+        if (w === 0) d.now += v; else d.before += v;
+      }
+      return d;
     };
-  }, [sales, costs, promotions, leads]);
+    return {
+      revenue: sum(sales, "date", "amount"), spend: sum(promotions, "startDate", "spend"),
+      orders: sum(sales, "date", null), enquiries: sum(leads, "date", null), skipped,
+    };
+  }, [sales, promotions, leads, ws.currency]);
+
+  const latest = recs[0] as (Recommendation & { id: string }) | undefined;
+  const engineLevel = latest?.mode ? ((latest.mode[0].toUpperCase() + latest.mode.slice(1)) as Level) : null;
+  const gates = latest?.evidence_quality?.gates ?? [];
+  const failing = gates.find((g) => !g.passed);
+  const unlock = engineLevel && failing ? `Get "${failing.label}" from ${failing.actual} to ${failing.required}.` : health.nextLevelUnlock;
+  const provenance = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const set of [sales, promotions, leads, costs, posts]) for (const r of set) { const k = r.provenance || "manual"; c[k] = (c[k] ?? 0) + 1; }
+    return c;
+  }, [sales, promotions, leads, costs, posts]);
+  const platforms = useMemo(() => {
+    const set = new Set<string>(connected);
+    for (const r of [...posts, ...promotions]) if (r.platform) set.add(String(r.platform));
+    return [...set].filter((p) => ["shopify", "meta", "googleads", "woocommerce", "instagram"].includes(p.toLowerCase()));
+  }, [connected, posts, promotions]);
 
   return (
     <div style={{ maxWidth: 1040, margin: "0 auto", paddingBottom: 60 }}>
-      {/* Header */}
-      <div
-        className="card"
-        style={{
-          padding: "26px 28px",
-          marginBottom: 24,
-          background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)",
-          border: "1px solid var(--border)",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              <span className="badge badge-primary">Intelligence Telemetry</span>
-              <span className="muted" style={{ fontSize: 13 }}>Workspace Health & Evidence</span>
-            </div>
-            <h1 style={{ margin: "0 0 8px 0", fontSize: "1.75rem", fontWeight: 500 }}>
-              Understand Your Numbers
-            </h1>
-            <p className="muted" style={{ margin: 0, fontSize: 14, maxWidth: 640 }}>
-              Assess telemetry health, monitor data freshness across your channels, and track weekly movement in-app.
-            </p>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={onOpenChat}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "10px 16px",
-                fontSize: 13.5,
-                borderRadius: 10,
-                margin: 0,
-              }}
-            >
-              <Icon name="help" size={17} />
-              Ask 7Captur
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => triggerGenerate(false)}
-              disabled={busy}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "10px 20px",
-                fontSize: 13.5,
-                borderRadius: 10,
-                margin: 0,
-              }}
-            >
-              <Icon name="sparkle" size={17} />
-              {busy ? "Analyzing Telemetry…" : "Generate Recommendation"}
-            </button>
-          </div>
-        </div>
-      </div>
+      <UnderstandHero busy={busy} onGenerate={() => triggerGenerate(false)} onAsk={onOpenChat} />
 
       {error && (
-        <div
-          role="alert"
-          className="error"
-          style={{
-            padding: "12px 18px",
-            background: "var(--danger-bg)",
-            borderRadius: 10,
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            marginBottom: 20,
-            fontSize: 13.5,
-          }}
-        >
+        <div role="alert" className="error" style={{ padding: "12px 18px", background: "var(--danger-bg)", borderRadius: 10, border: "1px solid rgba(239, 68, 68, 0.3)", marginBottom: 20, fontSize: 13.5 }}>
           {error}
         </div>
       )}
 
-      {/* AI Strategy Engine Card */}
-      <div
-        className="card"
-        style={{
-          padding: "20px 24px",
-          marginBottom: 24,
-          background: "linear-gradient(135deg, rgba(235, 94, 40, 0.08) 0%, var(--surface) 100%)",
-          border: "1px solid var(--accent-subtle, var(--border))",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 16,
-        }}
-      >
-        <div style={{ maxWidth: 600 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>Strategic Recommendations</span>
-            <span className="badge badge-accent" style={{ fontSize: 11 }}>
-              {weeklyQuota === 0 ? "Unlimited" : `${used} of ${weeklyQuota} used this week`}
-            </span>
-          </div>
-          <p className="muted" style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5 }}>
-            Generate high-certainty algorithmic decisions calibrated against your current {health.evidenceLevel.toLowerCase()} evidence. Once generated, recommendations move straight to <span style={{ color: "var(--ink)" }}>Decide</span> for action.
-          </p>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => onNavigate("/decide")}
-            style={{
-              padding: "9px 16px",
-              fontSize: 13,
-              borderRadius: 8,
-              margin: 0,
-            }}
-          >
-            View Decisions →
-          </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => triggerGenerate(false)}
-            disabled={busy}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "9px 20px",
-              fontSize: 13,
-              borderRadius: 8,
-              margin: 0,
-            }}
-          >
-            <Icon name="sparkle" size={16} />
-            {busy ? "Analyzing Telemetry…" : "Generate Recommendation"}
-          </button>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 20, marginBottom: 20 }}>
+        <EvidenceCard level={engineLevel ?? health.evidenceLevel} fromEngine={Boolean(engineLevel)} gates={gates} unlock={unlock} onAdd={() => onNavigate("/add")} />
+        <FreshnessCard days={health.freshnessDays} min={health.minDate} max={health.maxDate} stale={health.isStale} onAdd={() => onNavigate("/add")} />
       </div>
 
-      {/* Grid: Evidence Level + Data Health Freshness */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginBottom: 24 }}>
-        {/* Evidence Level Card */}
-        <div className="card" style={{ padding: "22px 24px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span className="muted" style={{ fontSize: 13 }}>Evidence Level</span>
-            <span
-              className={`badge ${health.evidenceLevel === "Optimize" ? "badge-success" : health.evidenceLevel === "Improve" ? "badge-primary" : "badge-warning"}`}
-              style={{ fontSize: 12 }}
-            >
-              {health.evidenceLevel}
-            </span>
-          </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 500, color: "var(--ink)", marginBottom: 8 }}>
-            {health.evidenceLevel} Stage
-          </div>
-          <p className="muted" style={{ fontSize: 13, lineHeight: 1.5, margin: "0 0 16px 0" }}>
-            {health.evidenceLevel === "Explore" && "Initial evidence stage. Recommendations use conservative baselines."}
-            {health.evidenceLevel === "Improve" && "Telemetry supports statistical trends across spend and sales."}
-            {health.evidenceLevel === "Optimize" && "Fully calibrated telemetry. Decision certainty score is highest."}
-          </p>
-
-          <div style={{ padding: "12px 14px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 11, textTransform: "uppercase", color: "var(--muted)", marginBottom: 4 }}>
-              Next Level Unlock
-            </div>
-            <div style={{ fontSize: 12.5, color: "var(--ink)", lineHeight: 1.45 }}>
-              {health.nextLevelUnlock}
-            </div>
-          </div>
-        </div>
-
-        {/* Data Health Freshness Card */}
-        <div className="card" style={{ padding: "22px 24px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span className="muted" style={{ fontSize: 13 }}>Data Freshness</span>
-            {health.isStale ? (
-              <span className="badge badge-danger" style={{ fontSize: 11 }}>Stale (&gt;14 days)</span>
-            ) : (
-              <span className="badge badge-success" style={{ fontSize: 11 }}>Healthy</span>
-            )}
-          </div>
-
-          <div style={{ fontSize: "1.6rem", fontWeight: 500, color: "var(--ink)", marginBottom: 8 }}>
-            {health.freshnessDays === null
-              ? "No records"
-              : health.freshnessDays === 0
-              ? "Updated today"
-              : `${health.freshnessDays}d ago`}
-          </div>
-
-          <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>
-            Date coverage: <span className="mono" style={{ color: "var(--ink)" }}>{health.minDate || "None"}</span> to{" "}
-            <span className="mono" style={{ color: "var(--ink)" }}>{health.maxDate || "None"}</span>
-          </div>
-
-          {health.isStale && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => onNavigate("/add")}
-              style={{
-                width: "100%",
-                padding: "8px 14px",
-                fontSize: 12.5,
-                borderRadius: 8,
-                color: "var(--accent)",
-                borderColor: "var(--accent)",
-                margin: 0,
-              }}
-            >
-              Refresh Data in Add →
-            </button>
-          )}
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <SourcesCard provenance={provenance} platforms={platforms} currencies={health.currencies.length ? health.currencies : [ws.currency]} gaps={health.missingFieldsCount} onFix={() => onNavigate("/data/sales")} />
       </div>
 
-      {/* Telemetry Coverage & Gaps */}
-      <div className="card" style={{ padding: "24px 26px", marginBottom: 24 }}>
-        <h3 style={{ margin: "0 0 16px 0", fontSize: "1.15rem", fontWeight: 500 }}>
-          Telemetry Health & Coverage
-        </h3>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-          <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Active Channels / Sources</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 500, color: "var(--ink)" }}>
-              {health.sources.length ? health.sources.join(", ") : "None recorded"}
-            </div>
-          </div>
-
-          <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Currencies Detected</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 500, color: "var(--ink)" }}>
-              {health.currencies.length ? health.currencies.join(", ") : ws.currency}
-            </div>
-          </div>
-
-          <div style={{ padding: 14, borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Missing Fields / Telemetry Gaps</div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 500, color: health.missingFieldsCount > 0 ? "var(--warning)" : "var(--ink)" }}>
-              {health.missingFieldsCount} gap{health.missingFieldsCount === 1 ? "" : "s"}
-            </div>
-            {health.missingFieldsCount > 0 && (
-              <button
-                type="button"
-                className="link"
-                onClick={() => onNavigate("/data/sales")}
-                style={{ fontSize: 12, marginTop: 4, display: "inline-block" }}
-              >
-                Resolve in Your Data →
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* What Changed: In-App Weekly Summary */}
-      <div className="card" style={{ padding: "24px 26px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 500 }}>What Changed This Week</h3>
-            <p className="muted" style={{ margin: "4px 0 0 0", fontSize: 13 }}>
-              Aggregated marketing performance across active channels.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => onNavigate("/reports")}
-            style={{ padding: "6px 14px", fontSize: 12.5, borderRadius: 8, margin: 0 }}
-          >
-            View Full Weekly Digest →
-          </button>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
-          <div style={{ padding: "14px 16px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Total Revenue</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 500, color: "var(--ink)" }}>
-              {ws.currency} {weeklySummary.revenue.toLocaleString()}
-            </div>
-          </div>
-
-          <div style={{ padding: "14px 16px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Total Spend</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 500, color: "var(--ink)" }}>
-              {ws.currency} {weeklySummary.spend.toLocaleString()}
-            </div>
-          </div>
-
-          <div style={{ padding: "14px 16px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Blended ROAS</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 500, color: "var(--accent)" }}>
-              {weeklySummary.roas}x
-            </div>
-          </div>
-
-          <div style={{ padding: "14px 16px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Orders & Conversions</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 500, color: "var(--ink)" }}>
-              {weeklySummary.ordersCount}
-            </div>
-          </div>
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <WeekCard currency={ws.currency} revenue={week.revenue} spend={week.spend} orders={week.orders} enquiries={week.enquiries} skipped={week.skipped} onDigest={() => onNavigate("/reports")} />
       </div>
 
       {/* Recommendations: the former Recommendations tab, now part of Understand */}

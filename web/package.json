@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:mock": "vite --config vite.mock.config.ts"
   },
   "dependencies": {
     "firebase": "^11.0.0",

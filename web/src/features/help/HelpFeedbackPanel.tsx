@@ -378,7 +378,7 @@ export function HelpFeedbackPanel({ initialRecommendationId }: { initialRecommen
               {subTab === "bad_recommendation"
                 ? "Help us refine our decision rules. All reported recommendations are inspected with full audit snapshots."
                 : subTab === "product_feedback"
-                ? "Tell us what workflows, channels, or telemetry you need next."
+                ? "Tell us what workflows, channels or data you need next."
                 : "Need help with imports, connecting stores, or understanding your metrics? We are here to help."}
             </p>
 

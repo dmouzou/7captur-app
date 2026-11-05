@@ -202,14 +202,14 @@ export function RecommendationsPanel({
               className={viewMode === "beginner" ? "active" : ""}
               onClick={() => setViewMode("beginner")}
             >
-              Beginner View
+              Beginner view
             </button>
             <button
               type="button"
               className={viewMode === "advanced" ? "active" : ""}
               onClick={() => setViewMode("advanced")}
             >
-              Advanced Telemetry
+              Advanced view
             </button>
           </div>
 
@@ -245,14 +245,14 @@ export function RecommendationsPanel({
               className={viewMode === "beginner" ? "active" : ""}
               onClick={() => setViewMode("beginner")}
             >
-              Beginner View
+              Beginner view
             </button>
             <button
               type="button"
               className={viewMode === "advanced" ? "active" : ""}
               onClick={() => setViewMode("advanced")}
             >
-              Advanced Telemetry
+              Advanced view
             </button>
           </div>
 
@@ -266,7 +266,7 @@ export function RecommendationsPanel({
               borderRadius: 10,
             }}
           >
-            {busy ? "Analyzing Telemetry…" : "Generate Recommendation"}
+            {busy ? "Working it out…" : "Generate Recommendation"}
           </button>
         </div>
       </div>
@@ -626,7 +626,7 @@ export function RecommendationsPanel({
                 </div>
               </div>
 
-              {/* Advanced Mode Telemetry Details (Spec 5.3) */}
+              {/* Advanced view details (Spec 5.3) */}
               {viewMode === "advanced" && (
                 <div
                   style={{
@@ -639,7 +639,7 @@ export function RecommendationsPanel({
                   }}
                 >
                   <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--ink)" }}>
-                    <Icon name="signal" size={15} inline /> Advanced Telemetry & Mathematical Foundation
+                    <Icon name="signal" size={15} inline /> Advanced view: the numbers behind this
                   </h4>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
                     <div>

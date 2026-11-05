@@ -213,7 +213,7 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                 }}
               >
                 <h4 style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--gold)" }}>
-                  <Icon name="alert" size={15} inline />Telemetry Gaps
+                  <Icon name="alert" size={15} inline />Data gaps
                 </h4>
                 {r.gaps.length > 0 ? (
                   <ul style={{ paddingLeft: 18, margin: 0, fontSize: 13, color: "var(--body)" }}>
