@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../../services/firebase";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { Icon } from "../../components/Icon";
+import { PLANS } from "../../shared/plans";
+import { periodIds } from "../../shared/periods";
+import { ASSISTANT_AI_DISCLAIMER, aiNoticeText, classifyQuestion, type AssistantResult } from "../../shared/assistant";
 
 interface Message {
   id: string;
@@ -8,6 +14,10 @@ interface Message {
   text: string;
   context?: string;
   timestamp: number;
+  /** Set on assistant answers: where the answer came from and whether it cost a credit. */
+  source?: "ai" | "engine";
+  creditsUsed?: number;
+  creditReturned?: boolean;
 }
 
 interface AssistantPanelProps {
@@ -35,7 +45,7 @@ const CONTEXT_SUGGESTIONS: Record<string, string[]> = {
     "How does the 14-day stale data threshold work?",
   ],
   data: [
-    "How does 7Captur calculate commercial certainty?",
+    "How does 7Captur decide how strong the evidence is?",
     "What is the difference between connected and manual provenance?",
     "Can I export sanitized records to CSV?",
   ],
@@ -54,29 +64,46 @@ export function AssistantPanel({
   screenContextDescription,
 }: AssistantPanelProps) {
   const ws = useWorkspace();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  /** A free-form question waits here until the user accepts that it uses an AI credit. */
+  const [pendingAi, setPendingAi] = useState<string | null>(null);
+  const [usedMonth, setUsedMonth] = useState(0);
+  const monthly = (PLANS[ws.plan] ?? PLANS.starter).aiFollowUps.monthly;
+  const left = Math.max(0, monthly - usedMonth);
 
-  // AC-4: Panel survives route changes, but resets when workspaceId changes
+  // AC-4: the panel survives route changes (it is mounted once for the whole workspace) and resets when the workspace changes
   useEffect(() => {
+    setPendingAi(null);
+    setInput("");
     setMessages([
       {
         id: "initial",
         sender: "assistant",
-        text: `Hello! I'm your 7Captur Assistant for **${ws.workspaceName}**. I can answer questions about your data health, explain decision rationales, or guide you through adding commercial records.`,
-        context: "Workspace initialized",
+        text: `Hi, I'm the 7Captur assistant for ${ws.workspaceName}. Ask me about your data, your evidence level, your recommendations or how to add data. Answers about your numbers and about 7Captur are fixed and free. Open-ended questions are written by AI and use 1 AI credit, and I will always tell you before that happens.`,
+        context: "Workspace opened",
         timestamp: Date.now(),
+        source: "engine",
+        creditsUsed: 0,
       },
     ]);
   }, [ws.workspaceId, ws.workspaceName]);
 
+  // Live AI credits left this month (same pool as follow-up questions on decisions)
   useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, isOpen]);
+    const monthId = periodIds(new Date(), ws.accountTimezone).monthId;
+    return onSnapshot(
+      doc(db, `accounts/${ws.ownerUid}/usage/${monthId}`),
+      (s) => setUsedMonth(Number(s.data()?.aiFollowUps ?? 0)),
+      () => undefined
+    );
+  }, [ws.ownerUid, ws.accountTimezone]);
+
+  useEffect(() => {
+    if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isOpen, pendingAi]);
 
   const suggestions =
     CONTEXT_SUGGESTIONS[currentScreen] ||
@@ -84,53 +111,47 @@ export function AssistantPanel({
 
   const screenBadgeLabel = screenContextDescription || currentScreen.replace(/\//g, " > ");
 
-  async function sendMessage(textToSend: string) {
-    const trimmed = textToSend.trim();
+  /** Step 1: fixed questions go straight through. Open-ended ones ask the user to confirm the credit first. */
+  function submit(text: string) {
+    const trimmed = text.trim();
     if (!trimmed || busy) return;
+    if (classifyQuestion(trimmed) === "free_form" && trimmed.length >= 3) {
+      setPendingAi(trimmed);
+      return;
+    }
+    void send(trimmed);
+  }
 
-    const userMsg: Message = {
-      id: crypto.randomUUID(),
-      sender: "user",
-      text: trimmed,
-      context: screenBadgeLabel,
-      timestamp: Date.now(),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
+  async function send(question: string) {
+    setPendingAi(null);
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), sender: "user", text: question, context: screenBadgeLabel, timestamp: Date.now() }]);
     setInput("");
     setBusy(true);
-
-    // Provide contextual assistance based on screen and workspace state
-    setTimeout(() => {
-      let reply = "";
-      const q = trimmed.toLowerCase();
-
-      if (q.includes("evidence level") || q.includes("optimize") || q.includes("explore")) {
-        reply = `Your evidence level is currently based on logged commercial data.\n\n- **Explore**: Starting tier with manual or partial records.\n- **Improve**: Requires at least 14 days of continuous spend and sales records.\n- **Optimize**: Requires connected platform telemetry (e.g. Shopify orders) and mapped ad spend.\n\nTo unlock the next level, continue recording daily spend or connect your live store.`;
-      } else if (q.includes("stale") || q.includes("14 days") || q.includes("refresh")) {
-        reply = `7Captur uses a **14-day freshness window**. If no commercial records or syncs occurred in the last 14 days, your intelligence banner will alert you to refresh your numbers so recommendations stay accurate.`;
-      } else if (q.includes("guardrail") || q.includes("risk")) {
-        reply = `Every recommendation in the Decide queue includes strict guardrails (e.g., maximum test budgets, minimum sample sizes, review dates). 7Captur never writes to any ad platform; you stay in full control of execution.`;
-      } else if (q.includes("format") || q.includes("csv") || q.includes("import")) {
-        reply = `You can upload CSV spreadsheets up to **25MB**. Files are parsed with UTF-8/BOM support. If rejected rows exceed **50%**, a warning dialog will prompt you to review before proceeding. Only valid, non-duplicate rows are persisted.`;
-      } else if (q.includes("prioritize") || q.includes("decision") || q.includes("why")) {
-        reply = `Decisions are categorized into **Act** (high certainty & high ROI impact), **Investigate** (potential opportunity requiring verification), and **Monitor** (steady performance tracking). Review the 'Why this option' section on any decision card for full rationale.`;
-      } else {
-        reply = `Here is what I can tell you about **${ws.workspaceName}**:\n\n- **Objective**: ${ws.objective?.replace(/_/g, " ") || "Profitability"}\n- **Currency**: ${ws.currency}\n- **Timezone**: ${ws.timezone}\n- **Plan**: ${ws.plan}\n\nAsk me about data health, how recommendations are generated, or how to import your sales and ad spend.`;
-      }
-
+    try {
+      const res = await httpsCallable<unknown, AssistantResult>(functions, "askAssistant")({
+        workspaceId: ws.workspaceId,
+        businessId: ws.businessId,
+        requestId: crypto.randomUUID(),
+        question,
+        screen: currentScreen,
+      });
+      const r = res.data;
       setMessages((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
-          sender: "assistant",
-          text: reply,
-          context: screenBadgeLabel,
-          timestamp: Date.now(),
+          id: crypto.randomUUID(), sender: "assistant", text: r.answer, context: screenBadgeLabel, timestamp: Date.now(),
+          source: r.source, creditsUsed: r.creditsUsed, creditReturned: r.creditReturned,
         },
       ]);
+    } catch (e) {
+      const err = e as { code?: string; message?: string };
+      const text = err.code === "functions/resource-exhausted"
+        ? (err.message || "You have used all your AI credits this month.") + " No credit was used."
+        : "I could not answer that just now. No AI credit was used. Please try again.";
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), sender: "assistant", text, context: screenBadgeLabel, timestamp: Date.now(), source: "engine", creditsUsed: 0 }]);
+    } finally {
       setBusy(false);
-    }, 450);
+    }
   }
 
   return (
@@ -144,7 +165,7 @@ export function AssistantPanel({
         style={{
           position: "fixed",
           bottom: 24,
-          right: 24,
+          right: isOpen ? 424 : 24,
           zIndex: 90,
           height: 48,
           borderRadius: 24,
@@ -202,8 +223,8 @@ export function AssistantPanel({
                 <span style={{ fontSize: 14.5, fontWeight: 600, color: "var(--ink)" }}>
                   7Captur Assistant
                 </span>
-                <span className="badge badge-primary" style={{ fontSize: 10 }}>
-                  AI
+                <span className="badge badge-primary" style={{ fontSize: 10 }} title="Open-ended questions are answered by AI and use 1 AI credit">
+                  {left} of {monthly} AI credits left
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
@@ -270,6 +291,14 @@ export function AssistantPanel({
                 >
                   {m.text}
                 </div>
+                {m.sender === "assistant" && m.source && m.id !== "initial" && (
+                  <div style={{ marginTop: 6 }}>
+                    <span className={`badge ${m.source === "ai" ? "badge-primary" : "badge-success"}`} style={{ fontSize: 10.5 }}>
+                      {m.source === "ai" ? "AI answer · 1 credit used" : m.creditReturned ? "Fixed answer · AI credit returned" : "Fixed answer · free"}
+                    </span>
+                    {m.source === "ai" && <div className="muted" style={{ fontSize: 10.5, marginTop: 4, maxWidth: 300 }}>{ASSISTANT_AI_DISCLAIMER}</div>}
+                  </div>
+                )}
                 <div
                   style={{
                     fontSize: 10,
@@ -298,7 +327,7 @@ export function AssistantPanel({
                   color: "var(--muted)",
                 }}
               >
-                Analyzing context…
+                Looking at your workspace…
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -329,7 +358,7 @@ export function AssistantPanel({
                   key={idx}
                   type="button"
                   className="btn-secondary"
-                  onClick={() => sendMessage(s)}
+                  onClick={() => submit(s)}
                   style={{
                     margin: 0,
                     padding: "6px 10px",
@@ -346,11 +375,31 @@ export function AssistantPanel({
             </div>
           </div>
 
+          {/* Credit notice: shown before any AI answer is requested */}
+          {pendingAi && (
+            <div role="alert" style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", background: "var(--surface-subtle)" }}>
+              <div style={{ fontSize: 12.5, color: "var(--ink)", lineHeight: 1.5, marginBottom: 6 }}>
+                <strong>This question will use 1 AI credit.</strong>
+              </div>
+              <div className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
+                {left > 0 ? aiNoticeText(left, monthly) : `You have no AI credits left this month. Fixed answers about your data and 7Captur are still free.`}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="primary" disabled={busy || left <= 0} onClick={() => void send(pendingAi)} style={{ margin: 0, padding: "7px 14px", fontSize: 12.5, borderRadius: 8 }}>
+                  Ask with 1 AI credit
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => setPendingAi(null)} style={{ margin: 0, padding: "7px 14px", fontSize: 12.5, borderRadius: 8 }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Input Footer */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              sendMessage(input);
+              submit(input);
             }}
             style={{
               padding: "14px 18px",
@@ -362,7 +411,7 @@ export function AssistantPanel({
           >
             <input
               type="text"
-              placeholder="Ask a question about your numbers…"
+              placeholder="Ask about your data, or anything else…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={busy}

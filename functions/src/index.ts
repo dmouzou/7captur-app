@@ -11,6 +11,7 @@ export { generateRecommendation } from "./recommendations/generate";
 export { recordRecommendationAction } from "./recommendations/action";
 export { createDecision } from "./decisions/create";
 export { askAboutDecision } from "./decisions/followup";
+export { askAssistant } from "./assistant/askAssistant";
 export { recordDecisionUpdate } from "./decisions/respond";
 export { deleteDecision } from "./decisions/delete";
 export { importRecords } from "./imports/importRecords";
