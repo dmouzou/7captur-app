@@ -25,9 +25,12 @@ const MODE_ACTION_BADGE: Record<string, string> = {
 export function RecommendationsPanel({
   onNavigate,
   onReportIssue,
+  embedded = false,
 }: {
   onNavigate?: (tab: string) => void;
   onReportIssue?: (recId: string) => void;
+  /** Rendered inside the Understand tab: compact header with the Beginner / Advanced toggle, no page title. */
+  embedded?: boolean;
 }) {
   const ws = useWorkspace();
   const plan = PLANS[ws.plan] ?? PLANS.starter;
@@ -180,7 +183,38 @@ export function RecommendationsPanel({
 
   return (
     <section>
-      {/* Top Header Card */}
+      {/* Top Header Card (stand-alone) or compact bar (inside Understand) */}
+      {embedded ? (
+        <div
+          id="recommendations"
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14, margin: "8px 0 18px" }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.25rem" }}>Your recommendations</h2>
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: 13.5 }}>
+              Credits this week: <strong style={{ color: "var(--ink)" }}>{used} of {plan.recommendations.weekly} used</strong>. They reset every Monday.
+            </p>
+          </div>
+          {/* Progressive Disclosure Toggle (Spec 5.3) */}
+          <div className="segmented-control">
+            <button
+              type="button"
+              className={viewMode === "beginner" ? "active" : ""}
+              onClick={() => setViewMode("beginner")}
+            >
+              Beginner View
+            </button>
+            <button
+              type="button"
+              className={viewMode === "advanced" ? "active" : ""}
+              onClick={() => setViewMode("advanced")}
+            >
+              Advanced Telemetry
+            </button>
+          </div>
+
+        </div>
+      ) : (
       <div
         className="card"
         style={{
@@ -236,6 +270,7 @@ export function RecommendationsPanel({
           </button>
         </div>
       </div>
+      )}
 
       {/* Filter toolbar (Spec 6.0) */}
       <div

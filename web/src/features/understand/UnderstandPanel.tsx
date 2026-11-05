@@ -1,3 +1,4 @@
+import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -11,6 +12,7 @@ import type { Recommendation } from "../../shared/recommendation";
 interface UnderstandPanelProps {
   onNavigate: (route: string) => void;
   onOpenChat: () => void;
+  onReportIssue?: (recId: string) => void;
 }
 
 interface TelemetryHealth {
@@ -28,7 +30,7 @@ interface TelemetryHealth {
   nextLevelUnlock: string;
 }
 
-export function UnderstandPanel({ onNavigate, onOpenChat }: UnderstandPanelProps) {
+export function UnderstandPanel({ onNavigate, onOpenChat, onReportIssue }: UnderstandPanelProps) {
   const ws = useWorkspace();
   const [sales, setSales] = useState<any[]>([]);
   const [costs, setCosts] = useState<any[]>([]);
@@ -547,6 +549,9 @@ export function UnderstandPanel({ onNavigate, onOpenChat }: UnderstandPanelProps
           </div>
         </div>
       </div>
+
+      {/* Recommendations: the former Recommendations tab, now part of Understand */}
+      <RecommendationsPanel embedded onNavigate={(t) => onNavigate(t)} onReportIssue={onReportIssue} />
 
       {/* Safety Net Advisory Modal */}
       {safetyModal && (

@@ -9,7 +9,6 @@ import { ReportsPanel } from "../reports/ReportsPanel";
 import { BillingPanel } from "../billing/BillingPanel";
 import { NotificationsPanel, useUnreadCount } from "../notifications/NotificationsPanel";
 import { ConnectionsPanel } from "../connections/ConnectionsPanel";
-import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
 import { DecisionCenter } from "../decisions/DecisionCenter";
 import { HelpFeedbackPanel } from "../help/HelpFeedbackPanel";
 import { MobileTabBar } from "./MobileTabBar";
@@ -224,7 +223,7 @@ export function HomePage() {
     else if (route === "/add/manual") nextTab = "add/manual";
     else if (route === "/understand") nextTab = "understand";
     else if (route === "/decide" || route === "/decisions") nextTab = "decisions";
-    else if (route === "/recommendations") nextTab = "recommendations";
+    else if (route === "/recommendations" || route === "recommendations") nextTab = "understand"; // merged into Understand
     else if (route === "/data" || route === "/data/sales" || route === "sales") nextTab = "sales";
     else if (route === "/data/leads" || route === "leads") nextTab = "leads";
     else if (route === "/data/costs" || route === "costs") nextTab = "costs";
@@ -1213,20 +1212,15 @@ export function HomePage() {
             <UnderstandPanel
               onNavigate={handleNavigate}
               onOpenChat={() => setChatOpen(true)}
-            />
-          )}
-
-          {/* Decide / Decisions View */}
-          {(tab === "decisions" || tab === "decide") && <DecisionCenter />}
-          {tab === "recommendations" && (
-            <RecommendationsPanel
-              onNavigate={(t) => handleNavigate(t)}
               onReportIssue={(recId) => {
                 setHelpRecId(recId);
                 handleNavigate("/help");
               }}
             />
           )}
+
+          {/* Decide / Decisions View */}
+          {(tab === "decisions" || tab === "decide") && <DecisionCenter />}
 
           {/* Weekly Summary */}
           {tab === "reports" && <ReportsPanel onNavigate={(t) => handleNavigate(t)} />}
