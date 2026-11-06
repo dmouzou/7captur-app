@@ -153,7 +153,7 @@ export function BillingPanel() {
 
   const PlanCard = ({ id }: { id: PlanId }) => {
     const p = PLANS[id];
-    const isCurrent = ws.plan === id && hasSub;
+    const isCurrent = ws.plan === id && (hasSub || ws.billingStatus === "active" || !ws.isTrialing);
     const featured = id === "growth";
     const price = cycle === "annual" ? p.priceAnnualMonthly : p.priceMonthly;
     return (
@@ -161,8 +161,11 @@ export function BillingPanel() {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <h4 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 500 }}>{p.name}</h4>
-            {featured && <span className="badge badge-primary">Most popular</span>}
-            {isCurrent && !featured && <span className="badge">Your plan</span>}
+            {isCurrent ? (
+              <span className="badge badge-primary">Your plan</span>
+            ) : (
+              featured && <span className="badge badge-primary">Most popular</span>
+            )}
           </div>
           {id === "custom" ? (
             <>
@@ -194,14 +197,16 @@ export function BillingPanel() {
               Contact us
             </a>
           ) : isCurrent ? (
-            <span className="muted">This is your current plan</span>
+            <span className="muted" style={{ fontSize: 13.5, fontWeight: 500 }}>This is your current plan</span>
           ) : hasSub ? (
             <button type="button" className={featured ? "primary" : "btn-secondary"} style={{ width: "100%", margin: 0 }} disabled={!!busy || status === "past_due"} onClick={() => change(id)}>
               Switch to {p.name}
             </button>
           ) : (
             <button type="button" className={featured ? "primary" : "btn-secondary"} style={{ width: "100%", margin: 0 }} disabled={waiting} onClick={() => subscribe(id)}>
-              {id === "starter" ? (ws.isTrialing ? "Keep Starter" : "Subscribe to Starter") : "Upgrade to Growth"}
+              {id === "starter"
+                ? (ws.isTrialing ? "Keep Starter" : "Switch to Starter")
+                : (ws.plan === "growth" ? "This is your current plan" : "Upgrade to Growth")}
             </button>
           )}
         </div>

@@ -130,9 +130,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           );
           const deletionScheduledMs = parseTimestampMs(curWsData.deletionScheduledFor);
           const hasSubscription = Boolean(curWsData.paddleSubscriptionId);
-          const isExpiredByTime = trialEndsAtMs !== null && trialEndsAtMs <= Date.now() && !hasSubscription;
+          const isExpiredByTime = (billingStatus === "trialing" || billingStatus === "none") && trialEndsAtMs !== null && trialEndsAtMs <= Date.now() && !hasSubscription;
           const isTrialExpired = billingStatus === "trial_expired" || isExpiredByTime;
-          const isTrialing = !isTrialExpired && !hasSubscription && (billingStatus === "trialing" || billingStatus === "none");
+          const isTrialing = !isTrialExpired && !hasSubscription && (billingStatus === "trialing" || billingStatus === "none") && (curWsData.plan === "starter" || !curWsData.plan);
           const daysLeft = trialEndsAtMs ? Math.max(0, Math.ceil((trialEndsAtMs - Date.now()) / (24 * 60 * 60 * 1000))) : 14;
           const isRestricted = billingStatus === "restricted" || (restrictAtMs !== null && restrictAtMs <= Date.now());
           const isReadOnly = isTrialExpired || isRestricted;
