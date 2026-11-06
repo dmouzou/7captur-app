@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
-  analyzeRows, autoMap, buildTemplate, detectDelimiter, normalizeRow, parseCsv, rowsToObjects, type ImportOptions,
+  analyzeRows, autoMap, buildTemplate, detectDelimiter, detectFileFormat, normalizeRow, norm, parseCsv, rowsToObjects, type ImportOptions,
 } from "../functions/src/shared/importing";
+import type { RecordCollection } from "../functions/src/shared/records";
 
 const opts: ImportOptions = { dateFormat: "iso", numberFormat: "us", defaults: { currency: "USD", objective: "qualified_enquiries" } };
 
@@ -113,13 +116,169 @@ describe("templates", () => {
   it("header-only templates", () => expect(buildTemplate("sales").trim().split(",")).toContain("amount"));
 });
 
-describe("Meta Ads Manager export headers", () => {
-  it("maps reporting dates and amount spent with currency suffix", () => {
-    const m = autoMap(["Campaign name", "Reporting starts", "Reporting ends", "Amount spent (EUR)", "Impressions", "Reach", "Link clicks"], "promotions");
-    expect(m.startDate).toBe("Reporting starts");
-    expect(m.endDate).toBe("Reporting ends");
-    expect(m.spend).toBe("Amount spent (EUR)");
-    expect(m.clicks).toBe("Link clicks");
+describe("norm function", () => {
+  it("converts camelCase and PascalCase to snake_case before lowercasing", () => {
+    expect(norm("refundAmount")).toBe("refund_amount");
+    expect(norm("RefundAmount")).toBe("refund_amount");
+    expect(norm("startDate")).toBe("start_date");
+    expect(norm("publishedAt")).toBe("published_at");
+    expect(norm("externalId")).toBe("external_id");
+  });
+
+  it("strips trailing parenthesized units or currencies", () => {
+    expect(norm("Amount spent (EUR)")).toBe("amount_spent");
+    expect(norm("Spend (USD)")).toBe("spend");
+  });
+
+  it("preserves already snake_cased or separated headers", () => {
+    expect(norm("refund_amount")).toBe("refund_amount");
+    expect(norm("Refund Amount")).toBe("refund_amount");
+    expect(norm("cost_of_goods")).toBe("cost_of_goods");
+  });
+});
+
+describe("autoMap exact match priority & aliases", () => {
+  it("maps refund_amount directly to refundAmount", () => {
+    const m = autoMap(["date", "amount", "refund_amount", "status"], "sales");
+    expect(m.refundAmount).toBe("refund_amount");
+  });
+
+  it("prioritizes exact field names over secondary aliases when both are present", () => {
+    const headers = ["date", "value", "amount", "currency"];
+    const costMap = autoMap(headers, "costs");
+    expect(costMap.amount).toBe("amount");
+
+    const leadMap = autoMap(headers, "leads");
+    expect(leadMap.value).toBe("value");
+  });
+
+  it("maps start_date and end_date over generic date in promotions", () => {
+    const m = autoMap(["date", "start_date", "end_date", "spend", "platform"], "promotions");
+    expect(m.startDate).toBe("start_date");
+    expect(m.endDate).toBe("end_date");
+  });
+});
+
+describe("detectFileFormat", () => {
+  it("detects Meta Ads export headers", () => {
+    const d = detectFileFormat(["Campaign name", "Reporting starts", "Reporting ends", "Amount spent (EUR)", "Link clicks"], []);
+    expect(d.isMultiType).toBe(false);
+    expect(d.detectedCollection).toBe("promotions");
+    expect(d.detectedPlatform).toBe("Meta Ads");
+  });
+
+  it("detects Google Ads export headers", () => {
+    const d = detectFileFormat(["Campaign", "Ad group", "Cost", "Clicks", "Impressions", "Campaign state"], []);
+    expect(d.isMultiType).toBe(false);
+    expect(d.detectedCollection).toBe("promotions");
+    expect(d.detectedPlatform).toBe("Google Ads");
+  });
+
+  it("detects TikTok Ads export headers", () => {
+    const d = detectFileFormat(["Campaign name", "Stat time", "Cost", "Clicks", "CPC", "CPM"], []);
+    expect(d.isMultiType).toBe(false);
+    expect(d.detectedCollection).toBe("promotions");
+    expect(d.detectedPlatform).toBe("TikTok Ads");
+  });
+
+  it("detects Shopify Orders export headers", () => {
+    const d = detectFileFormat(["Name", "Paid at", "Financial Status", "Total", "Lineitem name"], []);
+    expect(d.isMultiType).toBe(false);
+    expect(d.detectedCollection).toBe("sales");
+    expect(d.detectedPlatform).toBe("Shopify Orders");
+  });
+
+  it("detects Stripe Payments export headers", () => {
+    const d = detectFileFormat(["id", "Created (UTC)", "Amount", "Amount Refunded", "Currency", "Status"], []);
+    expect(d.isMultiType).toBe(false);
+    expect(d.detectedCollection).toBe("sales");
+    expect(d.detectedPlatform).toBe("Stripe Payments");
+  });
+
+  it("detects multi-type dataset with record_type column and partitions rows", () => {
+    const rows = [
+      { record_type: "post", date: "2026-10-10" },
+      { record_type: "promotion", spend: "100" },
+      { record_type: "sale", amount: "50" },
+    ];
+    const d = detectFileFormat(["record_type", "date", "spend", "amount"], rows);
+    expect(d.isMultiType).toBe(true);
+    expect(d.typeCounts).toMatchObject({ posts: 1, promotions: 1, sales: 1 });
+    expect(d.partitions?.posts).toHaveLength(1);
+    expect(d.partitions?.promotions).toHaveLength(1);
+    expect(d.partitions?.sales).toHaveLength(1);
+  });
+});
+
+describe("7captur 300-row demo dataset end-to-end", () => {
+  const localDemoPath = path.join(__dirname, "../7captur_growth_demo_data_300_rows.csv");
+  const uploadedPath = "/home/loading/.gemini/antigravity/brain/81f28509-8594-40f7-a26e-bf8bd2ecf31e/.user_uploaded/media_1793979645779_21d635f1.csv";
+  const demoCsvPath = fs.existsSync(localDemoPath) ? localDemoPath : uploadedPath;
+
+  it("successfully parses, partitions, and validates all 300 rows with 0 errors", () => {
+    if (!fs.existsSync(demoCsvPath)) {
+      console.warn("Demo CSV not found on disk, skipping real file test");
+      return;
+    }
+
+    const csvContent = fs.readFileSync(demoCsvPath, "utf8");
+    const parsed = parseCsv(csvContent);
+    const rows = rowsToObjects(parsed.headers, parsed.rows);
+    expect(rows).toHaveLength(300);
+
+    const detected = detectFileFormat(parsed.headers, rows);
+    expect(detected.isMultiType).toBe(true);
+    expect(detected.typeCounts).toEqual({
+      posts: 30,
+      promotions: 60,
+      leads: 70,
+      sales: 100,
+      costs: 40,
+    });
+
+    const demoOpts: ImportOptions = {
+      dateFormat: "iso",
+      numberFormat: "us",
+      defaults: { currency: "INR", objective: "orders" },
+    };
+
+    let totalValid = 0;
+    let totalInvalid = 0;
+
+    for (const coll of ["posts", "promotions", "leads", "sales", "costs"] as RecordCollection[]) {
+      const partRows = detected.partitions![coll]!;
+      const mapping = autoMap(parsed.headers, coll);
+      const analysis = analyzeRows(coll, partRows, mapping, demoOpts);
+
+      expect(analysis.invalid).toHaveLength(0);
+      expect(analysis.valid).toHaveLength(partRows.length);
+      totalValid += analysis.valid.length;
+      totalInvalid += analysis.invalid.length;
+
+      // Check specific issue 3: partially refunded sales orders have refundAmount populated
+      if (coll === "sales") {
+        const partials = analysis.valid.filter((v) => (v.record as Record<string, unknown>).status === "partially_refunded");
+        expect(partials.length).toBeGreaterThanOrEqual(3);
+        partials.forEach((p) => {
+          const rec = p.record as Record<string, unknown>;
+          expect(rec.refundAmount).toBeDefined();
+          expect(typeof rec.refundAmount).toBe("number");
+          expect(rec.refundAmount).toBeGreaterThan(0);
+        });
+      }
+
+      // Check specific issue 2: leads accept lead statuses (new, in_conversation, won, lost)
+      if (coll === "leads") {
+        const leadStatuses = new Set(analysis.valid.map((v) => (v.record as Record<string, unknown>).status));
+        expect(leadStatuses).toContain("new");
+        expect(leadStatuses).toContain("in_conversation");
+        expect(leadStatuses).toContain("won");
+        expect(leadStatuses).toContain("lost");
+      }
+    }
+
+    expect(totalValid).toBe(300);
+    expect(totalInvalid).toBe(0);
   });
 });
 

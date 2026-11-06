@@ -74,125 +74,189 @@ export interface ImportField {
 }
 
 const count = (name: string, label: string, aliases: string[] = []): ImportField => ({ name, label, kind: "int", aliases: [name, ...aliases] });
-const platform: ImportField = {
+const platformField = (defaultPlatform: (typeof PLATFORMS)[number] = "facebook"): ImportField => ({
   name: "platform", label: "Platform", kind: "enum", required: true, enumValues: PLATFORMS,
-  aliases: ["platform", "channel", "network", "source"],
+  aliases: ["platform", "channel", "network", "source", "publisher_platform", "platform_type", "ad_channel"],
   enumAliases: {
-    ig: "instagram", insta: "instagram", fb: "facebook", meta: "facebook", whatsapp: "whatsapp_dm", wa: "whatsapp_dm",
-    dm: "whatsapp_dm", dms: "whatsapp_dm", direct_message: "whatsapp_dm", instore: "in_person", in_store: "in_person",
-    store: "in_person", call: "phone", calls: "phone", tiktok_shop: "tiktok", google_ads: "google", adwords: "google", youtube: "google", etsy: "marketplace", amazon: "marketplace",
+    ig: "instagram", insta: "instagram", fb: "facebook", meta: "facebook",
+    meta_ads: "facebook", "meta ads": "facebook", "facebook ads": "facebook", fb_ads: "facebook",
+    whatsapp: "whatsapp_dm", wa: "whatsapp_dm", dm: "whatsapp_dm", dms: "whatsapp_dm", direct_message: "whatsapp_dm",
+    instore: "in_person", in_store: "in_person", store: "in_person", call: "phone", calls: "phone",
+    tiktok_shop: "tiktok", tiktok_ads: "tiktok", "tiktok ads": "tiktok",
+    google_ads: "google", "google ads": "google", adwords: "google", youtube: "google", "youtube ads": "google",
+    etsy: "marketplace", amazon: "marketplace",
   },
-};
+  default: () => defaultPlatform,
+  defaultLabel: () => `platform = ${defaultPlatform}`,
+});
 const currencyField: ImportField = {
   name: "currency", label: "Currency", kind: "text", aliases: ["currency", "curr", "ccy"],
   default: (o) => o.defaults.currency, defaultLabel: (o) => `currency = ${o.defaults.currency}`,
 };
-const notes: ImportField = { name: "notes", label: "Notes", kind: "text", aliases: ["notes", "note", "comment", "description"] };
+const notes: ImportField = { name: "notes", label: "Notes", kind: "text", aliases: ["notes", "note", "comment", "description", "details", "memo"] };
 const dateField = (name: string, label: string, aliases: string[], required = true): ImportField => ({ name, label, kind: "date", required, aliases: [name, ...aliases] });
 
 export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
   posts: [
-    platform,
-    dateField("publishedAt", "Published on", ["date", "published", "post_date", "posted", "posted_on"]),
-    { name: "format", label: "Format", kind: "text", aliases: ["format", "type", "media_type", "post_type"] },
-    { name: "topic", label: "Topic", kind: "text", aliases: ["topic", "theme", "tag", "subject"] },
-    { name: "externalId", label: "External Post ID", kind: "text", aliases: ["external_id", "post_id", "id"] },
+    platformField("instagram"),
+    dateField("publishedAt", "Published on", ["published_at", "publishedAt", "date", "published", "post_date", "posted", "posted_on", "created_time", "publish_date"]),
+    { name: "format", label: "Format", kind: "text", aliases: ["format", "type", "media_type", "post_type", "content_type"] },
+    { name: "topic", label: "Topic", kind: "text", aliases: ["topic", "theme", "tag", "subject", "caption", "title"] },
+    { name: "externalId", label: "External Post ID", kind: "text", aliases: ["external_id", "post_id", "id", "record_id"] },
     { name: "permalink", label: "Post URL / Link", kind: "text", aliases: ["permalink", "url", "link"] },
     { name: "promoted", label: "Promoted / Boosted", kind: "bool", aliases: ["promoted", "is_promoted", "boosted"] },
-    count("reach", "Reach", ["accounts_reached"]),
-    count("views", "Views", ["video_views", "plays"]),
-    count("likes", "Likes", ["reactions"]),
-    count("comments", "Comments"), count("shares", "Shares", ["reposts"]), count("saves", "Saves", ["bookmarks"]),
-    count("profileVisits", "Profile visits", ["profile_views"]), count("clicks", "Clicks", ["link_clicks"]),
+    count("reach", "Reach", ["accounts_reached", "total_reach"]),
+    count("views", "Views", ["video_views", "plays", "impressions"]),
+    count("likes", "Likes", ["reactions", "favorites"]),
+    count("comments", "Comments", ["replies"]), count("shares", "Shares", ["reposts", "retweets"]), count("saves", "Saves", ["bookmarks"]),
+    count("profileVisits", "Profile visits", ["profile_views", "account_visits"]), count("clicks", "Clicks", ["link_clicks", "outbound_clicks"]),
     notes,
   ],
   promotions: [
-    platform,
-    dateField("startDate", "Start date", ["start", "date", "from", "begin", "reporting_starts"]),
-    dateField("endDate", "End date", ["end", "to", "stop", "reporting_ends"], false),
-    { name: "spend", label: "Spend", kind: "number", required: true, aliases: ["spend", "cost", "amount_spent", "campaign_spend", "ad_spend", "budget_spent"] },
-    { name: "budget", label: "Budget", kind: "number", aliases: ["budget", "target_budget"] },
+    platformField("facebook"),
+    dateField("startDate", "Start date", ["start_date", "startDate", "start", "from", "begin", "reporting_starts", "date_start", "start_time", "date", "day", "stat_time"]),
+    dateField("endDate", "End date", ["end_date", "endDate", "end", "to", "stop", "reporting_ends", "date_stop", "end_time"], false),
+    { name: "spend", label: "Spend", kind: "number", required: true, aliases: ["spend", "cost", "amount_spent", "campaign_spend", "ad_spend", "budget_spent", "total_cost", "spent"] },
+    { name: "budget", label: "Budget", kind: "number", aliases: ["budget", "target_budget", "daily_budget"] },
     currencyField,
     {
-      name: "objective", label: "Objective", kind: "enum", enumValues: OBJECTIVES, aliases: ["objective", "goal"],
-      enumAliases: { leads: "qualified_enquiries", enquiries: "qualified_enquiries", sales: "orders", conversions: "orders", traffic: "awareness", reach: "awareness" },
+      name: "objective", label: "Objective", kind: "enum", enumValues: OBJECTIVES, aliases: ["objective", "goal", "campaign_objective"],
+      enumAliases: {
+        leads: "qualified_enquiries", enquiries: "qualified_enquiries", sales: "orders", conversions: "orders",
+        traffic: "awareness", reach: "awareness", brand_awareness: "awareness", website_traffic: "awareness",
+        lead_generation: "qualified_enquiries", catalog_sales: "orders",
+      },
       default: (o) => o.defaults.objective, defaultLabel: (o) => `objective = ${o.defaults.objective}`,
     },
-    count("impressions", "Impressions"), count("clicks", "Clicks", ["link_clicks"]), count("reach", "Reach"),
+    count("impressions", "Impressions", ["total_impressions", "views"]),
+    count("clicks", "Clicks", ["link_clicks", "ad_clicks", "outbound_clicks"]),
+    count("reach", "Reach", ["total_reach", "unique_impressions"]),
     notes,
   ],
   leads: [
-    dateField("date", "Date", ["created", "enquiry_date", "received"]),
-    { name: "source", label: "Source / Channel", kind: "text", aliases: ["source", "channel", "origin", "platform"] },
+    dateField("date", "Date", ["created", "enquiry_date", "received", "created_date", "created_at", "lead_date", "date"]),
+    { name: "source", label: "Source / Channel", kind: "text", aliases: ["source", "channel", "origin", "platform", "lead_source", "medium", "referrer"] },
     { name: "qualified", label: "Qualified", kind: "bool", aliases: ["qualified", "is_qualified", "qualified_lead"], default: () => false, defaultLabel: () => "qualified = no" },
     {
-      name: "status", label: "Status", kind: "enum", enumValues: ["new", "in_conversation", "won", "lost"], aliases: ["status", "stage"],
-      enumAliases: { open: "new", talking: "in_conversation", contacted: "in_conversation", closed_won: "won", converted: "won", closed_lost: "lost", dead: "lost" },
+      name: "status", label: "Status", kind: "enum", enumValues: ["new", "in_conversation", "won", "lost"], aliases: ["status", "stage", "lead_status"],
+      enumAliases: {
+        open: "new", fresh: "new", talking: "in_conversation", contacted: "in_conversation",
+        in_conversation: "in_conversation", "in conversation": "in_conversation", in_progress: "in_conversation", engaged: "in_conversation",
+        closed_won: "won", converted: "won", won: "won", success: "won",
+        closed_lost: "lost", lost: "lost", dead: "lost", junk: "lost", disqualified: "lost",
+      },
       default: () => "new", defaultLabel: () => "status = new",
     },
-    { name: "value", label: "Value", kind: "number", aliases: ["value", "amount", "deal_value"] },
+    { name: "value", label: "Value", kind: "number", aliases: ["value", "amount", "deal_value", "deal_size", "estimated_value"] },
     currencyField, notes,
   ],
   sales: [
-    dateField("date", "Date", ["order_date", "sold_on", "created"]),
-    { name: "orderNumber", label: "Order / Invoice #", kind: "text", aliases: ["order_number", "order_id", "order_no", "invoice"] },
-    { name: "amount", label: "Amount", kind: "number", required: true, aliases: ["amount", "total", "revenue", "order_total", "price", "gross"] },
-    { name: "quantity", label: "Quantity", kind: "int", aliases: ["quantity", "qty", "count", "items"] },
+    dateField("date", "Date", ["order_date", "sold_on", "created", "created_at", "paid_at", "order_time", "date"]),
+    { name: "orderNumber", label: "Order / Invoice #", kind: "text", aliases: ["order_number", "orderNumber", "order_id", "order_no", "invoice", "invoice_number", "record_id", "id", "order_name"] },
+    { name: "amount", label: "Amount", kind: "number", required: true, aliases: ["amount", "total", "revenue", "order_total", "price", "gross", "subtotal", "total_sales"] },
+    { name: "quantity", label: "Quantity", kind: "int", aliases: ["quantity", "qty", "count", "items", "lineitem_quantity"] },
     currencyField,
     {
-      name: "status", label: "Status", kind: "enum", enumValues: ["confirmed", "pending", "partially_refunded", "refunded"], aliases: ["status", "order_status"],
-      enumAliases: { paid: "confirmed", complete: "confirmed", completed: "confirmed", fulfilled: "confirmed", delivered: "confirmed", unpaid: "pending", partial_refund: "partially_refunded", refund: "refunded", returned: "refunded" },
+      name: "status", label: "Status", kind: "enum", enumValues: ["confirmed", "pending", "partially_refunded", "refunded"], aliases: ["status", "order_status", "financial_status"],
+      enumAliases: {
+        paid: "confirmed", complete: "confirmed", completed: "confirmed", fulfilled: "confirmed", delivered: "confirmed",
+        unpaid: "pending", authorized: "pending", open: "pending", processing: "pending",
+        partial_refund: "partially_refunded", partially_refund: "partially_refunded", partially_refunded: "partially_refunded", "partially refunded": "partially_refunded",
+        refund: "refunded", refunded: "refunded", returned: "refunded", cancelled: "refunded", voided: "refunded",
+      },
       default: () => "confirmed", defaultLabel: () => "status = confirmed",
     },
-    { name: "discountAmount", label: "Discount", kind: "number", aliases: ["discount", "discount_amount", "discounts"] },
-    { name: "refundAmount", label: "Refund amount", kind: "number", aliases: ["refundamount", "refund", "refunded_amount"] },
-    { name: "product", label: "Product or service", kind: "text", aliases: ["product", "item", "product_name", "service"] },
+    { name: "discountAmount", label: "Discount", kind: "number", aliases: ["discount_amount", "discountAmount", "discount", "discounts", "total_discount"] },
+    { name: "refundAmount", label: "Refund amount", kind: "number", aliases: ["refund_amount", "refundAmount", "refundamount", "refund", "refunded_amount", "refund_value", "total_refunded", "return_amount"] },
+    { name: "product", label: "Product or service", kind: "text", aliases: ["product", "item", "product_name", "service", "lineitem_name", "title"] },
     {
-      name: "attribution", label: "Source certainty", kind: "enum", enumValues: ["unknown", "estimated", "manual_reported"], aliases: ["attribution"],
+      name: "attribution", label: "Source certainty", kind: "enum", enumValues: ["unknown", "estimated", "manual_reported"], aliases: ["attribution", "source_certainty"],
+      enumAliases: {
+        manual_reported: "manual_reported", "manual reported": "manual_reported", manual: "manual_reported", self_reported: "manual_reported",
+        estimated: "estimated", model: "estimated", analytics: "estimated",
+        unknown: "unknown", none: "unknown", unattributed: "unknown",
+      },
       default: () => "unknown", defaultLabel: () => "source certainty = unknown",
     },
     notes,
   ],
   costs: [
     {
-      name: "category", label: "Category", kind: "enum", enumValues: ["cogs", "fees", "shipping", "returns", "disputes", "other"], aliases: ["category", "cost_type", "type_of_cost"],
-      enumAliases: { cost_of_goods: "cogs", cost_of_goods_sold: "cogs", goods: "cogs", fee: "fees", payment_fees: "fees", processing: "fees", delivery: "shipping", fulfillment: "shipping", return: "returns", chargeback: "disputes", chargebacks: "disputes", dispute: "disputes" },
+      name: "category", label: "Category", kind: "enum", enumValues: ["cogs", "fees", "shipping", "returns", "disputes", "other"], aliases: ["category", "cost_type", "type_of_cost", "expense_type"],
+      enumAliases: {
+        cost_of_goods: "cogs", cost_of_goods_sold: "cogs", "cost of goods": "cogs", "cost of goods sold": "cogs", cogs: "cogs", goods: "cogs", inventory: "cogs",
+        fee: "fees", payment_fees: "fees", processing: "fees", platform_fee: "fees",
+        shipping: "shipping", delivery: "shipping", fulfillment: "shipping", postage: "shipping",
+        return: "returns", returns: "returns", refund: "returns",
+        chargeback: "disputes", chargebacks: "disputes", dispute: "disputes",
+        operational: "other", overhead: "other", other: "other",
+      },
       default: () => "other", defaultLabel: () => "category = other",
     },
     {
       name: "kind", label: "Amount or percentage", kind: "enum", enumValues: ["amount", "percentage"], aliases: ["kind", "unit", "amount_type"],
-      enumAliases: { percent: "percentage", pct: "percentage", "%": "percentage", fixed: "amount", flat: "amount" },
+      enumAliases: {
+        percent: "percentage", pct: "percentage", "%": "percentage",
+        fixed: "amount", flat: "amount", fixed_amount: "amount", "fixed amount": "amount", amount: "amount",
+      },
       default: () => "amount", defaultLabel: () => "type = amount",
     },
     {
       name: "scope", label: "Cost scope", kind: "enum", enumValues: ["business_level", "per_order", "per_unit"], aliases: ["scope", "level", "cost_scope"],
-      enumAliases: { business: "business_level", general: "business_level", order: "per_order", unit: "per_unit", per_item: "per_unit" },
+      enumAliases: { business: "business_level", general: "business_level", fixed: "business_level", order: "per_order", unit: "per_unit", per_item: "per_unit" },
     },
-    { name: "amount", label: "Value", kind: "number", required: true, aliases: ["amount", "value", "cost"] },
+    { name: "amount", label: "Value", kind: "number", required: true, aliases: ["amount", "value", "cost", "expense_amount"] },
     currencyField,
     {
       name: "frequency", label: "How often", kind: "enum", enumValues: ["one_off", "monthly", "yearly"], aliases: ["frequency", "recurrence", "repeats"],
-      enumAliases: { once: "one_off", "one-off": "one_off", single: "one_off", month: "monthly", year: "yearly", annual: "yearly", annually: "yearly" },
+      enumAliases: {
+        once: "one_off", "one-off": "one_off", one_off: "one_off", single: "one_off",
+        month: "monthly", monthly: "monthly",
+        year: "yearly", annual: "yearly", annually: "yearly",
+      },
       default: () => "one_off", defaultLabel: () => "frequency = one off",
     },
-    dateField("effectiveDate", "Effective from", ["effective", "date", "from", "start_date", "start"]),
-    dateField("endDate", "Ends on", ["end", "end_date", "until", "to"], false),
+    dateField("effectiveDate", "Effective from", ["effective_date", "effectiveDate", "effective", "date", "from", "start_date", "start"]),
+    dateField("endDate", "Ends on", ["end_date", "endDate", "end", "until", "to"], false),
     notes,
   ],
 };
 
 // ---------- Cell parsing ----------
 
-const norm = (s: string) => s.trim().replace(/\s*\([^)]*\)\s*$/, "").toLowerCase().replace(/([a-z])([A-Z])/g, "$1_$2").replace(/[^a-z0-9%]+/g, "_").replace(/^_+|_+$/g, "");
+export const norm = (s: string): string =>
+  s
+    .trim()
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9%]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 
 export function autoMap(headers: string[], coll: RecordCollection): Record<string, string> {
   const used = new Set<string>();
   const mapping: Record<string, string> = {};
   const normalized = headers.map((h) => [h, norm(h)] as const);
   for (const f of IMPORT_SPECS[coll]) {
-    const wanted = new Set([f.name, ...f.aliases].map((a) => norm(a)));
-    const hit = normalized.find(([h, n]) => !used.has(h) && wanted.has(n));
-    if (hit) { mapping[f.name] = hit[0]; used.add(hit[0]); }
+    // 1. Exact match on field name
+    const exactName = norm(f.name);
+    const exactHit = normalized.find(([h, n]) => !used.has(h) && n === exactName);
+    if (exactHit) {
+      mapping[f.name] = exactHit[0];
+      used.add(exactHit[0]);
+      continue;
+    }
+    // 2. Ordered alias matches
+    const aliasHits = f.aliases.map((a) => norm(a));
+    let hit: (readonly [string, string]) | undefined;
+    for (const a of aliasHits) {
+      hit = normalized.find(([h, n]) => !used.has(h) && n === a);
+      if (hit) break;
+    }
+    if (hit) {
+      mapping[f.name] = hit[0];
+      used.add(hit[0]);
+    }
   }
   return mapping;
 }
@@ -269,7 +333,8 @@ export function normalizeRow(
       }
       case "enum": {
         const k = raw.toLowerCase().trim().replace(/[\s\-/]+/g, "_");
-        const v = f.enumValues!.includes(k) ? k : f.enumAliases?.[k];
+        const rawTrim = raw.toLowerCase().trim();
+        const v = f.enumValues!.includes(k) ? k : (f.enumAliases?.[k] ?? f.enumAliases?.[rawTrim]);
         if (v) obj[f.name] = v;
         else errors.push({ field: f.label, message: `"${raw}" is not recognised. Use one of: ${f.enumValues!.join(", ")}` });
         break;
@@ -353,19 +418,134 @@ export function buildTemplate(coll: RecordCollection): string {
   return IMPORT_SPECS[coll].map((f) => f.name).join(",") + "\n";
 }
 
+export interface DetectedFormat {
+  isMultiType: boolean;
+  typeColumn?: string;
+  typeCounts?: Partial<Record<RecordCollection, number>>;
+  partitions?: Partial<Record<RecordCollection, Record<string, string>[]>>;
+  detectedCollection?: RecordCollection;
+  detectedPlatform?: string;
+  confidence: "high" | "medium" | "low";
+}
+
+const TYPE_MAP: Record<string, RecordCollection> = {
+  post: "posts", posts: "posts", marketing_post: "posts", content: "posts", social: "posts",
+  promotion: "promotions", promotions: "promotions", ad: "promotions", ads: "promotions", campaign: "promotions", campaigns: "promotions", paid_ad: "promotions",
+  lead: "leads", leads: "leads", enquiry: "leads", enquiries: "leads", inquiry: "leads", inquiries: "leads", prospect: "leads", prospects: "leads",
+  sale: "sales", sales: "sales", order: "sales", orders: "sales", revenue: "sales", transaction: "sales", transactions: "sales",
+  cost: "costs", costs: "costs", expense: "costs", expenses: "costs", spend: "costs", cogs: "costs",
+};
+
+export function detectFileFormat(headers: string[], rows: Record<string, string>[]): DetectedFormat {
+  if (headers.length === 0) {
+    return { isMultiType: false, confidence: "low" };
+  }
+
+  // 1. Check for multi-type discriminator column
+  const typeColHeader = headers.find((h) => {
+    const n = norm(h);
+    return n === "record_type" || n === "type" || n === "record_collection" || n === "collection" || n === "entity_type" || n === "row_type";
+  });
+
+  if (typeColHeader && rows.length > 0) {
+    const partitions: Partial<Record<RecordCollection, Record<string, string>[]>> = {};
+    const typeCounts: Partial<Record<RecordCollection, number>> = {};
+    let recognizedRows = 0;
+
+    for (const r of rows) {
+      const val = norm(r[typeColHeader] ?? "");
+      const coll = TYPE_MAP[val];
+      if (coll) {
+        if (!partitions[coll]) partitions[coll] = [];
+        partitions[coll]!.push(r);
+        typeCounts[coll] = (typeCounts[coll] ?? 0) + 1;
+        recognizedRows++;
+      }
+    }
+
+    const collsFound = Object.keys(partitions) as RecordCollection[];
+    if (collsFound.length >= 2 || (collsFound.length === 1 && (norm(typeColHeader) === "record_type" || norm(typeColHeader) === "record_collection"))) {
+      return {
+        isMultiType: true,
+        typeColumn: typeColHeader,
+        typeCounts,
+        partitions,
+        detectedCollection: collsFound[0],
+        confidence: "high",
+      };
+    }
+  }
+
+  // 2. Check for known platform exports (Meta Ads, Google Ads, TikTok Ads, Shopify, Stripe)
+  const normHeaders = headers.map(norm);
+  const set = new Set(normHeaders);
+
+  // Meta Ads Export
+  if (set.has("reporting_starts") || set.has("amount_spent") || (set.has("campaign_name") && set.has("link_clicks"))) {
+    return { isMultiType: false, detectedCollection: "promotions", detectedPlatform: "Meta Ads", confidence: "high" };
+  }
+
+  // TikTok Ads Export
+  if (set.has("stat_time") || (set.has("cpc") && set.has("cpm")) || normHeaders.some((h) => h.includes("tiktok"))) {
+    return { isMultiType: false, detectedCollection: "promotions", detectedPlatform: "TikTok Ads", confidence: "high" };
+  }
+
+  // Google Ads Export
+  if (set.has("campaign_state") || set.has("search_keyword") || (set.has("campaign") && set.has("cost") && set.has("clicks"))) {
+    return { isMultiType: false, detectedCollection: "promotions", detectedPlatform: "Google Ads", confidence: "high" };
+  }
+
+  // Shopify Orders Export
+  if (set.has("financial_status") || set.has("fulfillment_status") || set.has("lineitem_name")) {
+    return { isMultiType: false, detectedCollection: "sales", detectedPlatform: "Shopify Orders", confidence: "high" };
+  }
+
+  // Stripe Payments Export
+  if (set.has("amount_refunded") || set.has("converted_amount") || (set.has("charge_id") && set.has("amount"))) {
+    return { isMultiType: false, detectedCollection: "sales", detectedPlatform: "Stripe Payments", confidence: "high" };
+  }
+
+  // 3. Fallback: Score each collection based on autoMap matches and required fields
+  const scores: Record<RecordCollection, number> = { posts: 0, promotions: 0, leads: 0, sales: 0, costs: 0 };
+  for (const coll of Object.keys(scores) as RecordCollection[]) {
+    const m = autoMap(headers, coll);
+    scores[coll] = Object.keys(m).length;
+    const reqs = IMPORT_SPECS[coll].filter((f) => f.required);
+    const hasAllReqs = reqs.every((f) => m[f.name]);
+    if (hasAllReqs) scores[coll] += 5;
+  }
+
+  const sorted = (Object.keys(scores) as RecordCollection[]).sort((a, b) => scores[b] - scores[a]);
+  const best = sorted[0];
+  const confidence = scores[best] >= 3 ? "medium" : "low";
+
+  return {
+    isMultiType: false,
+    detectedCollection: best,
+    confidence,
+  };
+}
+
+export const importBatchSchema = z.object({
+  collection: z.enum(["posts", "promotions", "leads", "sales", "costs"]),
+  mapping: z.record(z.string().max(100), z.string().max(200)),
+  rows: z.array(z.record(z.string().max(200), z.string().max(2000))),
+});
+
 export const importRecordsInput = z.object({
   workspaceId: z.string().min(1).max(128),
   businessId: z.string().min(1).max(128),
-  collection: z.enum(["posts", "promotions", "leads", "sales", "costs"]),
+  collection: z.enum(["posts", "promotions", "leads", "sales", "costs"]).default("sales"),
   requestId: z.string().min(8).max(64),
   fileName: z.string().max(200),
   dryRun: z.boolean().optional(),
   source: z.literal("csv").default("csv"),
-  mapping: z.record(z.string().max(100), z.string().max(200)),
+  mapping: z.record(z.string().max(100), z.string().max(200)).optional().default({}),
   options: z.object({
     dateFormat: z.enum(["iso", "mdy", "dmy"]),
     numberFormat: z.enum(["us", "eu"]),
   }),
-  rows: z.array(z.record(z.string().max(200), z.string().max(2000))).min(1).max(IMPORT_LIMITS.maxRows),
+  rows: z.array(z.record(z.string().max(200), z.string().max(2000))).max(IMPORT_LIMITS.maxRows).optional().default([]),
+  batches: z.array(importBatchSchema).optional(),
 });
 
