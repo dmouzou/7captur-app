@@ -6,6 +6,7 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
 import type { WeeklyReport } from "../../shared/report";
 import { Icon } from "../../components/Icon";
+import { ReportArt } from "../../components/art";
 
 interface Prefs { weeklyEmail?: boolean; weeklyStatusOnly?: boolean }
 
@@ -32,17 +33,13 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
   if (!plan?.weeklySummary) {
     return (
       <section>
-        <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
-          <div className="empty-icon"><Icon name="trend" size={34} /></div>
-          <h2 style={{ margin: "0 0 10px 0" }}>Weekly Summary is available on Growth and above</h2>
-          <p className="muted" style={{ margin: "0 auto 20px", fontSize: 14, maxWidth: 500 }}>
-            Growth and Custom plans include automated weekly health summaries, intelligent decision outcome reviews (Ready to review, Too early, Not enough data), and historical track record reporting.
+        <div className="card" style={{ padding: "40px 24px", textAlign: "center" }}>
+          <ReportArt size={190} />
+          <h2 style={{ margin: "12px 0 10px 0", fontWeight: 500 }}>Weekly Summary is on Growth and Custom</h2>
+          <p className="muted" style={{ margin: "0 auto 20px", fontSize: 14.5, maxWidth: 500, lineHeight: 1.55 }}>
+            Every Monday you get a short summary of what changed, what data is missing, and which decisions are ready to review. It also keeps a track record of what worked.
           </p>
-          <button
-            type="button"
-            className="btn btn-lime"
-            onClick={() => onNavigate?.("billing")}
-          >
+          <button type="button" className="btn btn-lime" onClick={() => onNavigate?.("billing")}>
             Upgrade to Growth
           </button>
         </div>
@@ -52,49 +49,26 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
 
   return (
     <section>
-      {/* Top Header Card */}
-      <div
-        className="card"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 18,
-          marginBottom: 24,
-          background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-subtle) 100%)",
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <h1 style={{ margin: 0, fontSize: "1.65rem" }}>Weekly Executive Summaries</h1>
-            <span className="badge badge-warning">Every Monday 8:00 AM</span>
+      <div className="card" style={{ marginBottom: 20, padding: "24px 28px", background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+          <div style={{ maxWidth: 540 }}>
+            <span className="badge badge-primary">Every Monday, 8:00 AM</span>
+            <h1 style={{ margin: "10px 0 8px", fontSize: "1.75rem", fontWeight: 500 }}>Weekly summary</h1>
+            <p className="muted" style={{ margin: "0 0 14px", fontSize: 14.5, lineHeight: 1.55 }}>
+              What changed this week, what is missing, and which decisions are ready to review. Delivered on {ws.timezone} time.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", margin: 0, fontSize: 13.5, cursor: "pointer" }}>
+                <input type="checkbox" style={{ width: "auto", margin: 0 }} checked={prefs.weeklyEmail !== false} onChange={(e) => setPref({ weeklyEmail: e.target.checked })} />
+                Email me when my summary is ready
+              </label>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", margin: 0, fontSize: 13.5, cursor: "pointer" }}>
+                <input type="checkbox" style={{ width: "auto", margin: 0 }} checked={prefs.weeklyStatusOnly === true} onChange={(e) => setPref({ weeklyStatusOnly: e.target.checked })} />
+                Send a short note even in weeks with no new data
+              </label>
+            </div>
           </div>
-          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            Automated intelligence digest delivered according to your business timezone ({ws.timezone}).
-          </p>
-        </div>
-
-        {/* Email Digest Settings */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "var(--bg2)", padding: "12px 16px", borderRadius: 10 }}>
-          <label style={{ display: "flex", gap: 8, alignItems: "center", margin: 0, fontSize: 13, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              style={{ width: "auto", margin: 0 }}
-              checked={prefs.weeklyEmail !== false}
-              onChange={(e) => setPref({ weeklyEmail: e.target.checked })}
-            />
-            Email me when summary is ready
-          </label>
-          <label style={{ display: "flex", gap: 8, alignItems: "center", margin: 0, fontSize: 13, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              style={{ width: "auto", margin: 0 }}
-              checked={prefs.weeklyStatusOnly === true}
-              onChange={(e) => setPref({ weeklyStatusOnly: e.target.checked })}
-            />
-            Send short status even if no data changed
-          </label>
+          <ReportArt size={180} />
         </div>
       </div>
 
@@ -106,10 +80,10 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
 
       {reports.length === 0 && (
         <div className="card" style={{ padding: "48px 24px", textAlign: "center" }}>
-          <div className="empty-icon"><Icon name="calendar" size={34} /></div>
-          <h3 style={{ margin: "0 0 8px 0" }}>No weekly summaries yet</h3>
+          <ReportArt size={170} />
+          <h3 style={{ margin: "8px 0 8px 0", fontWeight: 500 }}>No weekly summaries yet</h3>
           <p className="muted" style={{ margin: 0, fontSize: 14, maxWidth: 440, marginLeft: "auto", marginRight: "auto" }}>
-            Your first automated weekly health digest arrives next Monday at 8:00 AM once commercial records are logged.
+            Your first summary arrives next Monday at 8:00 AM, once you have added some records.
           </p>
         </div>
       )}
@@ -135,13 +109,13 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
             >
               <div>
                 <span className="badge badge-primary" style={{ marginRight: 8 }}>
-                  Weekly Digest
+                  This week
                 </span>
-                <span className="mono" style={{ fontSize: 14, fontWeight: 600 }}>
+                <span className="mono" style={{ fontSize: 14, fontWeight: 500 }}>
                   {r.periodStart} → {r.periodEnd}
                 </span>
               </div>
-              {r.kind === "status_only" && <span className="badge">Status Only</span>}
+              {r.kind === "status_only" && <span className="badge">Short note</span>}
             </div>
 
             {/* Structured Insights Grid */}
@@ -163,7 +137,7 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                 }}
               >
                 <h4 style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--accent)" }}>
-                  <Icon name="trend" size={15} inline />What Changed
+                  <Icon name="trend" size={15} inline />What changed
                 </h4>
                 {r.changes.length ? (
                   <ul style={{ paddingLeft: 18, margin: 0, fontSize: 13, color: "var(--body)" }}>
@@ -175,12 +149,12 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                   </ul>
                 ) : (
                   <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                    No changes in recorded figures.
+                    Nothing changed in your recorded numbers.
                   </p>
                 )}
               </div>
 
-              {/* Data Freshness */}
+              {/* How fresh your data is */}
               <div
                 style={{
                   padding: "16px 18px",
@@ -190,16 +164,16 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                 }}
               >
                 <h4 style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--ink)" }}>
-                  <Icon name="signal" size={15} inline />Data Freshness
+                  <Icon name="signal" size={15} inline />How fresh your data is
                 </h4>
                 <p style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--body)" }}>
                   {r.freshness.latestRecordDate
                     ? `Latest entry: ${r.freshness.latestRecordDate}`
                     : "No entries yet."}
-                  {r.freshness.stale && " (stale > 2 weeks)"}
+                  {r.freshness.stale && " (more than 2 weeks old)"}
                 </p>
                 <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                  {r.recommendations.generated} generated · {r.recommendations.markedToTry} tried · {r.recommendations.dismissed} dismissed
+                  {r.recommendations.generated} recommended · {r.recommendations.markedToTry} tried · {r.recommendations.dismissed} dismissed
                 </div>
               </div>
 
@@ -213,7 +187,7 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                 }}
               >
                 <h4 style={{ margin: "0 0 10px 0", fontSize: 13, color: "var(--gold)" }}>
-                  <Icon name="alert" size={15} inline />Data gaps
+                  <Icon name="alert" size={15} inline />What is missing
                 </h4>
                 {r.gaps.length > 0 ? (
                   <ul style={{ paddingLeft: 18, margin: 0, fontSize: 13, color: "var(--body)" }}>
@@ -225,7 +199,7 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                   </ul>
                 ) : (
                   <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                    No missing critical gaps detected.
+                    Nothing important is missing.
                   </p>
                 )}
               </div>
@@ -235,10 +209,10 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
             {r.reviews && (
               <div style={{ marginBottom: 20 }}>
                 <h4 style={{ margin: "0 0 12px 0", fontSize: 14, color: "var(--ink)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                  <span><Icon name="check" size={15} inline accent />Decision Outcomes Review (records and reviews outcomes)</span>
+                  <span><Icon name="check" size={15} inline accent />How your decisions turned out</span>
                   {r.reviews.trackRecord && (
                     <span className="badge badge-primary" style={{ fontWeight: 500, fontSize: 12 }}>
-                      Track Record: {r.reviews.trackRecord}
+                      Track record: {r.reviews.trackRecord}
                     </span>
                   )}
                 </h4>
@@ -248,19 +222,19 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                   <div style={{ padding: "14px 16px", borderRadius: 10, background: "var(--surface-subtle)", border: "1px solid var(--accent-line)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                       <span className="badge badge-primary" style={{ fontSize: 11 }}>Ready to review</span>
-                      <strong style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.ready.length})</strong>
+                      <span style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.ready.length})</span>
                     </div>
                     {r.reviews.ready.length > 0 ? (
                       <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--body)" }}>
                         {r.reviews.ready.map((item) => (
                           <li key={item.id} style={{ marginBottom: 8 }}>
-                            <strong>{item.action}</strong>
+                            <span style={{ color: "var(--ink)" }}>{item.action}</span>
                             <div className="muted" style={{ fontSize: 12 }}>{item.prompt}</div>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions currently ready for outcome review.</p>
+                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions are ready to review yet.</p>
                     )}
                   </div>
 
@@ -268,19 +242,19 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                   <div style={{ padding: "14px 16px", borderRadius: 10, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                       <span className="badge" style={{ fontSize: 11 }}>Too early</span>
-                      <strong style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.tooEarly.length})</strong>
+                      <span style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.tooEarly.length})</span>
                     </div>
                     {r.reviews.tooEarly.length > 0 ? (
                       <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--body)" }}>
                         {r.reviews.tooEarly.map((item) => (
                           <li key={item.id} style={{ marginBottom: 8 }}>
-                            <strong>{item.action}</strong>
+                            <span style={{ color: "var(--ink)" }}>{item.action}</span>
                             <div className="muted" style={{ fontSize: 12 }}>{item.reason} Review on {item.readyOn}.</div>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions pending observation time.</p>
+                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions are waiting on more time.</p>
                     )}
                   </div>
 
@@ -288,19 +262,19 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                   <div style={{ padding: "14px 16px", borderRadius: 10, background: "var(--surface-subtle)", border: "1px solid var(--border)" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                       <span className="badge badge-warning" style={{ fontSize: 11 }}>Not enough data</span>
-                      <strong style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.notEnoughData.length})</strong>
+                      <span style={{ fontSize: 13, color: "var(--ink)" }}>({r.reviews.notEnoughData.length})</span>
                     </div>
                     {r.reviews.notEnoughData.length > 0 ? (
                       <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--body)" }}>
                         {r.reviews.notEnoughData.map((item) => (
                           <li key={item.id} style={{ marginBottom: 8 }}>
-                            <strong>{item.action}</strong>
+                            <span style={{ color: "var(--ink)" }}>{item.action}</span>
                             <div className="muted" style={{ fontSize: 12 }}>{item.whatToAdd}</div>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions missing required records.</p>
+                      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No decisions are missing records.</p>
                     )}
                   </div>
                 </div>
@@ -316,10 +290,10 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
                 border: "1px solid var(--accent-line)",
               }}
             >
-              <strong style={{ fontSize: 12.5, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                Target Focus For Upcoming Week:
+              <strong style={{ fontSize: 12.5, color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
+                Focus for next week
               </strong>
-              <p style={{ margin: "4px 0 0 0", fontSize: 14, color: "var(--ink)" }}>
+              <p className="action-directive-text" style={{ margin: "4px 0 0 0", fontSize: 15 }}>
                 {r.nextFocus}
               </p>
             </div>

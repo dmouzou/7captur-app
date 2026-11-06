@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
+import { useAuth } from "../auth/AuthProvider";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
 import { periodIds } from "../../shared/periods";
@@ -41,7 +42,17 @@ export function RecommendationsPanel({
   const [seen] = useState(() => new Set<string>());
 
   // Progressive disclosure mode (Spec 5.3): beginner vs advanced
+  const { user } = useAuth();
+  const touched = useRef(false);
   const [viewMode, setViewMode] = useState<"beginner" | "advanced">("beginner");
+  // Start in the view the person chose under Account & Preferences. Toggling here only changes this visit.
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(doc(db, "users", user.uid), (s) => {
+      const m = s.data()?.defaultViewMode;
+      if (m === "beginner" || m === "advanced") setViewMode((cur) => (touched.current ? cur : m));
+    }, () => undefined);
+  }, [user]);
 
   // Filters (Spec 6.0)
   const [filterMode, setFilterMode] = useState<string>("all");
@@ -200,14 +211,14 @@ export function RecommendationsPanel({
             <button
               type="button"
               className={viewMode === "beginner" ? "active" : ""}
-              onClick={() => setViewMode("beginner")}
+              onClick={() => { touched.current = true; setViewMode("beginner"); }}
             >
               Beginner view
             </button>
             <button
               type="button"
               className={viewMode === "advanced" ? "active" : ""}
-              onClick={() => setViewMode("advanced")}
+              onClick={() => { touched.current = true; setViewMode("advanced"); }}
             >
               Advanced view
             </button>
@@ -243,14 +254,14 @@ export function RecommendationsPanel({
             <button
               type="button"
               className={viewMode === "beginner" ? "active" : ""}
-              onClick={() => setViewMode("beginner")}
+              onClick={() => { touched.current = true; setViewMode("beginner"); }}
             >
               Beginner view
             </button>
             <button
               type="button"
               className={viewMode === "advanced" ? "active" : ""}
-              onClick={() => setViewMode("advanced")}
+              onClick={() => { touched.current = true; setViewMode("advanced"); }}
             >
               Advanced view
             </button>

@@ -130,3 +130,21 @@ export function SettingsArt({ size = 150 }: { size?: number }) {
     </svg>
   );
 }
+
+export function ReportArt({ size = 150 }: { size?: number }) {
+  return (
+    <svg width={size} height={size * 0.72} viewBox="0 0 132 95" role="img" aria-label="A weekly summary page">
+      <rect x="30" y="6" width="72" height="84" rx="10" {...card} />
+      <rect x="42" y="18" width="30" height="5" rx="2.5" fill={lime} />
+      <rect x="42" y="30" width="48" height="3.5" rx="1.7" fill="var(--border)" />
+      <rect x="42" y="38" width="40" height="3.5" rx="1.7" fill="var(--border)" />
+      <g transform="translate(42 50)">
+        <rect width="10" height="24" rx="2" fill={lime} opacity=".45" />
+        <rect x="15" y="8" width="10" height="16" rx="2" fill={lime} opacity=".7" />
+        <rect x="30" y="-4" width="10" height="28" rx="2" fill={lime} />
+      </g>
+      <circle cx="104" cy="22" r="11" fill="var(--surface)" stroke={lime} strokeWidth="2" />
+      <path d="M99 22l4 4 7-8" fill="none" stroke={lime} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

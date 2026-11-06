@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { httpsCallable } from "firebase/functions";
-import { functions } from "../../services/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db, functions } from "../../services/firebase";
 import { useAuth } from "../auth/AuthProvider";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
@@ -62,6 +63,17 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  // Load the saved defaults so the form shows what is actually set.
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(doc(db, "users", user.uid), (s) => {
+      const d = s.data() ?? {};
+      if (d.defaultViewMode === "beginner" || d.defaultViewMode === "advanced") setDefaultViewMode(d.defaultViewMode);
+      if (typeof d.notificationPrefs?.weeklyEmail === "boolean") setWeeklyEmail(d.notificationPrefs.weeklyEmail);
+      if (typeof d.notificationPrefs?.reviewAlerts === "boolean") setReviewAlerts(d.notificationPrefs.reviewAlerts);
+    }, () => undefined);
+  }, [user]);
 
   useEffect(() => {
     setWorkspaceName(ws.workspaceName || "");

@@ -10,6 +10,12 @@ export function seed(): Record<string, Record<string, unknown>> {
     name: "Studio Mara", ownerUid: uid, plan: "growth", billingStatus: "trialing", trialEndsAt: { __ts: Date.now() + 9 * 86400000 },
     timezone: "Asia/Kolkata", accountTimezone: "Asia/Kolkata", createdAt: ts(5), overLimit: false, country: "IN",
   };
+  d["workspaces/w1/reports/2026-W44"] = { weekId: "2026-W44", kind: "update", periodStart: "2026-10-26", periodEnd: "2026-11-01", currency: "USD",
+    metrics: { current: { posts: 2, spend: 0, enquiries: 5, qualifiedEnquiries: 2, orders: 3, revenue: 210 }, previous: { posts: 1, spend: 0, enquiries: 3, qualifiedEnquiries: 1, orders: 2, revenue: 120 } },
+    changes: ["Enquiries rose from 3 to 5.", "Revenue rose from $120 to $210."], freshness: { latestRecordDate: "2026-11-01", daysSince: 5, stale: false },
+    recommendations: { generated: 2, markedToTry: 1, dismissed: 0, outcomesRecorded: 0, awaitingOutcome: [] },
+    reviews: { trackRecord: "1 of 2 worked", ready: [{ id: "r1", action: "Post a studio tour reel", suggestedOutcome: "better", prompt: "Enquiries went up after the post. Did it help?" }], tooEarly: [{ id: "r2", action: "Offer a spring bundle", readyOn: "2026-11-10", reason: "Needs 7 days of results." }], notEnoughData: [{ id: "r3", action: "Boost the best post", whatToAdd: "Add what you spent on the boost." }] },
+    gaps: ["No costs recorded this week."], nextFocus: "Repeat the studio tour format and log what you spend on it.", engineVersion: "v2" };
   d["workspaces/w1/businesses/b1"] = { name: "Studio Mara", currency: "USD", objective: "more_enquiries", timezone: "Asia/Kolkata", convertCurrencies: true };
   d["workspaces/w1/connections/shopify"] = { provider: "shopify", label: "Shopify", status: "connected", lastSyncedAt: ts(1), businessId: "b1" };
   const usageMonth = new Date().toISOString().slice(0, 7);
