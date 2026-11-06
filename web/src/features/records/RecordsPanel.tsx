@@ -8,15 +8,25 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { recordSchemas, type RecordCollection } from "../../shared/records";
 import { PANELS, type Field } from "./config";
 import { Icon } from "../../components/Icon";
+import { AddArt, EmptyArt } from "../../components/art";
+
+const HINT: Record<RecordCollection, string> = {
+  leads: "Every message, call or form from someone interested. Log them even when they do not buy.",
+  sales: "Every sale, with the date and amount. Link it to a post or promotion when you know which one brought it in.",
+  costs: "What you spent on ads, tools, stock or time. Costs you leave out are treated as unknown, never as zero.",
+  posts: "What you published and how it did. Reach, likes and saves help show what your audience responds to.",
+  promotions: "Paid boosts and ad campaigns, with dates and spend. This is what lets 7Captur compare paid and unpaid results.",
+};
+const SOURCE_LABEL: Record<string, string> = { manual: "Entered by you", imported: "Imported", connected: "Connected" };
 
 type Row = Record<string, unknown> & { id: string };
 
 export const COMMERCIAL_TABS: { id: RecordCollection; label: string; icon: string }[] = [
-  { id: "leads", label: "Enquiries & Leads", icon: "user" },
-  { id: "sales", label: "Sales & Revenue", icon: "bars" },
-  { id: "costs", label: "Costs & Spend", icon: "clock" },
-  { id: "posts", label: "Marketing Posts", icon: "sparkle" },
-  { id: "promotions", label: "Promotions & Ads", icon: "tag" },
+  { id: "leads", label: "Enquiries & Leads", icon: "users" },
+  { id: "sales", label: "Sales & Revenue", icon: "money" },
+  { id: "costs", label: "Costs & Spend", icon: "card" },
+  { id: "posts", label: "Marketing Posts", icon: "chat" },
+  { id: "promotions", label: "Promotions & Ads", icon: "megaphone" },
 ];
 
 function useRows(coll: RecordCollection) {
@@ -167,19 +177,34 @@ export function RecordsPanel({
 
   return (
     <section>
-      {/* Commercial Records Tabs Navigation */}
-      <div
-        className="card"
-        style={{
-          display: "flex",
-          gap: 8,
-          padding: 8,
-          marginBottom: 20,
-          overflowX: "auto",
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-        }}
-      >
+      {/* Hero */}
+      <div className="card" style={{ marginBottom: 16, padding: "24px 28px", background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+          <div style={{ maxWidth: 580 }}>
+            <span className="badge badge-primary">Add</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "10px 0 8px" }}>
+              <h1 style={{ margin: 0, fontSize: "1.75rem", fontWeight: 500 }}>{cfg.title}</h1>
+              <span className="badge">{rows.length} {rows.length === 1 ? "record" : "records"}</span>
+            </div>
+            <p className="muted" style={{ margin: "0 0 16px", fontSize: 14.5, lineHeight: 1.55 }}>{HINT[coll]}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowForm((s) => !s);
+                if (editingId) { setEditingId(null); setValues(initial(cfg.fields, ws.currency)); }
+              }}
+              className={showForm || editingId ? "btn-secondary" : ""}
+              style={{ borderRadius: 10, padding: "10px 18px", fontSize: 14 }}
+            >
+              {editingId ? "Cancel editing" : showForm ? "Close form" : `+ New ${cfg.title.replace(/s$/, "").toLowerCase()}`}
+            </button>
+          </div>
+          <AddArt size={170} />
+        </div>
+      </div>
+
+      {/* Record type pills */}
+      <div role="tablist" aria-label="Record type" style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", paddingBottom: 2 }}>
         {COMMERCIAL_TABS.map((t) => {
           const isActive = coll === t.id;
           const countVal = counts?.[t.id] ?? (t.id === coll ? rows.length : null);
@@ -187,84 +212,20 @@ export function RecordsPanel({
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={isActive}
               className={isActive ? "" : "btn-secondary"}
               onClick={() => onSelectColl?.(t.id)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "8px 14px",
-                fontSize: 13,
-                borderRadius: 8,
-                margin: 0,
-                whiteSpace: "nowrap",
-                border: isActive ? "1px solid transparent" : "1px solid var(--border)",
-              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", fontSize: 13.5, borderRadius: 99, margin: 0, whiteSpace: "nowrap", border: isActive ? "1px solid transparent" : "1px solid var(--border)" }}
             >
+              <Icon name={t.icon as never} size={15} />
               <span>{t.label}</span>
               {countVal !== null && countVal !== undefined && (
-                <span
-                  className={`badge ${isActive ? "badge-pop" : ""}`}
-                  style={{
-                    padding: "1px 6px",
-                    fontSize: 11,
-                    minWidth: 18,
-                    textAlign: "center",
-                  }}
-                >
-                  {countVal}
-                </span>
+                <span className={`badge ${isActive ? "badge-pop" : ""}`} style={{ padding: "1px 7px", fontSize: 11, minWidth: 18, textAlign: "center" }}>{countVal}</span>
               )}
             </button>
           );
         })}
-      </div>
-
-      {/* Panel Top Header Bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <h1 style={{ margin: 0, fontSize: "1.65rem" }}>{cfg.title}</h1>
-            <span className="badge badge-primary">
-              {rows.length} {rows.length === 1 ? "record" : "records"}
-            </span>
-          </div>
-          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            Track and manage business records to power weekly AI attribution and recommendations.
-          </p>
-        </div>
-
-        <div>
-          <button
-            type="button"
-            onClick={() => {
-              setShowForm((s) => !s);
-              if (editingId) {
-                setEditingId(null);
-                setValues(initial(cfg.fields, ws.currency));
-              }
-            }}
-            style={{
-              borderRadius: 10,
-              padding: "10px 18px",
-              fontSize: 14,
-              background: showForm || editingId ? "var(--surface-hover)" : "var(--accent-fill)",
-              color: showForm || editingId ? "var(--ink)" : "var(--on-accent)",
-              border: showForm || editingId ? "1px solid var(--border)" : "none",
-            }}
-          >
-            {editingId ? "Cancel Editing" : showForm ? "Close Form" : `+ New ${cfg.title.replace(/s$/, "")}`}
-          </button>
-        </div>
       </div>
 
       {/* Form Container (When Open or Editing) */}
@@ -290,10 +251,10 @@ export function RecordsPanel({
             }}
           >
             <h3 style={{ margin: 0, fontSize: 16 }}>
-              {editingId ? "Edit Entry" : `Record New ${cfg.title.replace(/s$/, "")}`}
+              {editingId ? "Edit entry" : `New ${cfg.title.replace(/s$/, "").toLowerCase()}`}
             </h3>
             <span className="muted" style={{ fontSize: 12.5 }}>
-              {editingId ? "Changes keep the original source label." : <>Saved as <span className="badge mono">manual</span></>}
+              {editingId ? "Changes keep the original source label." : <>Source: <span className="badge">Entered by you</span></>}
             </span>
           </div>
 
@@ -373,7 +334,7 @@ export function RecordsPanel({
             }}
           >
             <button type="submit" disabled={busy}>
-              {busy ? "Saving…" : editingId ? "Save Changes" : "Save Record"}
+              {busy ? "Saving…" : editingId ? "Save changes" : "Save record"}
             </button>
             <button
               type="button"
@@ -409,7 +370,7 @@ export function RecordsPanel({
             <div style={{ position: "relative", width: "100%" }}>
               <input
                 type="search"
-                placeholder={`Search ${cfg.title.toLowerCase()} (name, date, channel, amount, notes)...`}
+                placeholder={`Search ${cfg.title.toLowerCase()} by date, channel, amount or notes`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 style={{
@@ -449,7 +410,7 @@ export function RecordsPanel({
               {search.trim() ? (
                 <>Showing {filteredRows.length} of {rows.length} {rows.length === 1 ? "record" : "records"}</>
               ) : (
-                <>Displaying {rows.length} {rows.length === 1 ? "record" : "records"}</>
+                <>Showing {rows.length} {rows.length === 1 ? "record" : "records"}</>
               )}
             </span>
             {search.trim() && (
@@ -467,10 +428,10 @@ export function RecordsPanel({
 
         {rows.length === 0 ? (
           <div style={{ padding: "48px 24px", textAlign: "center" }}>
-            <div className="empty-icon"><Icon name="clipboard" size={34} /></div>
-            <h4 style={{ margin: "0 0 6px 0" }}>No records yet</h4>
+            <EmptyArt kind="data" size={150} />
+            <h4 style={{ margin: "8px 0 6px 0", fontWeight: 500 }}>No {cfg.title.toLowerCase()} yet</h4>
             <p className="muted" style={{ margin: 0, fontSize: 13.5, maxWidth: 380, marginLeft: "auto", marginRight: "auto" }}>
-              Add your first {cfg.title.toLowerCase()} entry using the button above or import them in bulk via CSV.
+              Add your first one with the button above, or bring many in at once by importing a CSV file.
             </p>
           </div>
         ) : filteredRows.length === 0 ? (
@@ -486,7 +447,7 @@ export function RecordsPanel({
               onClick={() => setSearch("")}
               style={{ margin: "0 auto", fontSize: 13 }}
             >
-              Clear Search Filter
+              Clear search
             </button>
           </div>
         ) : (
@@ -495,7 +456,7 @@ export function RecordsPanel({
               <thead>
                 <tr style={{ background: "var(--bg2)", borderBottom: "1px solid var(--border)" }}>
                   <th style={{ padding: "12px 20px", fontWeight: 500, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Summary / Details
+                    Details
                   </th>
                   <th style={{ padding: "12px 16px", fontWeight: 500, color: "var(--muted)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em", width: 140 }}>
                     Source
@@ -524,7 +485,7 @@ export function RecordsPanel({
                           }`}
                           style={{ fontSize: 11.5 }}
                         >
-                          {prov.replace(/_/g, " ")}
+                          {SOURCE_LABEL[prov] ?? prov.replace(/_/g, " ")}
                         </span>
                       </td>
                       <td style={{ padding: "14px 20px", textAlign: "right" }}>
