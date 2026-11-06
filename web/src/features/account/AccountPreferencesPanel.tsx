@@ -4,18 +4,19 @@ import { functions } from "../../services/firebase";
 import { useAuth } from "../auth/AuthProvider";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS } from "../../shared/plans";
+import { SettingsArt } from "../../components/art";
 
 interface AccountPreferencesPanelProps {
   onOpenBilling?: () => void;
 }
 
 const OBJECTIVE_OPTIONS = [
-  { value: "profitability", label: "Profitability & Contribution", desc: "Prioritizes margin after COGS, ad spend, and variable delivery costs." },
-  { value: "revenue_growth", label: "Incremental Revenue Growth", desc: "Prioritizes incremental sales volume while maintaining break-even safety." },
-  { value: "efficiency", label: "Advertising Efficiency (ROAS)", desc: "Maximizes attributed ROAS and reduces wasted ad spend." },
-  { value: "qualified_enquiries", label: "Qualified Enquiries & Leads", desc: "Maximizes qualified buyer enquiries and consultation bookings." },
-  { value: "content_testing", label: "Content Reach & Engagement", desc: "Discovers top-performing creative hooks and organic reach." },
-  { value: "custom", label: "Custom Business Objective", desc: "Tailored to your specific sales and conversion funnel." },
+  { value: "profitability", label: "Profit", desc: "Focus on what is left after product costs, ad spend and delivery." },
+  { value: "revenue_growth", label: "More sales", desc: "Focus on selling more, while staying above break-even." },
+  { value: "efficiency", label: "Ad efficiency", desc: "Get more sales from each unit of ad spend and cut waste." },
+  { value: "qualified_enquiries", label: "Qualified enquiries", desc: "Focus on enquiries and bookings from people likely to buy." },
+  { value: "content_testing", label: "Reach and engagement", desc: "Find which posts and ideas your audience responds to most." },
+  { value: "custom", label: "Something else", desc: "Built around your own sales steps." },
 ];
 
 const CURRENCY_OPTIONS = [
@@ -93,7 +94,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
         defaultViewMode,
       });
 
-      setMessage({ text: "Account details and preferences saved successfully.", type: "success" });
+      setMessage({ text: "Saved.", type: "success" });
       setTimeout(() => setMessage(null), 4000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to update preferences.";
@@ -109,12 +110,12 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
     if (ws.isTrialing || ws.billingStatus === "trialing" || ws.billingStatus === "none") {
       return `Trial · ${ws.daysLeft} ${ws.daysLeft === 1 ? "day" : "days"} left`;
     }
-    if (ws.isTrialExpired || ws.billingStatus === "trial_expired") return "Trial Expired";
+    if (ws.isTrialExpired || ws.billingStatus === "trial_expired") return "Trial ended";
     if (ws.billingStatus === "active") return "Active";
-    if (ws.billingStatus === "past_due") return "Past Due";
-    if (ws.billingStatus === "canceling") return "Canceling";
-    if (ws.billingStatus === "canceled") return "Canceled";
-    if (ws.billingStatus === "restricted") return "Restricted";
+    if (ws.billingStatus === "past_due") return "Payment overdue";
+    if (ws.billingStatus === "canceling") return "Ending soon";
+    if (ws.billingStatus === "canceled") return "Ended";
+    if (ws.billingStatus === "restricted") return "View only";
     if (ws.billingStatus === "paused") return "Paused";
     return ws.billingStatus ? ws.billingStatus.replace(/_/g, " ") : "Trial";
   })();
@@ -122,22 +123,17 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
   return (
     <div style={{ maxWidth: 860, margin: "0 auto" }}>
       {/* Page Header */}
-      <div
-        className="card"
-        style={{
-          padding: "24px 28px",
-          marginBottom: 20,
-          background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)",
-          border: "1px solid var(--border)",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          <h1 style={{ margin: 0, fontSize: "1.65rem", fontWeight: 500 }}>Account & Preferences</h1>
-          <span className="badge badge-primary">Workspace Profile</span>
+      <div className="card" style={{ padding: "24px 28px", marginBottom: 20, background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+          <div style={{ maxWidth: 520 }}>
+            <span className="badge badge-primary">Account</span>
+            <h1 style={{ margin: "10px 0 8px", fontSize: "1.75rem", fontWeight: 500 }}>Your business and preferences</h1>
+            <p className="muted" style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55 }}>
+              Tell 7Captur what you are aiming for, which currency to report in and how you like recommendations shown.
+            </p>
+          </div>
+          <SettingsArt size={170} />
         </div>
-        <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-          Manage your business profile, decision engine objectives, default currency, location, and presentation mode.
-        </p>
       </div>
 
       {/* Plan / Subscription overview badge */}
@@ -155,16 +151,16 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
       >
         <div>
           <div style={{ fontSize: 12, color: "var(--muted)", textTransform: "uppercase", fontWeight: 500, letterSpacing: 0.5 }}>
-            Active Subscription
+            Your plan
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-            <span style={{ fontSize: 18, fontWeight: 500, color: "var(--ink)" }}>{currentPlan.name} Plan</span>
+            <span style={{ fontSize: 18, fontWeight: 500, color: "var(--ink)" }}>{currentPlan.name}</span>
             <span className="badge badge-primary">
               {subscriptionStatusLabel}
             </span>
           </div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            {currentPlan.recommendations.weekly} recommendations/week · {currentPlan.maxConnections} platform connections per workspace · {currentPlan.maxBusinesses} business workspace{currentPlan.maxBusinesses === 1 ? "" : "s"}
+            {currentPlan.recommendations.weekly} recommendations a week · {currentPlan.maxConnections} connected platforms per workspace · {currentPlan.maxBusinesses} business workspace{currentPlan.maxBusinesses === 1 ? "" : "s"}
           </div>
           {ws.isTrialing && ws.trialEndsAtMs && (
             <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>
@@ -179,7 +175,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
             onClick={onOpenBilling}
             style={{ margin: 0, fontSize: 13 }}
           >
-            Manage Subscription & Plans
+            Manage plan
           </button>
         )}
       </div>
@@ -190,8 +186,8 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
           {/* Identity info */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div>
-              <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 6 }}>
-                Email Address
+              <label style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)", display: "block", marginBottom: 6 }}>
+                Email
               </label>
               <input
                 type="text"
@@ -201,8 +197,8 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
               />
             </div>
             <div>
-              <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 6 }}>
-                Business / Workspace Name
+              <label style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)", display: "block", marginBottom: 6 }}>
+                Business name
               </label>
               <input
                 type="text"
@@ -217,11 +213,11 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
 
           {/* Business Goal / Objective (Decision Engine V3) */}
           <div>
-            <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 6, display: "block" }}>
-              Primary Business Objective (Decision Engine Goal)
+            <label style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)", marginBottom: 6, display: "block" }}>
+              What are you aiming for?
             </label>
             <p className="muted" style={{ fontSize: 12, margin: "0 0 8px" }}>
-              The decision engine optimizes recommendations strictly around this chosen primary objective.
+              Recommendations are built around this goal. You can change it any time.
             </p>
             <select
               value={objective}
@@ -242,8 +238,8 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
           {/* Currency and Location */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <div>
-              <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 6 }}>
-                Default Reporting Currency
+              <label style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)", display: "block", marginBottom: 6 }}>
+                Currency for your numbers
               </label>
               <select
                 value={currency}
@@ -261,14 +257,13 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
               <label style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <input type="checkbox" checked={convertCurrencies} onChange={(e) => setConvertCurrencies(e.target.checked)} />
                 <span>
-                  Convert records in other currencies into {currency} using European Central Bank daily reference rates.
-                  Converted figures are labelled with the rate date. If this is off, records in other currencies are left out of calculations.
+                  Convert records in other currencies into {currency} using European Central Bank daily rates. Converted figures show the rate date. If this is off, records in other currencies are left out of comparisons.
                 </span>
               </label>
             </div>
             <div>
-              <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 6 }}>
-                Country Code
+              <label style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)", display: "block", marginBottom: 6 }}>
+                Country
               </label>
               <select
                 value={country}
@@ -291,8 +286,8 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
 
           {/* Timezone */}
           <div>
-            <label style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", display: "block", marginBottom: 6 }}>
-              Business Timezone
+            <label style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)", display: "block", marginBottom: 6 }}>
+              Time zone
             </label>
             <select
               value={timezone}
@@ -306,14 +301,14 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
               ))}
             </select>
             <span className="muted" style={{ fontSize: 11, marginTop: 4, display: "block" }}>
-              Used to calculate daily rollups and weekly recommendation reset timing.
+              Sets when your days end and when your weekly allowance resets on Monday.
             </span>
           </div>
 
           {/* Default Decision Presentation View */}
           <div style={{ background: "var(--surface-subtle)", padding: 20, borderRadius: 14, border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 12 }}>
-              Default Recommendation Presentation Mode
+            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 12 }}>
+              How should recommendations look by default?
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div
@@ -348,11 +343,11 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                   }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 3 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 3 }}>
                     Beginner view
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45 }}>
-                    Plain language, clear single action, key unknowns, and safeguards.
+                    Plain language, one clear action, what is still unknown and what to watch out for.
                   </div>
                 </div>
               </div>
@@ -389,21 +384,21 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                   }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 3 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 3 }}>
                     Advanced view
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.45 }}>
-                    Formula breakdowns, exact sample counts, attribution breakdown, gate conditions, and deterministic trace.
+                    The numbers behind it: formulas, sample sizes, attribution and the checks it passed.
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Notification Preferences */}
+          {/* Emails and alerts */}
           <div style={{ background: "var(--surface-subtle)", padding: 20, borderRadius: 14, border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 14, fontWeight: 650, color: "var(--ink)", marginBottom: 12 }}>
-              Notification Preferences
+            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)", marginBottom: 12 }}>
+              Emails and alerts
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <label
@@ -431,7 +426,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                     flexShrink: 0,
                   }}
                 />
-                <span>Receive Weekly Summary & Performance Digest (Growth & Custom plans)</span>
+                <span>Send me the weekly summary (Growth and Custom plans)</span>
               </label>
               <label
                 style={{
@@ -458,7 +453,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
                     flexShrink: 0,
                   }}
                 />
-                <span>Receive Decision Review Readiness Alerts (when new evidence validates next step)</span>
+                <span>Tell me when a decision is ready to review</span>
               </label>
             </div>
           </div>
@@ -480,7 +475,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 10 }}>
             <button type="submit" disabled={saving} style={{ padding: "10px 24px", fontSize: 14 }}>
-              {saving ? "Saving Changes…" : "Save Preferences"}
+              {saving ? "Saving…" : "Save changes"}
             </button>
           </div>
         </form>

@@ -114,3 +114,19 @@ export function BillingArt({ size = 150 }: { size?: number }) {
     </svg>
   );
 }
+
+export function SettingsArt({ size = 150 }: { size?: number }) {
+  const rows = [{ y: 22, k: 38 }, { y: 47, k: 84 }, { y: 72, k: 58 }];
+  return (
+    <svg width={size} height={size * 0.72} viewBox="0 0 132 95" role="img" aria-label="Settings sliders">
+      <rect x="8" y="6" width="116" height="84" rx="12" {...card} />
+      {rows.map((r) => (
+        <g key={r.y}>
+          <rect x="22" y={r.y - 2} width="88" height="4" rx="2" fill="var(--border)" />
+          <rect x="22" y={r.y - 2} width={r.k - 22 + 8} height="4" rx="2" fill={lime} />
+          <circle cx={r.k + 8} cy={r.y} r="7" fill="var(--surface)" stroke={lime} strokeWidth="2" />
+        </g>
+      ))}
+    </svg>
+  );
+}
