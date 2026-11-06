@@ -95,6 +95,14 @@ export const recordSchemas = {
   posts: postSchema, promotions: promotionSchema, leads: leadSchema, sales: saleSchema, costs: costSchema,
 } as const;
 
+export const deleteAllRecordsInput = z.object({
+  workspaceId: z.string().min(1).max(128),
+  businessId: z.string().min(1).max(128).optional(),
+  includeRecommendations: z.boolean().optional(),
+});
+
+export type DeleteAllRecordsInput = z.infer<typeof deleteAllRecordsInput>;
+
 export type PostRecord = z.infer<typeof postSchema>;
 export type PromotionRecord = z.infer<typeof promotionSchema>;
 export type LeadRecord = z.infer<typeof leadSchema>;

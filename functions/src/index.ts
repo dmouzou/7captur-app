@@ -15,6 +15,7 @@ export { askAssistant } from "./assistant/askAssistant";
 export { recordDecisionUpdate } from "./decisions/respond";
 export { deleteDecision } from "./decisions/delete";
 export { importRecords } from "./imports/importRecords";
+export { deleteAllRecords } from "./records/deleteAllRecords";
 export { refreshFxRates } from "./fx/refresh";
 export { exportData } from "./exports/exportData";
 export { weeklyReports } from "./reports/weekly";
