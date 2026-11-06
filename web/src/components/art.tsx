@@ -85,3 +85,32 @@ export function BrandLogo({ name, size = 22 }: { name: string; size?: number }) 
   const wide = name.toLowerCase().includes("woocommerce"); // wordmark, not a square mark
   return src ? <img src={src} width={wide ? Math.round(size * 1.45) : size} height={wide ? Math.round(size * 0.7) : size} alt="" style={{ display: "block" }} /> : null;
 }
+
+export function BillingArt({ size = 150 }: { size?: number }) {
+  return (
+    <svg width={size} height={size * 0.72} viewBox="0 0 132 95" role="img" aria-label="Plans from Starter to Growth">
+      <g transform="translate(8 30)">
+        <rect width="38" height="56" rx="9" {...card} />
+        <rect x="8" y="9" width="16" height="4" rx="2" fill="var(--muted)" opacity=".6" />
+        <rect x="8" y="19" width="22" height="3" rx="1.5" fill="var(--border)" />
+        <rect x="8" y="26" width="18" height="3" rx="1.5" fill="var(--border)" />
+        <rect x="8" y="33" width="20" height="3" rx="1.5" fill="var(--border)" />
+      </g>
+      <g transform="translate(46 12)">
+        <rect width="46" height="74" rx="10" fill="var(--surface)" stroke="var(--accent-line)" strokeWidth="1.5" />
+        <rect x="9" y="11" width="20" height="5" rx="2.5" fill={lime} />
+        <rect x="9" y="24" width="28" height="3.5" rx="1.7" fill={lime} opacity=".6" />
+        <rect x="9" y="32" width="24" height="3.5" rx="1.7" fill={lime} opacity=".6" />
+        <rect x="9" y="40" width="26" height="3.5" rx="1.7" fill={lime} opacity=".6" />
+        <rect x="9" y="48" width="22" height="3.5" rx="1.7" fill={lime} opacity=".6" />
+        <rect x="9" y="58" width="28" height="9" rx="4.5" fill={lime} />
+      </g>
+      <g transform="translate(96 30)">
+        <rect width="30" height="56" rx="9" {...card} />
+        <rect x="7" y="9" width="12" height="4" rx="2" fill="var(--muted)" opacity=".6" />
+        <rect x="7" y="19" width="16" height="3" rx="1.5" fill="var(--border)" />
+        <rect x="7" y="26" width="13" height="3" rx="1.5" fill="var(--border)" />
+      </g>
+    </svg>
+  );
+}

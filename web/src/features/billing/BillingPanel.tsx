@@ -7,9 +7,52 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PLANS, type PlanId } from "../../shared/plans";
 import { periodIds } from "../../shared/periods";
 import { getPriceId, loadPaddle, openCheckout } from "./paddle";
+import { BillingArt } from "../../components/art";
 
 const fmtDate = (ms: number | null) =>
   ms ? new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "";
+
+const money = (n: number) => `$${n.toLocaleString("en-US")}`;
+
+function Meter({ label, used, limit, note }: { label: string; used: number; limit: number; note?: string }) {
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const hot = pct >= 90;
+  return (
+    <div style={{ padding: "14px 16px", border: "1px solid var(--border)", borderRadius: 12, background: "var(--surface-subtle)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13.5 }}>
+        <span style={{ color: "var(--ink)" }}>{label}</span>
+        <span className="muted">{used} of {limit}</span>
+      </div>
+      <div role="progressbar" aria-valuenow={used} aria-valuemin={0} aria-valuemax={limit} aria-label={label} style={{ height: 8, borderRadius: 99, background: "var(--border)", margin: "10px 0 6px", overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 99, background: hot ? "#e0a100" : "var(--accent-fill)" }} />
+      </div>
+      {note && <div className="muted" style={{ fontSize: 12 }}>{note}</div>}
+    </div>
+  );
+}
+
+function featureList(id: PlanId): { text: string; on: boolean }[] {
+  const p = PLANS[id];
+  if (id === "custom") {
+    return [
+      { text: "Platform and workspace limits set for you", on: true },
+      { text: "Recommendation, import and AI volume set for you", on: true },
+      { text: "Longer history", on: true },
+      { text: "Monthly strategy call", on: true },
+      { text: "Dedicated priority support", on: true },
+    ];
+  }
+  return [
+    { text: `${p.maxConnections} connected platforms${p.maxBusinesses > 1 ? " per workspace" : ""}`, on: true },
+    { text: `${p.maxBusinesses} business workspace${p.maxBusinesses === 1 ? "" : "s"}`, on: true },
+    { text: `${p.recommendations.weekly} recommendations a week${p.maxBusinesses > 1 ? ", shared" : ""}`, on: true },
+    { text: `${p.importsPerMonth} imports a month`, on: true },
+    { text: `${p.aiFollowUps.monthly} AI follow-up questions a month`, on: true },
+    { text: `${p.historyDays} days of history`, on: true },
+    { text: "Weekly summary and smart reviews", on: p.weeklySummary },
+    { text: "Priority support", on: p.prioritySupport },
+  ];
+}
 
 const subscribed = (s: string) => s === "active" || s === "canceling" || s === "past_due";
 
@@ -19,7 +62,7 @@ export function BillingPanel() {
   const isOwner = ws.ownerUid === user?.uid;
   const plan = PLANS[ws.plan] ?? PLANS.starter;
   const [cycle, setCycle] = useState<"annual" | "monthly">("annual");
-  const [usage, setUsage] = useState({ week: 0, imports: 0 });
+  const [usage, setUsage] = useState({ week: 0, imports: 0, ai: 0 });
   const [waiting, setWaiting] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -31,7 +74,7 @@ export function BillingPanel() {
       setUsage((u) => ({ ...u, week: s.data()?.recommendations ?? 0 })), () => undefined
     );
     const u2 = onSnapshot(doc(db, `accounts/${ws.ownerUid}/usage/${ids.monthId}`), (s) =>
-      setUsage((u) => ({ ...u, imports: s.data()?.imports ?? 0 })), () => undefined
+      setUsage((u) => ({ ...u, imports: s.data()?.imports ?? 0, ai: s.data()?.aiFollowUps ?? 0 })), () => undefined
     );
     return () => {
       u1();
@@ -103,114 +146,121 @@ export function BillingPanel() {
 
   const status = ws.billingStatus;
 
+  const hasSub = ws.hasSubscription;
+  const priceLine = ws.isTrialing
+    ? `Free trial, ${daysLeft} ${daysLeft === 1 ? "day" : "days"} left. You have full Starter access`
+    : plan.priceMonthly !== undefined ? `${money(plan.priceMonthly)} a month` : "Custom";
+
+  const PlanCard = ({ id }: { id: PlanId }) => {
+    const p = PLANS[id];
+    const isCurrent = ws.plan === id && hasSub;
+    const featured = id === "growth";
+    const price = cycle === "annual" ? p.priceAnnualMonthly : p.priceMonthly;
+    return (
+      <div className="card" style={{ margin: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", border: featured ? "1px solid var(--accent-line)" : undefined, background: featured ? "linear-gradient(180deg, var(--accent-soft), var(--surface) 40%)" : undefined }}>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <h4 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 500 }}>{p.name}</h4>
+            {featured && <span className="badge badge-primary">Most popular</span>}
+            {isCurrent && !featured && <span className="badge">Your plan</span>}
+          </div>
+          {id === "custom" ? (
+            <>
+              <div style={{ fontSize: "1.7rem", fontWeight: 500 }}>On request</div>
+              <div className="muted" style={{ fontSize: 12.5 }}>Capacity and terms built around you</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: "1.7rem", fontWeight: 500 }}>
+                {money(price ?? 0)}<span className="muted" style={{ fontSize: "0.9rem" }}> a month</span>
+              </div>
+              <div className="muted" style={{ fontSize: 12.5 }}>
+                {cycle === "annual" ? `${money(p.priceAnnual ?? 0)} billed once a year` : "Billed monthly"}
+              </div>
+            </>
+          )}
+          <ul style={{ listStyle: "none", padding: 0, margin: "16px 0", fontSize: 14, lineHeight: 1.9 }}>
+            {featureList(id).map((f) => (
+              <li key={f.text} className={f.on ? "" : "muted"} style={{ display: "flex", gap: 8 }}>
+                <span aria-hidden style={{ color: f.on ? "var(--accent)" : "var(--muted)", width: 14 }}>{f.on ? "✓" : "–"}</span>
+                <span>{f.on ? "" : "No "}{f.on ? f.text : f.text.toLowerCase()}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          {id === "custom" ? (
+            <a href="https://7captur.com/contact/" target="_blank" rel="noopener noreferrer" className="button btn-secondary" style={{ display: "block", textAlign: "center", textDecoration: "none", boxSizing: "border-box", padding: "10px 16px", border: "1px solid var(--border)", borderRadius: 10 }}>
+              Contact us
+            </a>
+          ) : isCurrent ? (
+            <span className="muted">This is your current plan</span>
+          ) : hasSub ? (
+            <button type="button" className={featured ? "primary" : "btn-secondary"} style={{ width: "100%", margin: 0 }} disabled={!!busy || status === "past_due"} onClick={() => change(id)}>
+              Switch to {p.name}
+            </button>
+          ) : (
+            <button type="button" className={featured ? "primary" : "btn-secondary"} style={{ width: "100%", margin: 0 }} disabled={waiting} onClick={() => subscribe(id)}>
+              {id === "starter" ? (ws.isTrialing ? "Keep Starter" : "Subscribe to Starter") : "Upgrade to Growth"}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <section>
-      {ws.isTrialing && (
-        <div
-          className="card"
-          style={{
-            marginBottom: 16,
-            borderLeft: "4px solid #3b82f6",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
-          <div>
-            <h3 style={{ margin: "0 0 4px 0", fontSize: "1.05rem" }}>
-              Starter Trial · {daysLeft} {daysLeft === 1 ? "day" : "days"} left
-            </h3>
-            <p className="muted" style={{ margin: 0 }}>
-              Full access to Starter features. Upgrade anytime to keep your access and unlock higher limits.
+      <div className="card" style={{ marginBottom: 16, padding: "24px 28px", background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+          <div style={{ maxWidth: 580 }}>
+            <span className="badge badge-primary">Plan and usage</span>
+            <h1 style={{ margin: "10px 0 8px", fontSize: "1.75rem", fontWeight: 500 }}>{plan.name}</h1>
+            <p className="muted" style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55 }}>
+              {priceLine}. The same recommendation engine runs on every plan. Plans differ in how much you can do each week and how far back your history goes.
             </p>
+            {hasSub && isOwner && (
+              <button type="button" className="btn-secondary" style={{ marginTop: 16 }} disabled={!!busy} onClick={portal}>
+                Payment method, invoices and cancellation
+              </button>
+            )}
           </div>
-          {isOwner && (
-            <button
-              type="button"
-              className="primary"
-              style={{ margin: 0 }}
-              onClick={() => subscribe("growth")}
-            >
-              Upgrade to Growth
-            </button>
-          )}
+          <BillingArt size={170} />
         </div>
-      )}
+      </div>
 
       {ws.isTrialExpired && (
-        <div
-          className="card"
-          style={{
-            marginBottom: 16,
-            borderLeft: "4px solid #ef4444",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
+        <div className="card" style={{ marginBottom: 16, borderLeft: "4px solid var(--danger)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div>
-            <h3 style={{ margin: "0 0 4px 0", color: "#f87171", fontSize: "1.05rem" }}>
-              Trial expired · Read-only mode
-            </h3>
-            <p className="muted" style={{ margin: 0 }}>
-              Your 14-day trial has ended. Your history is preserved. Subscribe to resume imports, recommendations and updates.
-            </p>
+            <h3 style={{ margin: "0 0 4px 0", color: "var(--danger)", fontSize: "1.05rem", fontWeight: 500 }}>Trial ended · view only</h3>
+            <p className="muted" style={{ margin: 0 }}>Your history is safe. Subscribe to add data, generate recommendations and get updates again.</p>
           </div>
-          {isOwner && (
-            <button
-              type="button"
-              className="primary"
-              style={{ margin: 0 }}
-              onClick={() => subscribe("starter")}
-            >
-              Subscribe now
-            </button>
-          )}
+          {isOwner && <button type="button" className="primary" style={{ margin: 0 }} onClick={() => subscribe("starter")}>Subscribe now</button>}
         </div>
       )}
 
-      <div className="card">
-        <h2>Billing & Usage</h2>
-        <p>
-          <strong>{plan.name}</strong> ·{" "}
-          {ws.isTrialing
-            ? "Free 14-day trial"
-            : plan.priceMonthly !== undefined
-            ? `$${plan.priceMonthly}/month`
-            : "Custom"}
+      {status === "past_due" && (
+        <p className="card error" role="alert">
+          Your last payment failed. Update your payment method{ws.restrictAtMs ? ` by ${fmtDate(ws.restrictAtMs)}` : ""} to keep your plan. Nothing is deleted if it lapses.
         </p>
-        {status === "past_due" && (
-          <p className="error" role="alert">
-            Your last payment failed. Update your payment method
-            {ws.restrictAtMs ? ` by ${fmtDate(ws.restrictAtMs)}` : ""} to keep your plan. Nothing is deleted if it lapses.
-          </p>
-        )}
-        {status === "canceling" && (
-          <p role="status">
-            Your subscription ends on {fmtDate(ws.restrictAtMs)}. You keep your plan until then.
-          </p>
-        )}
-        {(status === "restricted" || status === "canceled") && (
-          <p role="status" className="error">
-            Your subscription has ended and this workspace is read-only.
-          </p>
-        )}
-        <p className="muted">
-          This week: {usage.week} of {plan.recommendations.weekly} recommendations · This month: {usage.imports} of{" "}
-          {plan.importsPerMonth} imports · Connected platforms: up to {plan.maxConnections} per workspace · Business workspaces: up to {plan.maxBusinesses}
+      )}
+      {status === "canceling" && (
+        <p className="card" role="status">Your subscription ends on {fmtDate(ws.restrictAtMs)}. You keep your plan until then.</p>
+      )}
+      {(status === "restricted" || status === "canceled") && (
+        <p className="card error" role="status">Your subscription has ended and this workspace is view only.</p>
+      )}
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ margin: "0 0 12px", fontWeight: 500 }}>Your usage</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
+          <Meter label="Recommendations this week" used={usage.week} limit={plan.recommendations.weekly} note="Resets every Monday" />
+          <Meter label="Imports this month" used={usage.imports} limit={plan.importsPerMonth} note="Resets on the 1st" />
+          <Meter label="AI follow-up questions this month" used={usage.ai} limit={plan.aiFollowUps.monthly} note="Used when you ask the assistant a free-form question" />
+        </div>
+        <p className="muted" style={{ margin: "14px 0 0", fontSize: 13 }}>
+          Up to {plan.maxConnections} connected platforms per workspace and {plan.maxBusinesses} business workspace{plan.maxBusinesses === 1 ? "" : "s"}. Allowances are shared by all your workspaces and reset in {ws.accountTimezone} time.
         </p>
-        <p className="muted">
-          Allowances are shared by all your business workspaces and reset every Monday in {ws.accountTimezone}. Same recommendation engine on every plan; plans differ in capacity and history.
-        </p>
-        {ws.hasSubscription && isOwner && (
-          <button type="button" disabled={!!busy} onClick={portal}>
-            Manage payment method, invoices and cancellation
-          </button>
-        )}
         {error && <div role="alert" className="error" style={{ marginTop: 8 }}>{error}</div>}
         {note && <div role="status" className="muted" style={{ marginTop: 8 }}>{note}</div>}
       </div>
@@ -218,135 +268,23 @@ export function BillingPanel() {
       {!isOwner && <p className="muted" style={{ marginTop: 16 }}>Only the workspace owner can change the plan.</p>}
 
       {isOwner && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
-            <h3 style={{ margin: 0 }}>Available Plans</h3>
+        <div style={{ marginTop: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+            <h3 style={{ margin: 0, fontWeight: 500 }}>Plans</h3>
             <div className="segmented-control">
-              <button
-                type="button"
-                className={cycle === "annual" ? "active" : ""}
-                onClick={() => setCycle("annual")}
-              >
-                Billed annually (Save ~20%)
-              </button>
-              <button
-                type="button"
-                className={cycle === "monthly" ? "active" : ""}
-                onClick={() => setCycle("monthly")}
-              >
-                Billed monthly
-              </button>
+              <button type="button" className={cycle === "annual" ? "active" : ""} onClick={() => setCycle("annual")}>Yearly (save about 20%)</button>
+              <button type="button" className={cycle === "monthly" ? "active" : ""} onClick={() => setCycle("monthly")}>Monthly</button>
             </div>
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
-            {/* Starter */}
-            <div className="card" style={{ background: "rgba(255, 255, 255, 0.02)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-              <div>
-                <h4 style={{ margin: "0 0 8px 0", fontSize: "1.2rem" }}>Starter</h4>
-                <div style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 4 }}>
-                  {cycle === "annual" ? "$39" : "$49"}
-                  <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "var(--text-muted)" }}>/month</span>
-                </div>
-                {cycle === "annual" && <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>$468 billed annually</div>}
-                {cycle === "monthly" && <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>Billed monthly</div>}
-                <ul style={{ listStyle: "none", padding: 0, margin: "16px 0", fontSize: "0.9rem", lineHeight: 1.6 }}>
-                  <li>✓ 2 connected platforms</li>
-                  <li>✓ 1 business workspace</li>
-                  <li>✓ 3 recommendations a week</li>
-                  <li>✓ 5 imports a month</li>
-                  <li>✓ 30 days of history</li>
-                  <li className="muted">✕ No weekly summary</li>
-                </ul>
-              </div>
-              <div style={{ marginTop: 16 }}>
-                {ws.plan === "starter" && ws.hasSubscription ? (
-                  <span className="muted">Current plan</span>
-                ) : ws.hasSubscription ? (
-                  <button type="button" style={{ width: "100%", margin: 0 }} disabled={!!busy || status === "past_due"} onClick={() => change("starter")}>
-                    Switch to Starter
-                  </button>
-                ) : (
-                  <button type="button" style={{ width: "100%", margin: 0 }} disabled={waiting} onClick={() => subscribe("starter")}>
-                    {ws.isTrialing ? "Keep Starter" : "Subscribe to Starter"}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Growth */}
-            <div className="card" style={{ background: "rgba(255, 255, 255, 0.02)", border: "1px solid rgba(59, 130, 246, 0.4)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <h4 style={{ margin: "0 0 8px 0", fontSize: "1.2rem" }}>Growth</h4>
-                  <span style={{ background: "#2563eb", color: "#fff", fontSize: "0.7rem", padding: "2px 8px", borderRadius: 12, fontWeight: 600 }}>POPULAR</span>
-                </div>
-                <div style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 4 }}>
-                  {cycle === "annual" ? "$159" : "$199"}
-                  <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "var(--text-muted)" }}>/month</span>
-                </div>
-                {cycle === "annual" && <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>$1,908 billed annually</div>}
-                {cycle === "monthly" && <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>Billed monthly</div>}
-                <ul style={{ listStyle: "none", padding: 0, margin: "16px 0", fontSize: "0.9rem", lineHeight: 1.6 }}>
-                  <li>✓ 7 connected platforms per workspace</li>
-                  <li>✓ 3 business workspaces</li>
-                  <li>✓ 15 recommendations a week, shared</li>
-                  <li>✓ 50 imports a month</li>
-                  <li>✓ 365 days of history</li>
-                  <li>✓ Weekly summary & smart reviews</li>
-                  <li>✓ Priority support</li>
-                </ul>
-              </div>
-              <div style={{ marginTop: 16 }}>
-                {ws.plan === "growth" && ws.hasSubscription ? (
-                  <span className="muted">Current plan</span>
-                ) : ws.hasSubscription ? (
-                  <button type="button" className="primary" style={{ width: "100%", margin: 0 }} disabled={!!busy || status === "past_due"} onClick={() => change("growth")}>
-                    Switch to Growth
-                  </button>
-                ) : (
-                  <button type="button" className="primary" style={{ width: "100%", margin: 0 }} disabled={waiting} onClick={() => subscribe("growth")}>
-                    Upgrade to Growth
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Custom */}
-            <div className="card" style={{ background: "rgba(255, 255, 255, 0.02)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-              <div>
-                <h4 style={{ margin: "0 0 8px 0", fontSize: "1.2rem" }}>Custom</h4>
-                <div style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 4 }}>
-                  On request
-                </div>
-                <div className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>Tailored capacity & terms</div>
-                <ul style={{ listStyle: "none", padding: 0, margin: "16px 0", fontSize: "0.9rem", lineHeight: 1.6 }}>
-                  <li>✓ Tailored platform limits</li>
-                  <li>✓ Tailored workspace limits</li>
-                  <li>✓ Tailored recommendation & import volume</li>
-                  <li>✓ Extended history retention</li>
-                  <li>✓ Monthly strategy call</li>
-                  <li>✓ Dedicated priority support</li>
-                </ul>
-              </div>
-              <div style={{ marginTop: 16 }}>
-                <a
-                  href="https://7captur.com/contact/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="button"
-                  style={{ display: "block", textAlign: "center", textDecoration: "none", width: "100%", boxSizing: "border-box" }}
-                >
-                  Contact Us
-                </a>
-              </div>
-            </div>
+            <PlanCard id="starter" />
+            <PlanCard id="growth" />
+            <PlanCard id="custom" />
           </div>
-
           {subscribed(status) && status !== "canceling" && (
             <div style={{ marginTop: 20 }}>
               <button type="button" className="link" disabled={!!busy} onClick={() => change("cancel")}>
-                Cancel subscription at end of billing period
+                Cancel at the end of this billing period
               </button>
             </div>
           )}
