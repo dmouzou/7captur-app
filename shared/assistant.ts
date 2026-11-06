@@ -16,6 +16,8 @@ export const assistantInput = z.object({
   screen: z.string().trim().min(1).max(60),
   /** Optional open item. Always re-checked on the server against the workspace. */
   context: z.object({ kind: z.enum(["recommendation", "decision"]), id: z.string().min(1).max(160) }).optional(),
+  /** When true the server always uses the fixed engine, even for free-form questions. No AI credit is used. */
+  engineOnly: z.boolean().optional(),
 });
 export type AssistantInput = z.infer<typeof assistantInput>;
 

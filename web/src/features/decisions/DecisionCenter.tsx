@@ -45,6 +45,10 @@ export function DecisionCenter() {
   const [error, setError] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState<Decision | null>(null);
+  const [targetId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("recId") || params.get("decisionId") || null;
+  });
 
   const today = useMemo(() => localToday(new Date(), ws.timezone), [ws.timezone]);
 
@@ -84,6 +88,20 @@ export function DecisionCenter() {
     const have = new Set(decisions.map((d) => d.recommendationId));
     return recs.filter((r) => !have.has(r.id) && r.status !== "failed" && r.status !== "dismissed");
   }, [decisions, recs]);
+
+  useEffect(() => {
+    if (!targetId) return;
+    const timer = setTimeout(() => {
+      const el =
+        document.getElementById(`decision-${targetId}`) ||
+        document.querySelector(`[data-rec-id="${targetId}"]`) ||
+        document.getElementById(`pending-rec-${targetId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [targetId, decisions, pending]);
 
   const groups = useMemo(() => {
     const by = { act: [] as Decision[], investigate: [] as Decision[], monitor: [] as Decision[] };
@@ -140,9 +158,11 @@ export function DecisionCenter() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {pending.map((r) => {
               const mode = r.mode || "optimize";
+              const isHighlighted = targetId === r.id;
               return (
                 <div
                   key={r.id}
+                  id={`pending-rec-${r.id}`}
                   className={`action-directive-card mode-${mode}`}
                   style={{
                     margin: 0,
@@ -152,6 +172,7 @@ export function DecisionCenter() {
                     alignItems: "center",
                     flexWrap: "wrap",
                     padding: "16px 20px",
+                    ...(isHighlighted ? { outline: "2px solid var(--accent)", boxShadow: "0 0 0 4px var(--accent-soft)", transition: "all 0.3s ease" } : {}),
                   }}
                 >
                   <div style={{ flex: "1 1 260px" }}>
@@ -203,6 +224,7 @@ export function DecisionCenter() {
                 currency={ws.currency}
                 busy={busy}
                 call={call}
+                isHighlighted={targetId === d.id || targetId === d.recommendationId}
                 onDelete={(target) => setDeleteTarget(target)}
               />
             ))}
@@ -340,6 +362,7 @@ function DecisionCard({
   currency,
   busy,
   call,
+  isHighlighted,
   onDelete,
 }: {
   d: Decision;
@@ -348,6 +371,7 @@ function DecisionCard({
   currency: string;
   busy: string;
   call: (n: string, p: object, k: string) => Promise<void>;
+  isHighlighted?: boolean;
   onDelete: (d: Decision) => void;
 }) {
   const [follow, setFollow] = useState("followed_fully");
@@ -385,7 +409,12 @@ function DecisionCard({
   const cardMode = d.queueStatus === "act" ? "optimize" : d.queueStatus === "investigate" ? "improve" : "explore";
 
   return (
-    <article className="card">
+    <article
+      id={`decision-${d.id}`}
+      data-rec-id={d.recommendationId}
+      className="card"
+      style={isHighlighted ? { outline: "2px solid var(--accent)", boxShadow: "0 0 0 4px var(--accent-soft)", transition: "all 0.3s ease" } : undefined}
+    >
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <span className={QUALITY_BADGE[d.evidenceQuality]}>Evidence: {d.evidenceQuality}</span>

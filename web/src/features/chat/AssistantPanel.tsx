@@ -122,7 +122,7 @@ export function AssistantPanel({
     void send(trimmed);
   }
 
-  async function send(question: string) {
+  async function send(question: string, engineOnly = false) {
     setPendingAi(null);
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), sender: "user", text: question, context: screenBadgeLabel, timestamp: Date.now() }]);
     setInput("");
@@ -134,6 +134,7 @@ export function AssistantPanel({
         requestId: crypto.randomUUID(),
         question,
         screen: currentScreen,
+        ...(engineOnly ? { engineOnly: true } : {}),
       });
       const r = res.data;
       setMessages((prev) => [
@@ -384,9 +385,12 @@ export function AssistantPanel({
               <div className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
                 {left > 0 ? aiNoticeText(left, monthly) : `You have no AI credits left this month. Fixed answers about your data and 7Captur are still free.`}
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button type="button" className="primary" disabled={busy || left <= 0} onClick={() => void send(pendingAi)} style={{ margin: 0, padding: "7px 14px", fontSize: 12.5, borderRadius: 8 }}>
                   Ask with 1 AI credit
+                </button>
+                <button type="button" className="btn-secondary" disabled={busy} onClick={() => void send(pendingAi, true)} style={{ margin: 0, padding: "7px 14px", fontSize: 12.5, borderRadius: 8 }}>
+                  Get a fixed answer (free)
                 </button>
                 <button type="button" className="btn-secondary" onClick={() => setPendingAi(null)} style={{ margin: 0, padding: "7px 14px", fontSize: 12.5, borderRadius: 8 }}>
                   Cancel

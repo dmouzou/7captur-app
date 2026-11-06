@@ -88,8 +88,6 @@ function initial(fields: Field[], currency: string) {
 
 export function RecordsPanel({
   coll,
-  onSelectColl,
-  counts,
 }: {
   coll: RecordCollection;
   onSelectColl?: (coll: RecordCollection) => void;
@@ -201,31 +199,6 @@ export function RecordsPanel({
           </div>
           <AddArt size={170} />
         </div>
-      </div>
-
-      {/* Record type pills */}
-      <div role="tablist" aria-label="Record type" style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", paddingBottom: 2 }}>
-        {COMMERCIAL_TABS.map((t) => {
-          const isActive = coll === t.id;
-          const countVal = counts?.[t.id] ?? (t.id === coll ? rows.length : null);
-          return (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              className={isActive ? "" : "btn-secondary"}
-              onClick={() => onSelectColl?.(t.id)}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", fontSize: 13.5, borderRadius: 99, margin: 0, whiteSpace: "nowrap", border: isActive ? "1px solid transparent" : "1px solid var(--border)" }}
-            >
-              <Icon name={t.icon as never} size={15} />
-              <span>{t.label}</span>
-              {countVal !== null && countVal !== undefined && (
-                <span className={`badge ${isActive ? "badge-pop" : ""}`} style={{ padding: "1px 7px", fontSize: 11, minWidth: 18, textAlign: "center" }}>{countVal}</span>
-              )}
-            </button>
-          );
-        })}
       </div>
 
       {/* Form Container (When Open or Editing) */}

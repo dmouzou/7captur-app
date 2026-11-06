@@ -747,7 +747,7 @@ export function RecommendationsPanel({
                     <button
                       type="button"
                       className="btn-secondary"
-                      onClick={() => onNavigate("decisions")}
+                      onClick={() => onNavigate(`/decide?recId=${r.id}`)}
                       style={{
                         padding: "8px 16px",
                         fontSize: 13.5,

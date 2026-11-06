@@ -90,7 +90,7 @@ export function HomePage() {
       return "add";
     }
     if (p === "/understand") return "understand";
-    if (p === "/decide" || p.startsWith("/decide")) return "decisions";
+    if (p === "/decide" || p.startsWith("/decide") || p === "/decisions" || p.startsWith("/decisions")) return "decisions";
     if (p.startsWith("/data/")) {
       const type = p.replace("/data/", "") as Tab;
       if (["sales", "leads", "costs", "posts", "promotions"].includes(type)) return type;
@@ -215,32 +215,33 @@ export function HomePage() {
   });
 
   function handleNavigate(route: string) {
+    const pathOnly = (route.split("?")[0] || "").replace(/^\//, "");
     let nextTab: Tab = "overview";
-    if (route === "/" || route === "/overview" || route === "") nextTab = "overview";
-    else if (route === "/add") nextTab = "add";
-    else if (route === "/add/connect") nextTab = "add/connect";
-    else if (route === "/add/connect/shopify") nextTab = "add/connect/shopify";
-    else if (route === "/add/import" || route === "/import") nextTab = "import";
-    else if (route === "/add/manual") nextTab = "add/manual";
-    else if (route === "/understand") nextTab = "understand";
-    else if (route === "/decide" || route === "/decisions") nextTab = "decisions";
-    else if (route === "/recommendations" || route === "recommendations") nextTab = "understand"; // merged into Understand
-    else if (route === "/data" || route === "/data/sales" || route === "sales") nextTab = "sales";
-    else if (route === "/data/leads" || route === "leads") nextTab = "leads";
-    else if (route === "/data/costs" || route === "costs") nextTab = "costs";
-    else if (route === "/data/posts" || route === "posts") nextTab = "posts";
-    else if (route === "/data/promotions" || route === "promotions") nextTab = "promotions";
-    else if (route === "/connections") nextTab = "connections";
-    else if (route === "/account") nextTab = "account";
-    else if (route === "/reports") nextTab = "reports";
-    else if (route === "/billing") nextTab = "billing";
-    else if (route === "/settings") nextTab = "settings";
-    else if (route === "/notifications") nextTab = "notifications";
-    else if (route === "/help") nextTab = "help";
+    if (pathOnly === "" || pathOnly === "overview") nextTab = "overview";
+    else if (pathOnly === "add") nextTab = "add";
+    else if (pathOnly === "add/connect") nextTab = "add/connect";
+    else if (pathOnly === "add/connect/shopify") nextTab = "add/connect/shopify";
+    else if (pathOnly === "add/import" || pathOnly === "import") nextTab = "import";
+    else if (pathOnly === "add/manual") nextTab = "add/manual";
+    else if (pathOnly === "understand") nextTab = "understand";
+    else if (pathOnly === "decide" || pathOnly === "decisions") nextTab = "decisions";
+    else if (pathOnly === "recommendations") nextTab = "understand"; // merged into Understand
+    else if (pathOnly === "data" || pathOnly === "data/sales" || pathOnly === "sales") nextTab = "sales";
+    else if (pathOnly === "data/leads" || pathOnly === "leads") nextTab = "leads";
+    else if (pathOnly === "data/costs" || pathOnly === "costs") nextTab = "costs";
+    else if (pathOnly === "data/posts" || pathOnly === "posts") nextTab = "posts";
+    else if (pathOnly === "data/promotions" || pathOnly === "promotions") nextTab = "promotions";
+    else if (pathOnly === "connections") nextTab = "connections";
+    else if (pathOnly === "account") nextTab = "account";
+    else if (pathOnly === "reports") nextTab = "reports";
+    else if (pathOnly === "billing") nextTab = "billing";
+    else if (pathOnly === "settings") nextTab = "settings";
+    else if (pathOnly === "notifications") nextTab = "notifications";
+    else if (pathOnly === "help") nextTab = "help";
 
     setTab(nextTab);
     const url = route.startsWith("/") ? route : `/${route}`;
-    if (window.location.pathname !== url) {
+    if (window.location.pathname + window.location.search !== url) {
       window.history.pushState({}, "", url);
     }
   }
@@ -922,7 +923,7 @@ export function HomePage() {
                     type="button"
                     className="card home-verb-card"
                     onClick={() => handleNavigate(route)}
-                    style={{ cursor: "pointer", textAlign: "left", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "space-between", gap: 14, margin: 0, font: "inherit", color: "inherit" }}
+                    style={{ cursor: "pointer", textAlign: "left", display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "space-between", gap: 14, margin: 0, font: "inherit", color: "var(--ink)", background: "var(--surface)", boxShadow: "none" }}
                   >
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>

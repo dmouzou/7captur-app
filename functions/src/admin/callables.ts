@@ -5,7 +5,7 @@ import { z } from "zod";
 import { PLANS, PLAN_IDS } from "../shared/plans";
 import { ADMIN_ROLES, audit, auditInBatch, hasSecondFactor, mfaEnforced, plain, requireAdmin } from "./auth";
 import { applyAccountPatch, bootstrapAccount } from "../accounts/account";
-import { getActiveAiConfig, maskApiKey, DEFAULT_AI_MODEL } from "../config/aiConfig";
+import { getActiveAiConfig, maskApiKey, DEFAULT_AI_MODEL, normalizeAiModel } from "../config/aiConfig";
 
 const db = () => getFirestore();
 const LIMIT = 50;
@@ -356,7 +356,8 @@ export const adminGetAiConfig = onCall(async (request) => {
   return {
     configured: Boolean(data.anthropicApiKey || apiKey),
     maskedKey: maskApiKey(data.anthropicApiKey || apiKey),
-    model: data.model || model,
+    // Always return the normalized (effective) model so the Admin UI shows what actually gets called.
+    model: normalizeAiModel(data.model) || model,
     updatedAt: data.updatedAt ?? null,
     updatedBy: data.updatedBy ?? null,
   };
@@ -371,7 +372,7 @@ export const adminSetAiConfig = onCall(async (request) => {
   }).safeParse(request.data);
   if (!p.success) throw new HttpsError("invalid-argument", p.error.issues[0]?.message ?? "Invalid request.");
 
-  const model = p.data.model || DEFAULT_AI_MODEL;
+  const model = normalizeAiModel(p.data.model || DEFAULT_AI_MODEL);
   const batch = db().batch();
   batch.set(db().doc("config/ai"), {
     anthropicApiKey: p.data.apiKey,

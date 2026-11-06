@@ -1272,6 +1272,39 @@ b, strong, th, h1, h2, h3, h4, h5, h6, dt, optgroup {
 
 
 /* Home: the three verb cards */
-.home-verb-card { border: 1px solid var(--border); transition: transform .18s cubic-bezier(.16,1,.3,1), border-color .18s; }
-.home-verb-card:hover { transform: translateY(-3px); border-color: var(--accent-line); }
-.home-verb-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.home-verb-card,
+.home-verb-card {
+  border: 1px solid var(--border);
+  transition: transform .18s cubic-bezier(.16,1,.3,1), border-color .18s, background .15s;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  box-shadow: none !important;
+}
+button.home-verb-card:hover,
+.home-verb-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent-line);
+  background: var(--surface-hover) !important;
+  color: var(--ink) !important;
+}
+button.home-verb-card:active,
+.home-verb-card:active {
+  transform: translateY(-1px);
+}
+button.home-verb-card:focus-visible,
+.home-verb-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Utility: hide scrollbars */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+

@@ -54,9 +54,13 @@ service cloud.firestore {
         && d.updatedAt == request.time;
     }
 
-    // Server-written only. config/ai holds the model API key, so nothing here is public except the FX rates.
+    // Server-written only. config/ai holds the model API key, so nothing here is public except FX rates and plans.
     match /config/fx {
       allow read: if signedIn();
+      allow write: if false;
+    }
+    match /config/plans {
+      allow read: if true;   // Public: shown on pricing page to unauthenticated visitors.
       allow write: if false;
     }
     match /config/{doc} {

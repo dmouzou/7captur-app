@@ -13,7 +13,7 @@ beforeAll(async () => {
     firestore: { rules: readFileSync("firestore.rules", "utf8"), host: "127.0.0.1", port: 8080 },
   });
 });
-afterAll(() => env.cleanup());
+afterAll(() => env?.cleanup());
 
 beforeEach(async () => {
   await env.clearFirestore();

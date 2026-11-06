@@ -22,7 +22,7 @@ export interface AssistantDeps {
  * AI credit BEFORE the model call and gives it back if the model fails or its answer is rejected.
  */
 export async function runAssistant(db: Firestore, uid: string, input: AssistantInput, deps: AssistantDeps = {}): Promise<AssistantResult> {
-  const { workspaceId, businessId, requestId, question, screen, context } = input;
+  const { workspaceId, businessId, requestId, question, screen, context, engineOnly } = input;
   const load = deps.loadFacts ?? loadFacts;
   const ask = deps.askModel ?? ((f, q) => askAssistantModel(f, q));
   const intent = classifyQuestion(question);
@@ -32,8 +32,10 @@ export async function runAssistant(db: Firestore, uid: string, input: AssistantI
   const facts = await load(db, { workspaceId, businessId, screen, context, now: deps.now });
   const monthly = facts.usage.aiCreditsMonthly;
 
-  if (intent !== "free_form") {
-    return { answer: answerIntent(intent, facts), source: "engine", intent, creditsUsed: 0, creditsLeft: Math.max(0, monthly - facts.usage.aiCreditsUsed), creditsMonthly: monthly };
+  // Route to engine when: question matched a fixed intent, OR the user explicitly chose "fixed answer".
+  if (intent !== "free_form" || engineOnly) {
+    const answer = intent !== "free_form" ? answerIntent(intent, facts) : fallbackAnswer(facts);
+    return { answer, source: "engine", intent, creditsUsed: 0, creditsLeft: Math.max(0, monthly - facts.usage.aiCreditsUsed), creditsMonthly: monthly };
   }
 
   // Free-form: AI. Needs the same permission as other AI features (editor or owner, workspace not read-only).
