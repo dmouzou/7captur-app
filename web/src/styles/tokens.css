@@ -122,12 +122,12 @@ html.light,
 }
 
 :root {
-  --font-sans: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-head: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  /* Numbers, dates and ids use DM Sans too (tabular figures keep columns aligned). Only raw JSON in the admin uses --font-code. */
-  --font-mono: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-head: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Numbers, dates and ids use Inter too (tabular figures keep columns aligned). Only raw JSON in the admin uses --font-code. */
+  --font-mono: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-code: ui-monospace, Menlo, Monaco, Consolas, monospace;
-  --font-next: "Plus Jakarta Sans", "DM Sans", system-ui, sans-serif; /* the one exception: "Your next move" text, same as the marketing site */
+  --font-next: "Inter", system-ui, sans-serif; /* "Your next move" text; same family, distinguished by colour and weight */
 }
 
 * {
@@ -1234,12 +1234,12 @@ html.light .action-directive-sub,
 
 /* ============================================================
    Typography enforcement:
-   1. Whole app uses DM Sans (via --font-sans & --font-head)
-   2. Only the "next move" line uses Plus Jakarta Sans (via --font-next), in the card's accent colour
+   1. Whole app uses Inter (via --font-sans & --font-head)
+   2. The "next move" line also uses Inter (via --font-next), set apart by the card accent colour
    3. No bold text anywhere except the logo's wordmark
    ============================================================ */
 
-/* Recommendation text uses DM Sans like the rest of the app. Only the "next move" line (.action-directive-text) is distinct. */
+/* Recommendation text uses Inter like the rest of the app. Only the "next move" line (.action-directive-text) is distinct. */
 
 /* Prevent bold across standard HTML elements */
 b, strong, th, h1, h2, h3, h4, h5, h6, dt, optgroup {
