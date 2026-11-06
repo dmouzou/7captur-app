@@ -209,7 +209,7 @@ export function ReportsPanel({ onNavigate }: { onNavigate?: (tab: string) => voi
             {r.reviews && (
               <div style={{ marginBottom: 20 }}>
                 <h4 style={{ margin: "0 0 12px 0", fontSize: 14, color: "var(--ink)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                  <span><Icon name="check" size={15} inline accent />How your decisions turned out</span>
+                  <span><Icon name="check" size={15} inline accent />How your decisions turned out <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· 7Captur records and reviews outcomes with you</span></span>
                   {r.reviews.trackRecord && (
                     <span className="badge badge-primary" style={{ fontWeight: 500, fontSize: 12 }}>
                       Track record: {r.reviews.trackRecord}
