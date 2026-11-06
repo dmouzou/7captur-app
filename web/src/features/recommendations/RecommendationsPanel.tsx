@@ -17,9 +17,9 @@ const EVIDENCE_LABEL = {
 };
 
 const MODE_ACTION_BADGE: Record<string, string> = {
-  optimize: "ACTION DIRECTIVE • OPTIMIZE",
-  improve: "ACTION DIRECTIVE • IMPROVE",
-  explore: "ACTION DIRECTIVE • EXPLORE",
+  optimize: "Your next move · optimize",
+  improve: "Your next move · improve",
+  explore: "Your next move · explore",
 };
 
 export function RecommendationsPanel({
@@ -547,7 +547,7 @@ export function RecommendationsPanel({
                     <span>⚡ {badgeText}</span>
                   </div>
                   <span className="action-directive-sub">
-                    Recommended Next Move
+                    What to do next
                   </span>
                 </div>
                 <h3 className="action-directive-text">

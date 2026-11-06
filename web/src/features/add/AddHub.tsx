@@ -5,6 +5,7 @@ import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { getCardsByParent, type CardDef } from "../../shared/cards";
 import { CardStep } from "../../components/CardStep";
 import { ConnectionsPanel } from "../connections/ConnectionsPanel";
+import { AddArt, BrandLogo } from "../../components/art";
 
 interface AddHubProps {
   subview?: "root" | "connect" | "manual" | "connect.shopify";
@@ -120,11 +121,12 @@ export function AddHub({ subview = "root", onNavigate, onOpenManualRecord }: Add
     const cards = getCardsByParent("add.connect", recentIds);
     return (
       <CardStep
-        title="Connect Platforms"
-        subtitle="Automate live orders, spend, and customer event synchronizations."
+        title="Connect a platform"
+        subtitle="Bring in orders and ad spend automatically. Connections are read-only: 7Captur never changes your ads, budgets or posts."
+        art={<div style={{ display: "flex", gap: 10 }}>{["shopify", "meta", "googleads", "woocommerce"].map((b) => <span key={b} style={{ width: 46, height: 46, borderRadius: 12, background: "var(--surface)", border: "1px solid var(--border)", display: "grid", placeItems: "center" }}><BrandLogo name={b} size={26} /></span>)}</div>}
         breadcrumbs={[
           { label: "Add", onClick: () => onNavigate("/add") },
-          { label: "Connect Platform" },
+          { label: "Connect a platform" },
         ]}
         onBack={() => onNavigate("/add")}
         cards={cards}
@@ -138,11 +140,12 @@ export function AddHub({ subview = "root", onNavigate, onOpenManualRecord }: Add
     const cards = getCardsByParent("add.manual", recentIds);
     return (
       <CardStep
-        title="Enter Manually"
-        subtitle="Record individual commercial transactions, ad expenditures, or daily totals."
+        title="Type it in"
+        subtitle="Record a sale, an enquiry, a post, a promotion or a cost in a few taps. No spreadsheet needed."
+        art={<AddArt size={150} />}
         breadcrumbs={[
           { label: "Add", onClick: () => onNavigate("/add") },
-          { label: "Enter Manually" },
+          { label: "Type it in" },
         ]}
         onBack={() => onNavigate("/add")}
         cards={cards}
@@ -155,8 +158,9 @@ export function AddHub({ subview = "root", onNavigate, onOpenManualRecord }: Add
   const rootCards = getCardsByParent("add", recentIds);
   return (
     <CardStep
-      title="Add Commercial Data"
-      subtitle="Choose how you want to bring your marketing, sales, and spend numbers into 7Captur."
+      title="Add your data"
+      subtitle="Connect a store or ad account, import a CSV file, or type it in. Whatever fits your day. You can mix all three."
+      art={<AddArt size={190} />}
       breadcrumbs={[{ label: "Add" }]}
       cards={rootCards}
       onSelectCard={handleSelectCard}

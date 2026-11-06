@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { CardDef } from "../shared/cards";
 import { Icon } from "./Icon";
+import { BrandLogo } from "./art";
+import type { ReactNode } from "react";
 
 interface CardStepProps {
   title: string;
@@ -10,6 +12,8 @@ interface CardStepProps {
   cards: CardDef[];
   onSelectCard: (card: CardDef) => void;
   onNotifyPlanned?: (card: CardDef) => void;
+  /** Illustration shown on the right of the title card. */
+  art?: ReactNode;
 }
 
 export function CardStep({
@@ -20,6 +24,7 @@ export function CardStep({
   cards,
   onSelectCard,
   onNotifyPlanned,
+  art,
 }: CardStepProps) {
   const [notified, setNotified] = useState<Record<string, boolean>>({});
 
@@ -87,14 +92,22 @@ export function CardStep({
           marginBottom: 24,
           background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)",
           border: "1px solid var(--border)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 20,
+          flexWrap: "wrap",
         }}
       >
-        <h1 style={{ margin: "0 0 6px 0", fontSize: "1.65rem", fontWeight: 500 }}>{title}</h1>
-        {subtitle && (
-          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            {subtitle}
-          </p>
-        )}
+        <div style={{ maxWidth: 560 }}>
+          <h1 style={{ margin: "0 0 6px 0", fontSize: "1.65rem", fontWeight: 500 }}>{title}</h1>
+          {subtitle && (
+            <p className="muted" style={{ margin: 0, fontSize: 14.5, lineHeight: 1.55 }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {art}
       </div>
 
       {/* Cards Grid */}
@@ -112,7 +125,10 @@ export function CardStep({
           return (
             <div
               key={card.id}
-              className="card"
+              className="card home-verb-card"
+              role={isPlanned ? undefined : "button"}
+              tabIndex={isPlanned ? undefined : 0}
+              onKeyDown={(e) => { if (!isPlanned && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onSelectCard(card); } }}
               onClick={() => {
                 if (!isPlanned) onSelectCard(card);
               }}
@@ -148,7 +164,12 @@ export function CardStep({
                       justifyContent: "center",
                     }}
                   >
-                    <Icon name={card.icon} size={20} />
+                    {(() => {
+                      const brand = card.id.startsWith("connect.") ? card.id.slice(8) : "";
+                      return brand && ["shopify", "meta", "googleads", "woocommerce"].includes(brand)
+                        ? <span style={{ filter: isPlanned ? "grayscale(1)" : "none" }}><BrandLogo name={brand} size={24} /></span>
+                        : <Icon name={card.icon} size={20} />;
+                    })()}
                   </div>
                   {isPlanned ? (
                     <span className="badge" style={{ fontSize: 11, background: "var(--bg3)", color: "var(--muted)" }}>
@@ -156,11 +177,11 @@ export function CardStep({
                     </span>
                   ) : card.status === "import" ? (
                     <span className="badge badge-pop" style={{ fontSize: 11 }}>
-                      Import Supported
+                      Import a file
                     </span>
                   ) : (
                     <span className="badge badge-primary" style={{ fontSize: 11 }}>
-                      Live
+                      Ready
                     </span>
                   )}
                 </div>
@@ -172,6 +193,11 @@ export function CardStep({
                   {card.description}
                 </p>
               </div>
+              {!isPlanned && (
+                <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)", fontSize: 13, fontWeight: 500, color: "var(--accent)" }}>
+                  {card.status === "import" ? "Import a file →" : "Open →"}
+                </div>
+              )}
 
               {isPlanned && (
                 <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--line)" }}>

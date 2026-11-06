@@ -66,7 +66,7 @@
 .adm-tab { margin: 0; padding: 8px 14px; min-height: 40px; background: transparent; color: var(--body); border: 1px solid var(--line-strong); box-shadow: none; white-space: nowrap; }
 .adm-tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 .adm-tab:hover { transform: none; }
-.adm-json { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.55 var(--font-mono); background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; max-height: 420px; overflow: auto; }
+.adm-json { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.55 var(--font-code); background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; max-height: 420px; overflow: auto; }
 .adm-skel { height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--bg3), var(--bg2), var(--bg3)); background-size: 200% 100%; animation: adm-shimmer 1.2s linear infinite; margin: 10px 0; }
 @keyframes adm-shimmer { to { background-position: -200% 0; } }
 

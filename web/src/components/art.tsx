@@ -78,9 +78,10 @@ export function EmptyArt({ kind = "data", size = 150 }: { kind?: "data" | "decis
 /** Brand logos used in the app (same files as the marketing site). */
 export const LOGO: Record<string, string> = {
   shopify: "/logos/shopify.svg", meta: "/logos/meta.svg", googleads: "/logos/googleads.svg",
-  woocommerce: "/logos/woocommerce.svg", instagram: "/logos/instagram.svg",
+  woocommerce: "/logos/woocommerce.svg", instagram: "/logos/instagram.svg", stripe: "/logos/stripe.svg",
 };
 export function BrandLogo({ name, size = 22 }: { name: string; size?: number }) {
   const src = LOGO[name.toLowerCase().replace(/[^a-z]/g, "")];
-  return src ? <img src={src} width={size} height={size} alt="" style={{ display: "block" }} /> : null;
+  const wide = name.toLowerCase().includes("woocommerce"); // wordmark, not a square mark
+  return src ? <img src={src} width={wide ? Math.round(size * 1.45) : size} height={wide ? Math.round(size * 0.7) : size} alt="" style={{ display: "block" }} /> : null;
 }

@@ -9,6 +9,7 @@ import { checkDecisionSufficiency, computeTrackRecord, type ReviewRecords } from
 import { localToday } from "../../shared/periods";
 import { PLANS } from "../../shared/plans";
 import { FollowUps } from "./FollowUps";
+import { DecideArt, EmptyArt } from "../../components/art";
 
 type Decision = DecisionContent & {
   id: string;
@@ -104,19 +105,29 @@ export function DecisionCenter() {
 
   return (
     <section>
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
-          <div>
-            <h1 style={{ marginBottom: 6 }}>Decision Center</h1>
-            <p className="muted" style={{ margin: 0, maxWidth: 640 }}>
-              Each decision compares your options, states what is unknown and sets a review date. Nothing here changes an ad account.
-              You decide, and you do the work yourself. 7Captur records and reviews outcomes.
+      <div className="card" style={{ marginBottom: 20, padding: "26px 28px", background: "linear-gradient(135deg, var(--surface) 0%, var(--surface-hover) 100%)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+          <div style={{ maxWidth: 600 }}>
+            <span className="badge badge-primary">Decide</span>
+            <h1 style={{ margin: "10px 0 8px", fontSize: "1.75rem", fontWeight: 500 }}>Your decisions</h1>
+            <p className="muted" style={{ margin: "0 0 16px", fontSize: 14.5, lineHeight: 1.55 }}>
+              Each decision compares your options, says what is unknown and sets a review date. Nothing here changes an ad account. You decide and do the work yourself. 7Captur records the outcome and reviews it with you.
             </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {(["act", "investigate", "monitor"] as const).map((k) => (
+                <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 99, border: "1px solid var(--border)", background: "var(--surface-subtle)", fontSize: 13 }}>
+                  <i style={{ width: 8, height: 8, borderRadius: 4, background: k === "act" ? "var(--accent-fill)" : k === "investigate" ? "#e0a100" : "var(--muted)" }} />
+                  <span style={{ color: "var(--ink)" }}>{QUEUE_TITLE[k]}</span>
+                  <strong style={{ fontWeight: 500, color: "var(--ink)" }}>{groups[k].length}</strong>
+                </span>
+              ))}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 99, border: "1px solid var(--accent-line)", background: "var(--accent-soft)", fontSize: 13 }}>
+                <span style={{ color: "var(--accent)" }}>Track record, {plan?.historyDays ?? 30} days:</span>
+                <span style={{ color: "var(--ink)" }}>{trackRecord}</span>
+              </span>
+            </div>
           </div>
-          <div style={{ padding: "8px 14px", borderRadius: 8, background: "var(--surface-subtle)", border: "1px solid var(--border)", fontSize: 13 }}>
-            <span style={{ color: "var(--accent)", fontWeight: 600 }}>Track Record ({plan?.historyDays ?? 30}d):</span>{" "}
-            <span style={{ color: "var(--ink)", fontWeight: 500 }}>{trackRecord}</span>
-          </div>
+          <DecideArt size={190} />
         </div>
       </div>
 
@@ -146,7 +157,7 @@ export function DecisionCenter() {
                   <div style={{ flex: "1 1 260px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <span className={`action-directive-badge mode-${mode}`}>
-                        ⚡ ACTION DIRECTIVE • {mode.toUpperCase()}
+                        Your next move · {mode}
                       </span>
                     </div>
                     <h4 className="action-directive-text" style={{ fontSize: "1.08rem", margin: 0 }}>
@@ -169,12 +180,18 @@ export function DecisionCenter() {
       )}
 
       {decisions.length === 0 && pending.length === 0 && (
-        <div className="card"><p className="muted">No decisions yet. Generate a recommendation first, then it appears here.</p></div>
+        <div className="card" style={{ textAlign: "center", padding: "36px 24px" }}>
+          <EmptyArt kind="decision" size={170} />
+          <h3 style={{ margin: "10px 0 6px", fontWeight: 500 }}>No decisions yet</h3>
+          <p className="muted" style={{ margin: "0 auto", maxWidth: 420, lineHeight: 1.5 }}>
+            Generate a recommendation in Understand. It shows up here, ready to review, compare options and set a review date.
+          </p>
+        </div>
       )}
 
       {(["act", "investigate", "monitor"] as const).map((k) => groups[k].length > 0 && (
         <div key={k} style={{ marginBottom: 24 }}>
-          <h2 style={{ marginBottom: 2 }}>{QUEUE_TITLE[k]} <span className="muted">({groups[k].length})</span></h2>
+          <h2 style={{ marginBottom: 2, display: "flex", alignItems: "center", gap: 10 }}><i style={{ width: 10, height: 10, borderRadius: 5, background: k === "act" ? "var(--accent-fill)" : k === "investigate" ? "#e0a100" : "var(--muted)" }} />{QUEUE_TITLE[k]} <span className="muted">({groups[k].length})</span></h2>
           <p className="muted" style={{ marginBottom: 12 }}>{QUEUE_HINT[k]}</p>
           <div style={{ display: "grid", gap: 14 }}>
             {groups[k].map((d) => (
@@ -402,9 +419,9 @@ function DecisionCard({
       <div className={`action-directive-card mode-${cardMode}`} style={{ margin: "0 0 16px", padding: "16px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
           <span className={`action-directive-badge mode-${cardMode}`}>
-            ⚡ DECISION DIRECTIVE • {QUEUE_TITLE[d.queueStatus].toUpperCase()}
+            Your next move · {QUEUE_TITLE[d.queueStatus]}
           </span>
-          <span className="action-directive-sub">Strategic Priority</span>
+          <span className="action-directive-sub">{QUEUE_HINT[d.queueStatus]}</span>
         </div>
         <h3 className="action-directive-text" style={{ fontSize: "1.24rem" }}>{d.headline}</h3>
       </div>

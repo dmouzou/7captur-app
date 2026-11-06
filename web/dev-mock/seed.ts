@@ -38,6 +38,25 @@ export function seed(): Record<string, Record<string, unknown>> {
     evidence_quality: { mode: "improve", status: "partial", warnings: [], unknownCosts: ["Shipping"], confidence: "medium", gates: [{ key: "days", label: "Days of records", actual: 22, required: 14, passed: true }, { key: "attribution", label: "Sales with a source", actual: 62, required: 70, passed: false }] },
     aiSummary: { text: "The studio tour video brought more enquiries per dollar than your other post. Try it again for a few days at the same budget, then record any sales it leads to.", model: "claude-sonnet-5-5", promptVersion: "explain-v2" },
   };
+  d["workspaces/w1/decisions/d1"] = {
+    recommendationId: "r1", createdAt: ts(1), response: "pending", executionState: "not_started", outcome: null,
+    objective: "More enquiries", question: "Should you put more behind the studio tour video?", evidenceQuality: "partial", queueStatus: "act",
+    headline: "Run a short, small test on the studio tour video before spending more.",
+    decision: "Boost the studio tour video for five days at your current budget.",
+    whyThisOption: ["It had the most enquiries per dollar in the last 28 days.", "A five-day test is cheap and easy to stop."],
+    alternatives: [
+      { id: "a1", label: "Boost the studio tour video", summary: "Five days, current budget.", expectedBenefit: "More enquiries if the early signal holds.", downside: "A small sample can mislead.", reversible: true, favoured: true },
+      { id: "a2", label: "Raise the overall budget", summary: "Spend more across all posts.", reversible: true, favoured: false, whyNot: "The evidence is too thin to justify a larger spend." },
+      { id: "a3", label: "Do nothing this week", summary: "Keep recording and decide later.", reversible: true, favoured: false, whyNot: "Costs you a week of learning." },
+    ],
+    evidenceUsed: { asOf: day(1), windowStart: day(28), windowEnd: day(0), provenance: { manual: 24, imported: 1, connected: 4 }, sampleSize: { posts: 6, promotions: 1, leads: 9, sales: 14, costs: 1 } },
+    assumptions: ["Enquiries from the video are comparable to enquiries from other posts."],
+    limitations: ["Enquiries are not linked to confirmed orders.", "Shipping cost is not entered."],
+    guardrails: { watch: "Enquiries per day on the video.", stopIf: "Enquiries stay flat after five days." },
+    nextStep: "Boost the video for five days, then record any sales it leads to.",
+    costOfDelay: "A week of learning.", sensitivity: { mostLikelyToChange: "Whether enquiries turn into sales." },
+    expectedOutcome: { metric: "enquiries", text: "More enquiries per dollar than your other posts." }, reviewOn: day(-6),
+  };
   return d;
 }
 export const USER = { uid: "demo-user", email: "mara@studiomara.example", displayName: "Mara Ellis", emailVerified: true, providerData: [{ providerId: "google.com" }] };
