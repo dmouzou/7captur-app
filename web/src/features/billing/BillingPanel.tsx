@@ -153,7 +153,7 @@ export function BillingPanel() {
 
   const PlanCard = ({ id }: { id: PlanId }) => {
     const p = PLANS[id];
-    const isCurrent = ws.plan === id && (hasSub || ws.billingStatus === "active" || !ws.isTrialing);
+    const isCurrent = ws.plan === id && (hasSub || ws.billingStatus === "active");
     const featured = id === "growth";
     const price = cycle === "annual" ? p.priceAnnualMonthly : p.priceMonthly;
     return (
@@ -204,9 +204,7 @@ export function BillingPanel() {
             </button>
           ) : (
             <button type="button" className={featured ? "primary" : "btn-secondary"} style={{ width: "100%", margin: 0 }} disabled={waiting} onClick={() => subscribe(id)}>
-              {id === "starter"
-                ? (ws.isTrialing ? "Keep Starter" : "Switch to Starter")
-                : (ws.plan === "growth" ? "This is your current plan" : "Upgrade to Growth")}
+              {id === "starter" ? (ws.isTrialing ? "Keep Starter" : "Subscribe to Starter") : "Upgrade to Growth"}
             </button>
           )}
         </div>

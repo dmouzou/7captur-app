@@ -8,7 +8,6 @@ query Orders($first: Int!, $after: String, $query: String) {
     nodes {
       id name createdAt updatedAt cancelledAt test displayFinancialStatus
       subtotalPriceSet { shopMoney { amount currencyCode } }
-      totalPriceSet { shopMoney { amount currencyCode } }
       totalRefundedSet { shopMoney { amount currencyCode } }
       lineItems(first: 3) { nodes { title } }
     }
@@ -18,7 +17,6 @@ query Orders($first: Int!, $after: String, $query: String) {
 export interface ShopifyOrderNode {
   id: string; name?: string; createdAt: string; updatedAt: string; cancelledAt: string | null; test: boolean; displayFinancialStatus: string | null;
   subtotalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
-  totalPriceSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
   totalRefundedSet?: { shopMoney: { amount: string; currencyCode: string } } | null;
   lineItems?: { nodes: { title: string }[] };
 }
@@ -40,15 +38,17 @@ export const orderDocId = (gid: string) => `shopify_${gid.split("/").pop()}`;
  */
 export function mapOrder(o: ShopifyOrderNode, timezone: string, opts?: { allowTestOrders?: boolean }): MappedOrder {
   const id = orderDocId(o.id);
-  const allowTest = opts?.allowTestOrders ?? (process.env.SHOPIFY_ALLOW_TEST_ORDERS === "true" && process.env.NODE_ENV !== "test");
+  const allowTest = opts?.allowTestOrders === true;
   if (o.test && !allowTest) return { action: "skip", id, reason: "test order" };
   if (o.cancelledAt) return { action: "skip", id, reason: "cancelled" };
   const status = STATUS[o.displayFinancialStatus ?? ""];
   if (!status) return { action: "skip", id, reason: `status ${o.displayFinancialStatus ?? "unknown"}` };
-  const rawMoney = o.subtotalPriceSet?.shopMoney ?? o.totalPriceSet?.shopMoney;
-  const amount = Number(rawMoney?.amount ?? 0);
+  // Unknown is never zero: no subtotal or no currency means the order is skipped, not counted. Totals include tax and shipping, so they are not a fallback.
+  const money = o.subtotalPriceSet?.shopMoney;
+  if (!money?.currencyCode) return { action: "skip", id, reason: "missing subtotal or currency" };
+  const amount = Number(money.amount);
   if (!Number.isFinite(amount) || amount < 0) return { action: "skip", id, reason: "bad amount" };
-  const currency = (rawMoney?.currencyCode ?? "USD").toUpperCase();
+  const currency = money.currencyCode.toUpperCase();
   const refunded = Number(o.totalRefundedSet?.shopMoney.amount ?? 0);
   const titles = (o.lineItems?.nodes ?? []).map((n) => n.title).filter(Boolean).join(", ").slice(0, 80);
   return {

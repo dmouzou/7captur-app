@@ -55,15 +55,8 @@ export async function syncShopifyConnection(
     for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
       const data: OrdersData = await shopifyGraphql<OrdersData>(conn.shop, token, ORDERS_QUERY, { first: PAGE, after, query: search });
       const col = `workspaces/${workspaceId}/sales`;
-      const allowTestOrders = Boolean(
-        conn.allowTestOrders ||
-        process.env.SHOPIFY_ALLOW_TEST_ORDERS === "true" ||
-        process.env.FUNCTIONS_EMULATOR === "true" ||
-        process.env.GCLOUD_PROJECT?.includes("dev") ||
-        process.env.FIREBASE_CONFIG?.includes("dev") ||
-        conn.shop?.includes("dev") ||
-        conn.shop?.includes("test")
-      );
+      // Test orders count only when the owner turned this on for this connection. Never inferred from names or environment.
+      const allowTestOrders = conn.allowTestOrders === true;
       const mapped = data.orders.nodes.map((n) => mapOrder(n, biz.timezone ?? ws.timezone, { allowTestOrders }));
       const refs = mapped.map((m) => db.doc(`${col}/${m.id}`));
       const existing = refs.length ? await db.getAll(...refs) : [];
@@ -139,7 +132,7 @@ export const syncShopifyNow = onCall({ secrets: [TOKEN_ENCRYPTION_KEY], timeoutS
   const c = (await ref.get()).data();
   if (!c) throw new HttpsError("not-found", "Connection not found.");
   const last = c.lastManualSyncAt?.toMillis?.() ?? 0;
-  if (Date.now() - last < MIN_MANUAL_INTERVAL_MS && !p.data.fullResync) {
+  if (Date.now() - last < MIN_MANUAL_INTERVAL_MS) {
     throw new HttpsError("resource-exhausted", "Synced a moment ago. Try again in a couple of minutes.");
   }
   await ref.update({ lastManualSyncAt: FieldValue.serverTimestamp() });

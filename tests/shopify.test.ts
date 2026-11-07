@@ -68,3 +68,14 @@ describe("mapOrder", () => {
   });
   it("builds stable ids", () => expect(orderDocId("gid://shopify/Order/123")).toBe("shopify_123"));
 });
+
+describe("mapOrder safety rules", () => {
+  it("skips test orders unless the connection opted in", () => {
+    expect(mapOrder(order({ test: true }), "UTC").action).toBe("skip");
+    expect(mapOrder(order({ test: true }), "UTC", { allowTestOrders: true }).action).toBe("upsert");
+  });
+  it("never counts an order with no subtotal as zero, and never falls back to a total with tax and shipping", () => {
+    const m = mapOrder(order({ subtotalPriceSet: null }), "UTC");
+    expect(m.action).toBe("skip");
+  });
+});
