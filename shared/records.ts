@@ -29,6 +29,8 @@ export const postSchema = z.object({
 
 export const promotionSchema = z.object({
   platform: z.enum(PLATFORMS),
+  /** The platform's own campaign or promotion ID. Lets sales and leads link to this promotion by ID. */
+  externalId: ref,
   postId: ref,
   campaignId: ref,
   adId: ref,
@@ -43,6 +45,8 @@ export const promotionSchema = z.object({
 });
 
 export const leadSchema = z.object({
+  /** An ID from the owner's own system. Lets sales link to this lead. */
+  externalId: ref,
   date,
   source: z.string().trim().max(60).optional(),
   postId: ref,

@@ -9,23 +9,38 @@ export type NumberFormat = "us" | "eu"; // us: 1,234.56  eu: 1.234,56
 export interface ImportOptions {
   dateFormat: DateFormat;
   numberFormat: NumberFormat;
-  defaults: { currency: string; objective: string };
+  defaults: { currency: string; objective: string; platform?: (typeof PLATFORMS)[number] };
 }
 
 // ---------- CSV parsing (RFC 4180 style: quotes, escaped quotes, newlines in cells, BOM) ----------
 
 export function detectDelimiter(text: string): string {
-  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
-  let best = ",", bestCount = 0;
-  for (const d of [",", ";", "\t"]) {
-    let count = 0, quoted = false;
-    for (const ch of firstLine) { if (ch === '"') quoted = !quoted; else if (ch === d && !quoted) count++; }
-    if (count > bestCount) { best = d; bestCount = count; }
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "").slice(0, 12);
+  const totals: Record<string, number> = { ",": 0, ";": 0, "\t": 0 };
+  for (const line of lines) {
+    const counts: Record<string, number> = { ",": 0, ";": 0, "\t": 0 };
+    let quoted = false;
+    for (const ch of line) { if (ch === '"') quoted = !quoted; else if (!quoted && ch in counts) counts[ch]++; }
+    for (const d of Object.keys(counts)) totals[d] += counts[d];
   }
+  let best = ",", bestCount = 0;
+  for (const d of [",", "\t", ";"]) if (totals[d] > bestCount) { best = d; bestCount = totals[d]; }
   return best;
 }
 
-export function parseCsv(input: string): { headers: string[]; rows: string[][]; delimiter: string } {
+/** Decode a file's bytes. Handles UTF-8 (with or without BOM), UTF-16 (Google Ads and Excel "Unicode text") and Windows-1252. */
+export function decodeFileBytes(buf: ArrayBuffer): string {
+  const u8 = new Uint8Array(buf);
+  if (u8.length >= 2 && u8[0] === 0xff && u8[1] === 0xfe) return new TextDecoder("utf-16le").decode(u8.subarray(2));
+  if (u8.length >= 2 && u8[0] === 0xfe && u8[1] === 0xff) return new TextDecoder("utf-16be").decode(u8.subarray(2));
+  // UTF-16 without a BOM: every other byte is zero for Latin text.
+  if (u8.length >= 4 && u8[1] === 0 && u8[3] === 0 && u8[0] !== 0) return new TextDecoder("utf-16le").decode(u8);
+  const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(u8);
+  if (!utf8.includes("\uFFFD")) return utf8;
+  return new TextDecoder("windows-1252").decode(u8);
+}
+
+export function parseCsv(input: string): { headers: string[]; rows: string[][]; delimiter: string; skippedPreamble: number; skippedTotals: number } {
   const text = input.replace(/^﻿/, "");
   const delimiter = detectDelimiter(text);
   const out: string[][] = [];
@@ -45,15 +60,26 @@ export function parseCsv(input: string): { headers: string[]; rows: string[][]; 
   }
   if (cell !== "" || row.length > 0) { row.push(cell); out.push(row); }
   const nonEmpty = out.filter((r) => r.some((c) => c.trim() !== ""));
-  if (nonEmpty.length === 0) return { headers: [], rows: [], delimiter };
+  if (nonEmpty.length === 0) return { headers: [], rows: [], delimiter, skippedPreamble: 0, skippedTotals: 0 };
+  // Ad platforms put report titles and date ranges above the header ("Campaign report", "October 1, 2026 - October 31, 2026").
+  // The header is the first row that is about as wide as the widest of the first ten rows.
+  const filled = (r: string[]) => r.length;
+  const widest = Math.max(...nonEmpty.slice(0, 10).map(filled));
+  const need = Math.max(2, Math.ceil(widest * 0.8));
+  let headerIdx = nonEmpty.findIndex((r, i) => i < 10 && filled(r) >= need);
+  if (headerIdx < 0) headerIdx = 0;
   const seen = new Map<string, number>();
-  const headers = nonEmpty[0].map((h, i) => {
+  const headers = nonEmpty[headerIdx].map((h, i) => {
     const base = h.trim() || `column_${i + 1}`;
     const n = (seen.get(base) ?? 0) + 1;
     seen.set(base, n);
     return n === 1 ? base : `${base}_${n}`;
   });
-  return { headers, rows: nonEmpty.slice(1), delimiter };
+  // Report summaries ("Total: Account", "Grand total") are not records.
+  const isTotals = (r: string[]) => /^(grand\s+)?totals?\s*(:|$)/i.test((r.find((c) => c.trim() !== "") ?? "").trim());
+  const body = nonEmpty.slice(headerIdx + 1);
+  const data = body.filter((r) => !isTotals(r));
+  return { headers, rows: data, delimiter, skippedPreamble: headerIdx, skippedTotals: body.length - data.length };
 }
 
 export function rowsToObjects(headers: string[], rows: string[][]): Record<string, string>[] {
@@ -84,13 +110,15 @@ const platformField = (defaultPlatform: (typeof PLATFORMS)[number] = "facebook")
     instore: "in_person", in_store: "in_person", store: "in_person", call: "phone", calls: "phone",
     tiktok_shop: "tiktok", tiktok_ads: "tiktok", "tiktok ads": "tiktok",
     google_ads: "google", "google ads": "google", adwords: "google", youtube: "google", "youtube ads": "google",
-    etsy: "marketplace", amazon: "marketplace",
+    etsy: "marketplace", amazon: "marketplace", amazon_ads: "marketplace", "amazon ads": "marketplace", amazon_advertising: "marketplace",
+    linkedin: "other", linkedin_ads: "other", "linkedin ads": "other", x: "other", twitter: "other", pinterest: "other", snapchat: "other", bing: "other", microsoft_ads: "other",
+    shopify: "other", woocommerce: "other", stripe: "other", paypal: "other",
   },
-  default: () => defaultPlatform,
-  defaultLabel: () => `platform = ${defaultPlatform}`,
+  default: (o) => o.defaults.platform ?? defaultPlatform,
+  defaultLabel: (o) => `platform = ${o.defaults.platform ?? defaultPlatform}`,
 });
 const currencyField: ImportField = {
-  name: "currency", label: "Currency", kind: "text", aliases: ["currency", "curr", "ccy"],
+  name: "currency", label: "Currency", kind: "text", aliases: ["currency", "curr", "ccy", "currency_code", "order_currency", "order_currency_code", "presentment_currency"],
   default: (o) => o.defaults.currency, defaultLabel: (o) => `currency = ${o.defaults.currency}`,
 };
 const notes: ImportField = { name: "notes", label: "Notes", kind: "text", aliases: ["notes", "note", "comment", "description", "details", "memo"] };
@@ -114,22 +142,27 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
   ],
   promotions: [
     platformField("facebook"),
-    dateField("startDate", "Start date", ["start_date", "startDate", "start", "from", "begin", "reporting_starts", "date_start", "start_time", "date", "day", "stat_time"]),
+    dateField("startDate", "Start date", ["start_date", "startDate", "start", "from", "begin", "reporting_starts", "date_start", "start_time", "date", "day", "stat_time", "stat_time_day", "by_day", "date_range_start"]),
     dateField("endDate", "End date", ["end_date", "endDate", "end", "to", "stop", "reporting_ends", "date_stop", "end_time"], false),
-    { name: "spend", label: "Spend", kind: "number", required: true, aliases: ["spend", "cost", "amount_spent", "campaign_spend", "ad_spend", "budget_spent", "total_cost", "spent"] },
+    { name: "spend", label: "Spend", kind: "number", required: true, aliases: ["spend", "cost", "amount_spent", "campaign_spend", "ad_spend", "budget_spent", "total_cost", "spent", "total_spent", "spend_usd", "cost_usd"] },
     { name: "budget", label: "Budget", kind: "number", aliases: ["budget", "target_budget", "daily_budget"] },
+    { name: "externalId", label: "External promotion ID", kind: "text", aliases: ["external_id", "promotion_id", "campaign_id", "id", "record_id", "ad_set_id"] },
+    { name: "postId", label: "Promoted post (ID)", kind: "text", aliases: ["post_id", "linked_post_id", "postId", "promoted_post", "promoted_post_id"] },
     currencyField,
     {
       name: "objective", label: "Objective", kind: "enum", enumValues: OBJECTIVES, aliases: ["objective", "goal", "campaign_objective"],
       enumAliases: {
+        outcome_sales: "orders", outcome_leads: "qualified_enquiries", outcome_traffic: "awareness", outcome_awareness: "awareness",
+        outcome_engagement: "awareness", outcome_app_promotion: "orders", product_sales: "orders",
+        website_visits: "awareness", video_views: "awareness", engagement: "awareness",
         leads: "qualified_enquiries", enquiries: "qualified_enquiries", sales: "orders", conversions: "orders",
         traffic: "awareness", reach: "awareness", brand_awareness: "awareness", website_traffic: "awareness",
         lead_generation: "qualified_enquiries", catalog_sales: "orders",
       },
       default: (o) => o.defaults.objective, defaultLabel: (o) => `objective = ${o.defaults.objective}`,
     },
-    count("impressions", "Impressions", ["total_impressions", "views"]),
-    count("clicks", "Clicks", ["link_clicks", "ad_clicks", "outbound_clicks"]),
+    count("impressions", "Impressions", ["total_impressions", "views", "impr"]),
+    count("clicks", "Clicks", ["link_clicks", "ad_clicks", "outbound_clicks", "clicks_all", "clicks_destination"]),
     count("reach", "Reach", ["total_reach", "unique_impressions"]),
     notes,
   ],
@@ -147,28 +180,39 @@ export const IMPORT_SPECS: Record<RecordCollection, ImportField[]> = {
       },
       default: () => "new", defaultLabel: () => "status = new",
     },
+    { name: "externalId", label: "External lead ID", kind: "text", aliases: ["external_id", "lead_id", "id", "record_id", "enquiry_id"] },
+    { name: "postId", label: "Linked post (ID)", kind: "text", aliases: ["post_id", "linked_post_id", "postId", "post_ref", "post_reference", "linked_post"] },
+    { name: "promotionId", label: "Linked promotion (ID)", kind: "text", aliases: ["promotion_id", "linked_promotion_id", "promotionId", "promo_id", "promotion_ref", "linked_promotion", "campaign_id", "linked_campaign_id"] },
     { name: "value", label: "Value", kind: "number", aliases: ["value", "amount", "deal_value", "deal_size", "estimated_value"] },
     currencyField, notes,
   ],
   sales: [
     dateField("date", "Date", ["order_date", "sold_on", "created", "created_at", "paid_at", "order_time", "date"]),
-    { name: "orderNumber", label: "Order / Invoice #", kind: "text", aliases: ["order_number", "orderNumber", "order_id", "order_no", "invoice", "invoice_number", "record_id", "id", "order_name"] },
-    { name: "amount", label: "Amount", kind: "number", required: true, aliases: ["amount", "total", "revenue", "order_total", "price", "gross", "subtotal", "total_sales"] },
-    { name: "quantity", label: "Quantity", kind: "int", aliases: ["quantity", "qty", "count", "items", "lineitem_quantity"] },
+    { name: "orderNumber", label: "Order / Invoice #", kind: "text", aliases: ["order_number", "orderNumber", "order_id", "order_no", "invoice", "invoice_number", "record_id", "id", "order_name", "transaction_id", "charge_id", "payment_id", "order", "name"] },
+    { name: "amount", label: "Amount", kind: "number", required: true, aliases: ["amount", "total", "revenue", "order_total", "price", "gross", "subtotal", "total_sales", "total_paid", "amount_paid"] },
+    { name: "quantity", label: "Quantity", kind: "int", aliases: ["quantity", "qty", "count", "items", "lineitem_quantity", "total_quantity", "item_qty", "number_of_items"] },
     currencyField,
     {
-      name: "status", label: "Status", kind: "enum", enumValues: ["confirmed", "pending", "partially_refunded", "refunded"], aliases: ["status", "order_status", "financial_status"],
+      name: "status", label: "Status", kind: "enum", enumValues: ["confirmed", "pending", "partially_refunded", "refunded"], aliases: ["status", "order_status", "financial_status", "payment_status"],
       enumAliases: {
         paid: "confirmed", complete: "confirmed", completed: "confirmed", fulfilled: "confirmed", delivered: "confirmed",
-        unpaid: "pending", authorized: "pending", open: "pending", processing: "pending",
-        partial_refund: "partially_refunded", partially_refund: "partially_refunded", partially_refunded: "partially_refunded", "partially refunded": "partially_refunded",
+        succeeded: "confirmed", captured: "confirmed", settled: "confirmed", shipped: "confirmed", partially_shipped: "confirmed",
+        awaiting_fulfillment: "confirmed", awaiting_shipment: "confirmed", awaiting_pickup: "confirmed", disputed: "confirmed",
+        wc_completed: "confirmed", wc_processing: "confirmed",
+        unpaid: "pending", authorized: "pending", open: "pending", processing: "pending", awaiting_payment: "pending",
+        wc_pending: "pending", wc_on_hold: "pending", on_hold: "pending", pending_payment: "pending", created: "pending",
+        wc_refunded: "refunded", wc_cancelled: "refunded", reversed: "refunded", canceled: "refunded",
+        partial_refund: "partially_refunded", partially_refund: "partially_refunded", partially_refunded: "partially_refunded", "partially refunded": "partially_refunded", wc_partially_refunded: "partially_refunded",
         refund: "refunded", refunded: "refunded", returned: "refunded", cancelled: "refunded", voided: "refunded",
       },
       default: () => "confirmed", defaultLabel: () => "status = confirmed",
     },
-    { name: "discountAmount", label: "Discount", kind: "number", aliases: ["discount_amount", "discountAmount", "discount", "discounts", "total_discount"] },
-    { name: "refundAmount", label: "Refund amount", kind: "number", aliases: ["refund_amount", "refundAmount", "refundamount", "refund", "refunded_amount", "refund_value", "total_refunded", "return_amount"] },
-    { name: "product", label: "Product or service", kind: "text", aliases: ["product", "item", "product_name", "service", "lineitem_name", "title"] },
+    { name: "discountAmount", label: "Discount", kind: "number", aliases: ["discount_amount", "discountAmount", "discount", "discounts", "total_discount", "discount_total", "coupon_amount"] },
+    { name: "refundAmount", label: "Refund amount", kind: "number", aliases: ["refund_amount", "refundAmount", "refundamount", "refund", "refunded_amount", "refund_value", "total_refunded", "return_amount", "amount_refunded", "order_total_refund"] },
+    { name: "product", label: "Product or service", kind: "text", aliases: ["product", "item", "product_name", "service", "lineitem_name", "title", "item_title", "description"] },
+    { name: "postId", label: "Linked post (ID)", kind: "text", aliases: ["post_id", "linked_post_id", "postId", "post_ref", "post_reference", "linked_post"] },
+    { name: "promotionId", label: "Linked promotion (ID)", kind: "text", aliases: ["promotion_id", "linked_promotion_id", "promotionId", "promo_id", "promotion_ref", "linked_promotion", "campaign_id", "linked_campaign_id"] },
+    { name: "leadId", label: "Linked lead (ID)", kind: "text", aliases: ["lead_id", "linked_lead_id", "leadId", "enquiry_id", "linked_lead"] },
     {
       name: "attribution", label: "Source certainty", kind: "enum", enumValues: ["unknown", "estimated", "manual_reported"], aliases: ["attribution", "source_certainty"],
       enumAliases: {
@@ -261,9 +305,27 @@ export function autoMap(headers: string[], coll: RecordCollection): Record<strin
   return mapping;
 }
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+/** "Oct 1, 2026", "October 01, 2026", "1 Oct 2026", "1-Oct-2026". Month names are unambiguous, so no format choice is needed. */
+function parseNamedMonthDate(s: string): string | null {
+  const a = /^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})(?:[T\s].*)?$/.exec(s);
+  const b = /^(\d{1,2})(?:st|nd|rd|th)?[\s-]+([A-Za-z]{3,9})\.?,?[\s-]+(\d{4})(?:[T\s].*)?$/.exec(s);
+  const parts = a ? [a[1], a[2], a[3]] : b ? [b[2], b[1], b[3]] : null;
+  if (!parts) return null;
+  const [mon, day, year] = parts;
+  const m = MONTHS.indexOf(mon.slice(0, 3).toLowerCase()) + 1;
+  if (m === 0) return null;
+  const y = +year, d = +day;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
 function parseDate(raw: string, fmt: DateFormat): string | null {
   const s = raw.trim();
   let y: number, m: number, d: number;
+  const named = parseNamedMonthDate(s);
+  if (named) return named;
   const iso = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s].*)?$/.exec(s);
   if (iso) { y = +iso[1]; m = +iso[2]; d = +iso[3]; }
   else {
@@ -355,6 +417,38 @@ export function normalizeRow(
   return { record: parsed.data as Record<string, unknown>, errors: [], defaultsApplied };
 }
 
+/** Headers that no field is mapped to. */
+export function ignoredColumns(rows: Record<string, string>[], mapping: Record<string, string>): string[] {
+  const used = new Set(Object.values(mapping));
+  const all = new Set<string>();
+  for (const r of rows.slice(0, 50)) for (const k of Object.keys(r)) all.add(k);
+  return [...all].filter((h) => !used.has(h));
+}
+
+const NON_SALE_STATUS = new Set(["failed", "declined", "denied", "abandoned", "expired", "draft", "incomplete", "wc_failed", "wc_checkout_draft", "checkout_draft", "uncaptured"]);
+/** Transaction types in payment-provider exports that move money but are not sales. */
+const NON_SALE_TYPE = /(withdraw|payout|transfer|deposit|conversion|reserve|fee|reversal|adjustment|dispute|chargeback|refund|hold|release|top.?up)/i;
+
+/**
+ * Rows in a sales export that are real rows of the file but not sales: extra line items of an order Shopify already
+ * counted, failed payments, and refund, fee or payout lines from Stripe and PayPal. Returns a reason, or null to import.
+ */
+function salesRowSkipReason(row: Record<string, string>, mapping: Record<string, string>, opts: ImportOptions, prevOrder: string): string | null {
+  const cell = (field: string) => (mapping[field] ? (row[mapping[field]] ?? "").trim() : "");
+  const amount = cell("amount");
+  const order = cell("orderNumber");
+  if (amount === "" && order !== "" && order === prevOrder) return "extra product lines of an order (the order total is counted once)";
+  const status = cell("status").toLowerCase().replace(/[\s-]+/g, "_");
+  if (status && NON_SALE_STATUS.has(status)) return "failed, declined or unfinished payments";
+  const typeHeader = Object.keys(row).find((h) => norm(h) === "type" || norm(h) === "transaction_type" || norm(h) === "balance_impact_type");
+  if (typeHeader && !Object.values(mapping).includes(typeHeader) && NON_SALE_TYPE.test(row[typeHeader] ?? "")) return "refund, fee, transfer or payout lines (not sales)";
+  if (amount !== "") {
+    const n = parseNumber(amount, opts.numberFormat);
+    if (n !== null && n < 0) return "negative amounts (refunds, fees or payouts)";
+  }
+  return null;
+}
+
 /** Stable JSON for duplicate detection. */
 export function canonicalJson(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
@@ -365,8 +459,13 @@ export function canonicalJson(v: unknown): string {
   return JSON.stringify(v);
 }
 
+export interface SkippedRows { reason: string; count: number; lines: number[] }
 export interface ImportAnalysis {
   total: number;
+  /** Rows left out on purpose (extra line items, refunds, fees, failed payments). Not errors. */
+  skipped: SkippedRows[];
+  /** Columns in the file that no field uses. They are not imported and not stored. */
+  ignoredColumns: string[];
   valid: { line: number; record: Record<string, unknown>; key: string }[];
   invalid: { line: number; errors: RowError[] }[];
   duplicatesInFile: { line: number; firstLine: number }[];
@@ -377,11 +476,23 @@ export interface ImportAnalysis {
 export function analyzeRows(
   coll: RecordCollection, rows: Record<string, string>[], mapping: Record<string, string>, opts: ImportOptions,
 ): ImportAnalysis {
-  const a: ImportAnalysis = { total: rows.length, valid: [], invalid: [], duplicatesInFile: [], defaultsApplied: [] };
+  const a: ImportAnalysis = { total: rows.length, skipped: [], ignoredColumns: ignoredColumns(rows, mapping), valid: [], invalid: [], duplicatesInFile: [], defaultsApplied: [] };
+  const skip = (reason: string, line: number) => {
+    let s = a.skipped.find((x) => x.reason === reason);
+    if (!s) { s = { reason, count: 0, lines: [] }; a.skipped.push(s); }
+    s.count++; if (s.lines.length < 10) s.lines.push(line);
+  };
+  let prevOrder = "";
   const first = new Map<string, number>();
   const defaults = new Set<string>();
   rows.forEach((row, i) => {
     const line = i + 2; // header is line 1
+    if (coll === "sales") {
+      const why = salesRowSkipReason(row, mapping, opts, prevOrder);
+      const order = mapping.orderNumber ? (row[mapping.orderNumber] ?? "").trim() : "";
+      if (order) prevOrder = order;
+      if (why) { skip(why, line); return; }
+    }
     const r = normalizeRow(coll, row, mapping, opts);
     r.defaultsApplied.forEach((d) => defaults.add(d));
     if (!r.record) { a.invalid.push({ line, errors: r.errors }); return; }
@@ -419,6 +530,8 @@ export function buildTemplate(coll: RecordCollection): string {
 }
 
 export interface DetectedFormat {
+  /** Platform value to use when the file has no platform column. */
+  platformEnum?: (typeof PLATFORMS)[number];
   isMultiType: boolean;
   typeColumn?: string;
   typeCounts?: Partial<Record<RecordCollection, number>>;
@@ -480,30 +593,23 @@ export function detectFileFormat(headers: string[], rows: Record<string, string>
   const normHeaders = headers.map(norm);
   const set = new Set(normHeaders);
 
-  // Meta Ads Export
-  if (set.has("reporting_starts") || set.has("amount_spent") || (set.has("campaign_name") && set.has("link_clicks"))) {
-    return { isMultiType: false, detectedCollection: "promotions", detectedPlatform: "Meta Ads", confidence: "high" };
-  }
+  const hit = (detectedCollection: RecordCollection, detectedPlatform: string, platformEnum?: (typeof PLATFORMS)[number]): DetectedFormat =>
+    ({ isMultiType: false, detectedCollection, detectedPlatform, platformEnum, confidence: "high" });
+  const has = (...names: string[]) => names.every((n) => set.has(n));
 
-  // TikTok Ads Export
-  if (set.has("stat_time") || (set.has("cpc") && set.has("cpm")) || normHeaders.some((h) => h.includes("tiktok"))) {
-    return { isMultiType: false, detectedCollection: "promotions", detectedPlatform: "TikTok Ads", confidence: "high" };
-  }
+  // Ad platforms. More specific signatures first.
+  if (has("campaign_group_name") || has("total_spent") || (has("campaign_name") && has("start_date") && (set.has("leads") || set.has("sends")))) return hit("promotions", "LinkedIn Ads", "other");
+  if (set.has("7_day_total_sales") || set.has("14_day_total_sales") || set.has("advertised_sku") || set.has("acos") || set.has("total_advertising_cost_of_sales_acos")) return hit("promotions", "Amazon Ads", "marketplace");
+  if (set.has("reporting_starts") || set.has("amount_spent") || (has("campaign_name", "link_clicks"))) return hit("promotions", "Meta Ads", "facebook");
+  if (set.has("stat_time") || set.has("stat_time_day") || (has("cpc", "cpm") && !set.has("campaign_state")) || normHeaders.some((h) => h.includes("tiktok"))) return hit("promotions", "TikTok Ads", "tiktok");
+  if (set.has("campaign_state") || set.has("search_keyword") || set.has("currency_code") && set.has("cost") && set.has("clicks") || (has("campaign", "cost", "clicks"))) return hit("promotions", "Google Ads", "google");
 
-  // Google Ads Export
-  if (set.has("campaign_state") || set.has("search_keyword") || (set.has("campaign") && set.has("cost") && set.has("clicks"))) {
-    return { isMultiType: false, detectedCollection: "promotions", detectedPlatform: "Google Ads", confidence: "high" };
-  }
-
-  // Shopify Orders Export
-  if (set.has("financial_status") || set.has("fulfillment_status") || set.has("lineitem_name")) {
-    return { isMultiType: false, detectedCollection: "sales", detectedPlatform: "Shopify Orders", confidence: "high" };
-  }
-
-  // Stripe Payments Export
-  if (set.has("amount_refunded") || set.has("converted_amount") || (set.has("charge_id") && set.has("amount"))) {
-    return { isMultiType: false, detectedCollection: "sales", detectedPlatform: "Stripe Payments", confidence: "high" };
-  }
+  // Store and payment exports.
+  if (set.has("paid_at") || set.has("lineitem_name") || (set.has("financial_status") && set.has("fulfillment_status"))) return hit("sales", "Shopify Orders");
+  if (set.has("amount_refunded") || set.has("converted_amount") || (set.has("charge_id") && set.has("amount")) || (set.has("created") && set.has("amount") && (set.has("fee") || set.has("captured") || set.has("customer_email")))) return hit("sales", "Stripe Payments");
+  if (set.has("balance_impact") || (set.has("gross") && set.has("fee") && set.has("net"))) return hit("sales", "PayPal Transactions");
+  if (set.has("order_currency") || set.has("order_total_amount") || set.has("order_shipping_amount") || set.has("payment_method_title") || normHeaders.some((h) => h.startsWith("billing_") && set.has("order_status"))) return hit("sales", "WooCommerce (WordPress) Orders");
+  if (set.has("order_status") && (set.has("order_total") || set.has("order_total_inc_tax")) ) return hit("sales", "BigCommerce / store Orders");
 
   // 3. Fallback: Score each collection based on autoMap matches and required fields
   const scores: Record<RecordCollection, number> = { posts: 0, promotions: 0, leads: 0, sales: 0, costs: 0 };
@@ -544,8 +650,19 @@ export const importRecordsInput = z.object({
   options: z.object({
     dateFormat: z.enum(["iso", "mdy", "dmy"]),
     numberFormat: z.enum(["us", "eu"]),
+    /** Platform to use when the file has no platform column (set from the detected export). */
+    platform: z.enum(PLATFORMS).optional(),
   }),
   rows: z.array(z.record(z.string().max(200), z.string().max(2000))).max(IMPORT_LIMITS.maxRows).optional().default([]),
   batches: z.array(importBatchSchema).optional(),
 });
 
+
+// ---------- Links between imported records ----------
+
+/** Link fields and the collection each one points at. */
+export const LINK_FIELDS: { field: "postId" | "promotionId" | "leadId"; target: RecordCollection }[] = [
+  { field: "postId", target: "posts" },
+  { field: "promotionId", target: "promotions" },
+  { field: "leadId", target: "leads" },
+];

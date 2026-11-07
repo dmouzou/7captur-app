@@ -4,9 +4,9 @@ import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PANELS } from "../records/config";
-import { COLLECTIONS, type RecordCollection } from "../../shared/records";
+import { COLLECTIONS, PLATFORMS, type RecordCollection } from "../../shared/records";
 import {
-  IMPORT_LIMITS, IMPORT_SPECS, analyzeRows, autoMap, buildTemplate, detectFileFormat, parseCsv, rowsToObjects,
+  IMPORT_LIMITS, IMPORT_SPECS, analyzeRows, autoMap, buildTemplate, decodeFileBytes, detectFileFormat, parseCsv, rowsToObjects,
   type DateFormat, type NumberFormat, type ImportAnalysis,
 } from "../../shared/importing";
 
@@ -14,8 +14,18 @@ interface Report {
   counts?: { received: number; valid: number; invalid: number; duplicatesInFile: number; duplicatesSaved: number; toImport: number; imported: number };
   status?: string; defaultsApplied?: string[]; rowErrors?: { line: number; errors: string[] }[]; dryRun?: boolean;
   batchSummaries?: Record<string, { total: number; valid: number; invalid: number; imported: number }>;
+  ignoredColumns?: Record<string, string[]>;
+  skippedRows?: { collection: string; reason: string; count: number }[];
+  links?: { resolved: number; unresolved: Record<string, number>; unresolvedExamples: string[] };
 }
 interface Job extends Report { id: string; collection: string; fileName: string }
+
+/** Send only the columns that are mapped. Names, emails and addresses in an export never leave the browser. */
+function mappedOnly(rows: Record<string, string>[], mapping: Record<string, string>): Record<string, string>[] {
+  const keep = new Set(Object.values(mapping));
+  const typeCols = ["type", "transaction_type", "Type", "Transaction Type"];
+  return rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => keep.has(k) || typeCols.includes(k))));
+}
 
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
@@ -44,6 +54,8 @@ export function ImportPanel() {
   const [multiMappings, setMultiMappings] = useState<Partial<Record<RecordCollection, Record<string, string>>>>({});
   const [activeMultiColl, setActiveMultiColl] = useState<RecordCollection>("sales");
   const [detectedPlatform, setDetectedPlatform] = useState<string | null>(null);
+  const [platformEnum, setPlatformEnum] = useState<(typeof PLATFORMS)[number] | undefined>();
+  const [fileNotes, setFileNotes] = useState<string[]>([]);
 
   useEffect(() => onSnapshot(
     query(collection(db, `workspaces/${ws.workspaceId}/imports`), orderBy("createdAt", "desc"), limit(5)),
@@ -51,8 +63,8 @@ export function ImportPanel() {
   ), [ws.workspaceId]);
 
   const opts = useMemo(() => ({
-    dateFormat, numberFormat, defaults: { currency: ws.currency, objective: ws.objective, platform: "facebook" as const },
-  }), [dateFormat, numberFormat, ws.currency, ws.objective]);
+    dateFormat, numberFormat, defaults: { currency: ws.currency, objective: ws.objective, platform: platformEnum },
+  }), [dateFormat, numberFormat, ws.currency, ws.objective, platformEnum]);
 
   const analysis = useMemo(() => (!isMultiType && rows.length ? analyzeRows(coll, rows, mapping, opts) : null), [isMultiType, coll, rows, mapping, opts]);
 
@@ -101,15 +113,16 @@ export function ImportPanel() {
   function reset() {
     setFileName(""); setHeaders([]); setRows([]); setMapping({}); setServerReport(null);
     setError(""); setRequestId(crypto.randomUUID()); setIsMultiType(false);
-    setPartitions({}); setTypeCounts({}); setMultiMappings({}); setDetectedPlatform(null);
+    setPartitions({}); setTypeCounts({}); setMultiMappings({}); setDetectedPlatform(null); setPlatformEnum(undefined); setFileNotes([]);
   }
 
   async function onFile(file: File | undefined) {
     reset();
     if (!file) return;
-    if (!/\.(csv|txt)$/i.test(file.name)) { setError("Upload a .csv file. For Excel or Google Sheets, use File > Save/Download as CSV."); return; }
+    if (/\.(xlsx|xls|xlsm|numbers|ods)$/i.test(file.name)) { setError("Excel files are not read directly yet. In Excel or Google Sheets use File > Save/Download as CSV, then upload that file."); return; }
+    if (!/\.(csv|txt|tsv)$/i.test(file.name)) { setError("Upload a .csv, .tsv or .txt export."); return; }
     if (file.size > IMPORT_LIMITS.maxBytes) { setError(`File is too large. The limit is ${IMPORT_LIMITS.maxBytes / 1024 / 1024} MB.`); return; }
-    const parsed = parseCsv(await file.text());
+    const parsed = parseCsv(decodeFileBytes(await file.arrayBuffer()));
     if (parsed.headers.length === 0 || parsed.rows.length === 0) { setError("The file has no data rows."); return; }
     if (parsed.headers.length > IMPORT_LIMITS.maxColumns) { setError(`Too many columns (limit ${IMPORT_LIMITS.maxColumns}).`); return; }
     if (parsed.rows.length > IMPORT_LIMITS.maxRows) { setError(`Too many rows (limit ${IMPORT_LIMITS.maxRows}). Split the file.`); return; }
@@ -117,6 +130,10 @@ export function ImportPanel() {
     const parsedObjects = rowsToObjects(parsed.headers, parsed.rows);
     const detection = detectFileFormat(parsed.headers, parsedObjects);
 
+    const notes: string[] = [];
+    if (parsed.skippedPreamble > 0) notes.push(`Skipped ${parsed.skippedPreamble} title line(s) above the column headers.`);
+    if (parsed.skippedTotals > 0) notes.push(`Skipped ${parsed.skippedTotals} totals row(s).`);
+    setFileNotes(notes);
     setFileName(file.name);
     setHeaders(parsed.headers);
     setRows(parsedObjects);
@@ -141,6 +158,7 @@ export function ImportPanel() {
       setMapping(autoMap(parsed.headers, targetColl));
       if (detection.detectedPlatform) {
         setDetectedPlatform(detection.detectedPlatform);
+        setPlatformEnum(detection.platformEnum);
       }
     }
   }
@@ -159,16 +177,16 @@ export function ImportPanel() {
         const batches = (Object.keys(partitions) as RecordCollection[]).map((c) => ({
           collection: c,
           mapping: multiMappings[c] || {},
-          rows: partitions[c] || [],
+          rows: mappedOnly(partitions[c] || [], multiMappings[c] || {}),
         }));
         payload = {
           workspaceId: ws.workspaceId, businessId: ws.businessId, collection: coll, requestId, fileName,
-          dryRun, batches, options: { dateFormat, numberFormat },
+          dryRun, batches, options: { dateFormat, numberFormat, platform: platformEnum },
         };
       } else {
         payload = {
           workspaceId: ws.workspaceId, businessId: ws.businessId, collection: coll, requestId, fileName,
-          dryRun, mapping, options: { dateFormat, numberFormat }, rows,
+          dryRun, mapping, options: { dateFormat, numberFormat, platform: platformEnum }, rows: mappedOnly(rows, mapping),
         };
       }
 
@@ -276,6 +294,7 @@ export function ImportPanel() {
             <select id="imp-type" value={coll} onChange={(e) => changeType(e.target.value as RecordCollection)}>
               {COLLECTIONS.map((c) => <option key={c} value={c}>{PANELS[c].title}</option>)}
             </select>
+            {fileNotes.map((n) => <p key={n} className="muted" style={{ margin: "4px 0" }}>{n}</p>)}
             {detectedPlatform && (
               <p style={{ margin: "4px 0 10px", fontSize: 13, color: "var(--accent, #6366f1)" }}>
                 ✨ Detected format: <strong>{detectedPlatform}</strong>
@@ -429,6 +448,9 @@ export function ImportPanel() {
           ) : (
             analysis && (
               <>
+                {analysis.skipped.map((k) => <p key={k.reason} className="muted">Left out {k.count} row(s): {k.reason}.</p>)}
+                {analysis.ignoredColumns.length > 0 && <p className="muted">Columns not imported (nothing is stored from them): {analysis.ignoredColumns.slice(0, 12).join(", ")}{analysis.ignoredColumns.length > 12 ? ` and ${analysis.ignoredColumns.length - 12} more` : ""}.</p>}
+                {serverReport?.links && Object.keys(serverReport.links.unresolved).length > 0 && <p className="error">Some link values did not match any saved record and were not linked: {serverReport.links.unresolvedExamples.join(", ")}. Import the posts or promotions first, or use their IDs.</p>}
                 {analysis.defaultsApplied.length > 0 && <p className="muted">Defaults applied where a cell is empty or the column is missing: {analysis.defaultsApplied.join(", ")}.</p>}
                 {analysis.valid.length > 0 && (
                   <ul style={{ paddingLeft: 18 }}>{analysis.valid.slice(0, 5).map((v) => <li key={v.line}>Line {v.line}: {PANELS[coll].summary(v.record)}</li>)}</ul>

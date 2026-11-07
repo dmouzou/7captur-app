@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { analyzeRows, importRecordsInput } from "../shared/importing";
+import { analyzeRows, importRecordsInput, LINK_FIELDS } from "../shared/importing";
 import { requireMember } from "../workspaces/access";
 import { confirmImport, releaseImport, reserveImport } from "../recommendations/usage";
 import { ensureAccountForWorkspace } from "../accounts/account";
@@ -45,6 +45,10 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
   const defaultsAppliedSet = new Set<string>();
   const allRowErrors: { line: number; errors: string[] }[] = [];
   const batchSummaries: Record<string, { total: number; valid: number; invalid: number; imported: number }> = {};
+  const ignoredColumns: Record<string, string[]> = {};
+  const skippedRows: { collection: string; reason: string; count: number }[] = [];
+  /** Every valid record of this file by collection, with its saved document id. Used to resolve links between records. */
+  const allValid: Record<string, { id: string; record: Record<string, unknown> }[]> = {};
 
   interface ItemToWrite {
     collection: string;
@@ -62,8 +66,11 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
 
   for (const batch of batches) {
     const a = analyzeRows(batch.collection, batch.rows, batch.mapping, {
-      ...inp.options, defaults: { currency: b.currency, objective: b.objective },
+      dateFormat: inp.options.dateFormat, numberFormat: inp.options.numberFormat,
+      defaults: { currency: b.currency, objective: b.objective, platform: inp.options.platform },
     });
+    if (a.ignoredColumns.length) ignoredColumns[batch.collection] = a.ignoredColumns;
+    a.skipped.forEach((s) => skippedRows.push({ collection: batch.collection, reason: s.reason, count: s.count }));
 
     totalReceived += a.total;
     totalValid += a.valid.length;
@@ -85,6 +92,8 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
     const withIds = a.valid.map((v) => ({
       ...v, collection: batch.collection, id: "imp_" + createHash("sha256").update(`${batch.collection}|${inp.businessId}|${v.key}`).digest("hex").slice(0, 32),
     }));
+
+    allValid[batch.collection] = withIds.map((v) => ({ id: v.id, record: v.record }));
 
     const existing = new Set<string>();
     for (let i = 0; i < withIds.length; i += 300) {
@@ -111,6 +120,19 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
     });
   }
 
+  // Resolve link columns (linked_post_id etc.) to saved document ids. A value may be the document id itself or the
+  // external id of a post, promotion or lead, either already saved or in this same file. Unresolved links are dropped
+  // and counted, never guessed.
+  const links = await resolveLinks(db, inp.workspaceId, inp.businessId, allValid);
+  for (const item of toWrite) {
+    for (const { field } of LINK_FIELDS) {
+      const raw = item.record[field];
+      if (typeof raw !== "string") continue;
+      const hitId = links.map[field].get(raw);
+      if (hitId) item.record[field] = hitId; else delete item.record[field];
+    }
+  }
+
   dates.sort();
   const dateRange = dates.length ? { start: dates[0], end: dates[dates.length - 1] } : null;
   const currencies = Array.from(currencySet);
@@ -124,6 +146,9 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
     counts, defaultsApplied: Array.from(defaultsAppliedSet), dateRange, currencies,
     rowErrors: allRowErrors,
     batchSummaries,
+    ignoredColumns,
+    skippedRows,
+    links: { resolved: links.resolved, unresolved: links.unresolved, unresolvedExamples: links.examples },
   };
   if (inp.dryRun) return { dryRun: true, ...report };
 
@@ -193,3 +218,47 @@ export const importRecords = onCall({ timeoutSeconds: 120, memory: "512MiB" }, a
     throw new HttpsError("internal", "Import failed part-way. Re-upload the same file: rows already saved are skipped as duplicates.");
   }
 });
+
+interface LinkResult {
+  map: Record<"postId" | "promotionId" | "leadId", Map<string, string>>;
+  resolved: number;
+  unresolved: Record<string, number>;
+  examples: string[];
+}
+
+async function resolveLinks(
+  db: FirebaseFirestore.Firestore, workspaceId: string, businessId: string,
+  allValid: Record<string, { id: string; record: Record<string, unknown> }[]>,
+): Promise<LinkResult> {
+  const res: LinkResult = { map: { postId: new Map(), promotionId: new Map(), leadId: new Map() }, resolved: 0, unresolved: {}, examples: [] };
+  for (const { field, target } of LINK_FIELDS) {
+    const wanted = new Set<string>();
+    for (const list of Object.values(allValid)) for (const v of list) { const r = v.record[field]; if (typeof r === "string" && r) wanted.add(r); }
+    if (wanted.size === 0) continue;
+    const m = res.map[field];
+    // 1. External ids inside this file.
+    for (const v of allValid[target] ?? []) { const ext = v.record.externalId; if (typeof ext === "string" && wanted.has(ext)) m.set(ext, v.id); }
+    // 2. Values that are already a saved document id of the right business.
+    let open = [...wanted].filter((w) => !m.has(w));
+    for (let i = 0; i < open.length; i += 300) {
+      const chunk = open.slice(i, i + 300).filter((w) => !w.includes("/"));
+      if (chunk.length === 0) continue;
+      const snaps = await db.getAll(...chunk.map((w) => db.doc(`workspaces/${workspaceId}/${target}/${w}`)));
+      snaps.forEach((snap, idx) => { if (snap.exists && snap.data()?.businessId === businessId) m.set(chunk[idx], snap.id); });
+    }
+    // 3. External ids already saved.
+    open = open.filter((w) => !m.has(w));
+    for (let i = 0; i < open.length; i += 30) {
+      const chunk = open.slice(i, i + 30);
+      const q = await db.collection(`workspaces/${workspaceId}/${target}`).where("externalId", "in", chunk).get();
+      q.forEach((d) => { const ext = d.data().externalId as string; if (d.data().businessId === businessId && !m.has(ext)) m.set(ext, d.id); });
+    }
+    for (const list of Object.values(allValid)) for (const v of list) {
+      const r = v.record[field];
+      if (typeof r !== "string" || !r) continue;
+      if (m.has(r)) res.resolved++;
+      else { res.unresolved[field] = (res.unresolved[field] ?? 0) + 1; if (res.examples.length < 5 && !res.examples.includes(r)) res.examples.push(r); }
+    }
+  }
+  return res;
+}

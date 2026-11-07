@@ -13,7 +13,6 @@ export function WorkspaceSwitcher() {
   const [creating, setCreating] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const canAdd = ws.workspaces.length < ws.maxWorkspaces && !ws.isReadOnly;
-  const single = ws.workspaces.length <= 1;
   const showSearch = ws.workspaces.length > 5;
   const [filter, setFilter] = useState("");
 
@@ -27,39 +26,6 @@ export function WorkspaceSwitcher() {
   const filteredWorkspaces = ws.workspaces.filter((w) =>
     w.name.toLowerCase().includes(filter.toLowerCase())
   );
-
-  if (single) {
-    return (
-      <div
-        className="topbar-ws-pill"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          background: "var(--surface-subtle)",
-          border: "1px solid var(--border)",
-          borderRadius: 20,
-          padding: "4px 12px 4px 10px",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 13,
-            color: "var(--ink)",
-            maxWidth: 160,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {ws.workspaceName || "Workspace"}
-        </span>
-        <span className="badge badge-primary" style={{ fontSize: 10, padding: "2px 6px" }}>
-          {PLANS[ws.plan]?.name || "Starter"}
-        </span>
-      </div>
-    );
-  }
 
   return (
     <div ref={box} className="topbar-ws-pill" style={{ position: "relative" }}>
