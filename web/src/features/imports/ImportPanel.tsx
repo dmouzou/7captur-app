@@ -4,6 +4,7 @@ import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
 import { useWorkspace } from "../workspace/WorkspaceProvider";
 import { PANELS } from "../records/config";
+import { xlsxToCsv } from "./xlsx";
 import { COLLECTIONS, PLATFORMS, type RecordCollection } from "../../shared/records";
 import {
   IMPORT_LIMITS, IMPORT_SPECS, analyzeRows, autoMap, buildTemplate, decodeFileBytes, detectFileFormat, parseCsv, rowsToObjects,
@@ -119,10 +120,25 @@ export function ImportPanel() {
   async function onFile(file: File | undefined) {
     reset();
     if (!file) return;
-    if (/\.(xlsx|xls|xlsm|numbers|ods)$/i.test(file.name)) { setError("Excel files are not read directly yet. In Excel or Google Sheets use File > Save/Download as CSV, then upload that file."); return; }
-    if (!/\.(csv|txt|tsv)$/i.test(file.name)) { setError("Upload a .csv, .tsv or .txt export."); return; }
+    const isXlsx = /\.xlsx$/i.test(file.name);
+    if (/\.(xls|xlsm|numbers|ods)$/i.test(file.name)) { setError("This spreadsheet format is not supported. In Excel or Google Sheets use File > Save as .xlsx or CSV, then upload that file."); return; }
+    if (!isXlsx && !/\.(csv|txt|tsv)$/i.test(file.name)) { setError("Upload a .csv, .tsv, .txt or .xlsx export."); return; }
     if (file.size > IMPORT_LIMITS.maxBytes) { setError(`File is too large. The limit is ${IMPORT_LIMITS.maxBytes / 1024 / 1024} MB.`); return; }
-    const parsed = parseCsv(decodeFileBytes(await file.arrayBuffer()));
+    let text: string;
+    const xlsxNotes: string[] = [];
+    if (isXlsx) {
+      try {
+        const x = await xlsxToCsv(file);
+        text = x.csv;
+        // Spreadsheet cells are already real dates and numbers, so the format choices do not apply.
+        setDateFormat("iso"); setNumberFormat("us");
+        if (x.sheets > 1) xlsxNotes.push(`Read the sheet "${x.sheet}" (the file has ${x.sheets} sheets). Only one sheet is imported at a time.`);
+      } catch {
+        setError("Could not read this Excel file. Make sure it is a normal .xlsx with a header row, or save it as CSV.");
+        return;
+      }
+    } else text = decodeFileBytes(await file.arrayBuffer());
+    const parsed = parseCsv(text);
     if (parsed.headers.length === 0 || parsed.rows.length === 0) { setError("The file has no data rows."); return; }
     if (parsed.headers.length > IMPORT_LIMITS.maxColumns) { setError(`Too many columns (limit ${IMPORT_LIMITS.maxColumns}).`); return; }
     if (parsed.rows.length > IMPORT_LIMITS.maxRows) { setError(`Too many rows (limit ${IMPORT_LIMITS.maxRows}). Split the file.`); return; }
@@ -130,7 +146,7 @@ export function ImportPanel() {
     const parsedObjects = rowsToObjects(parsed.headers, parsed.rows);
     const detection = detectFileFormat(parsed.headers, parsedObjects);
 
-    const notes: string[] = [];
+    const notes: string[] = [...xlsxNotes];
     if (parsed.skippedPreamble > 0) notes.push(`Skipped ${parsed.skippedPreamble} title line(s) above the column headers.`);
     if (parsed.skippedTotals > 0) notes.push(`Skipped ${parsed.skippedTotals} totals row(s).`);
     setFileNotes(notes);
@@ -240,7 +256,7 @@ export function ImportPanel() {
           if (/^[=+\-@\t\r]/.test(str)) str = "'" + str;
           return `"${str.replace(/"/g, '""')}"`;
         }).join(",")).join("\n");
-      download(`${fileName.replace(/\.csv$/i, "")}-import-errors.csv`, csvContent);
+      download(`${fileName.replace(/\.(csv|xlsx|tsv|txt)$/i, "")}-import-errors.csv`, csvContent);
     } else {
       (analysis?.invalid ?? []).forEach((r) => {
         r.errors.forEach((e) => {
@@ -285,7 +301,7 @@ export function ImportPanel() {
   return (
     <section>
       <div className="card">
-        <h2>Import a CSV</h2>
+        <h2>Import a file</h2>
         <p className="muted">Imported rows are saved as <span className="mono">imported</span>. Nothing is saved until you confirm.</p>
         
         {!isMultiType ? (
@@ -350,8 +366,8 @@ export function ImportPanel() {
           </div>
         )}
 
-        <label htmlFor="imp-file">CSV file (up to {IMPORT_LIMITS.maxBytes / 1024 / 1024} MB, max {IMPORT_LIMITS.maxRows} rows)</label>
-        <input id="imp-file" type="file" accept=".csv,text/csv" onChange={(e) => onFile(e.target.files?.[0])} />
+        <label htmlFor="imp-file">File: .csv, .tsv or .xlsx (up to {IMPORT_LIMITS.maxBytes / 1024 / 1024} MB, max {IMPORT_LIMITS.maxRows} rows)</label>
+        <input id="imp-file" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv" onChange={(e) => onFile(e.target.files?.[0])} />
         <div role="alert" className="error">{error}</div>
       </div>
 

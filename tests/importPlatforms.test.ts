@@ -110,3 +110,16 @@ describe("link columns", () => {
     expect(a.ignoredColumns).toEqual(["mystery"]);
   });
 });
+
+describe("xlsx cells", () => {
+  it("turns cells into CSV the normal pipeline reads, dates as ISO", async () => {
+    const { cellsToCsvText } = await import("../shared/importing");
+    const csv = cellsToCsvText([["Date", "Amount", "Note"], [new Date(Date.UTC(2026, 9, 5)), 1234.5, 'say "hi", ok'], [null, 2, "x"]]);
+    const p = parseCsv(csv);
+    expect(p.headers).toEqual(["Date", "Amount", "Note"]);
+    expect(p.rows[0]).toEqual(["2026-10-05", "1234.5", 'say "hi", ok']);
+    const a = analyzeRows("sales", rowsToObjects(p.headers, p.rows), autoMap(p.headers, "sales"), opts());
+    expect(a.valid).toHaveLength(1);
+    expect(a.valid[0].record).toMatchObject({ date: "2026-10-05", amount: 1234.5 });
+  });
+});

@@ -159,7 +159,7 @@ export function AddHub({ subview = "root", onNavigate, onOpenManualRecord }: Add
   return (
     <CardStep
       title="Add your data"
-      subtitle="Connect a store or ad account, import a CSV file, or type it in. Whatever fits your day. You can mix all three."
+      subtitle="Connect a store or ad account, import a CSV or Excel file, or type it in. Whatever fits your day. You can mix all three."
       art={<AddArt size={190} />}
       breadcrumbs={[{ label: "Add" }]}
       cards={rootCards}

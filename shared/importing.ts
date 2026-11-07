@@ -82,6 +82,20 @@ export function parseCsv(input: string): { headers: string[]; rows: string[][]; 
   return { headers, rows: data, delimiter, skippedPreamble: headerIdx, skippedTotals: body.length - data.length };
 }
 
+/**
+ * Turn spreadsheet cells (from an .xlsx) into CSV text so one pipeline handles every file type.
+ * Dates become ISO dates and numbers keep their plain form, so the caller reads them with the "iso" and "us" settings.
+ */
+export function cellsToCsvText(rows: unknown[][]): string {
+  const cell = (v: unknown): string => {
+    if (v === null || v === undefined) return "";
+    if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : v.toISOString().slice(0, 10);
+    const t = String(v);
+    return `"${t.replace(/"/g, '""')}"`;
+  };
+  return rows.map((r) => r.map(cell).join(",")).join("\n");
+}
+
 export function rowsToObjects(headers: string[], rows: string[][]): Record<string, string>[] {
   return rows.map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ""])));
 }
