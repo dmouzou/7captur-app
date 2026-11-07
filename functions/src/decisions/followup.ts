@@ -5,6 +5,7 @@ import { askAboutDecisionInput } from "../shared/followup";
 import { periodIds } from "../shared/periods";
 import { requireMember } from "../workspaces/access";
 import { getActiveAiConfig, normalizeAiModel } from "../config/aiConfig";
+import { parseModelJson } from "../config/aiJson";
 import { ANTHROPIC_API_KEY } from "../config";
 import { buildFollowupPrompt, fallbackAnswer, FOLLOWUP_PROMPT_VERSION, validateAnswer, type Snapshot } from "./followupCore";
 import { addAiTokens, confirmFollowUp, releaseFollowUp, reserveFollowUp } from "./followupUsage";
@@ -19,7 +20,7 @@ export async function askModel(snapshot: Snapshot, question: string, opts: { fet
   let apiKey = opts.apiKey;
   let model = opts.model;
   if (!apiKey) { const cfg = await getActiveAiConfig(); apiKey = cfg.apiKey; model = model ?? cfg.model; }
-  if (!apiKey) return null;
+  if (!apiKey) { logger.warn("askAboutDecision: no Anthropic API key configured"); return null; }
   model = normalizeAiModel(model);
   const { system, user } = buildFollowupPrompt(snapshot, question);
   let tokens = { input: 0, output: 0 };
@@ -29,7 +30,7 @@ export async function askModel(snapshot: Snapshot, question: string, opts: { fet
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
         body: JSON.stringify({ model, max_tokens: 400, system, messages: [{ role: "user", content: user }] }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(20000),
       });
       if (res.status === 429 || res.status >= 500) { await new Promise((r) => setTimeout(r, 400 * (attempt + 1))); continue; }
       if (!res.ok) {
@@ -40,11 +41,14 @@ export async function askModel(snapshot: Snapshot, question: string, opts: { fet
       const body = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       tokens = { input: tokens.input + (body.usage?.input_tokens ?? 0), output: tokens.output + (body.usage?.output_tokens ?? 0) };
       const raw = body.content?.find((c) => c.type === "text")?.text ?? "";
-      const json = JSON.parse(raw.replace(/^```(?:json)?|```$/g, "").trim()) as { answer?: unknown };
-      const text = validateAnswer(json.answer, snapshot, question);
+      const json = parseModelJson<{ answer?: unknown }>(raw);
+      if (!json) logger.warn("askAboutDecision: reply was not JSON", { model, rawStart: raw.slice(0, 200) });
+      const text = json ? validateAnswer(json.answer, snapshot, question) : null;
+      if (json && !text) logger.warn("askAboutDecision: answer failed fail-closed validation", { model, answer: String(json.answer ?? "").slice(0, 400) });
       if (!text) return { tokens }; // rejected: tokens were still spent, so they are still recorded
       return { text, model: model ?? "", inputTokens: tokens.input, outputTokens: tokens.output };
-    } catch {
+    } catch (e) {
+      logger.warn("askAboutDecision: request error", { err: String(e), attempt, model });
       if (attempt === 1) return tokens.input + tokens.output > 0 ? { tokens } : null;
     }
   }

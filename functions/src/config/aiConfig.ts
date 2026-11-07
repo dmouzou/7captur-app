@@ -1,7 +1,6 @@
 import { getFirestore } from "firebase-admin/firestore";
 import { ANTHROPIC_API_KEY } from "../config";
 
-export const DEFAULT_CLAUDE_KEY = process.env.DEFAULT_CLAUDE_KEY ?? "";
 export const DEFAULT_AI_MODEL = "claude-sonnet-5-5";
 
 /**
@@ -30,7 +29,6 @@ export interface AiConfigData {
  * Priority:
  * 1. Firestore `config/ai` (configured by Super Admin in Admin Panel)
  * 2. Secret / Environment variable ANTHROPIC_API_KEY
- * 3. Default fallback key provided in spec
  */
 export async function getActiveAiConfig(): Promise<{ apiKey: string; model: string }> {
   try {
@@ -56,8 +54,8 @@ export async function getActiveAiConfig(): Promise<{ apiKey: string; model: stri
     envKey = process.env.ANTHROPIC_API_KEY;
   }
 
-  const finalKey =
-    envKey && envKey.trim().startsWith("sk-") ? envKey.trim() : DEFAULT_CLAUDE_KEY;
+  // No hardcoded or default key. Without a configured key the AI features return null and the fixed answers are used.
+  const finalKey = envKey && envKey.trim().startsWith("sk-") ? envKey.trim() : "";
   return { apiKey: finalKey, model: DEFAULT_AI_MODEL };
 }
 

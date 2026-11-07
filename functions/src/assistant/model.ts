@@ -1,5 +1,6 @@
 import { logger } from "firebase-functions/v2";
 import { getActiveAiConfig, normalizeAiModel } from "../config/aiConfig";
+import { parseModelJson } from "../config/aiJson";
 import type { Facts } from "./facts";
 
 export const ASSISTANT_PROMPT_VERSION = "assistant-v1";
@@ -64,7 +65,7 @@ export async function askAssistantModel(
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
         body: JSON.stringify({ model, max_tokens: 400, system, messages: [{ role: "user", content: user }] }),
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(20000),
       });
       if (res.status === 429 || res.status >= 500) { await new Promise((r) => setTimeout(r, 400 * (attempt + 1))); continue; }
       if (!res.ok) {
@@ -74,9 +75,10 @@ export async function askAssistantModel(
       const body = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       tokens = { input: tokens.input + (body.usage?.input_tokens ?? 0), output: tokens.output + (body.usage?.output_tokens ?? 0) };
       const raw = body.content?.find((c) => c.type === "text")?.text ?? "";
-      const json = JSON.parse(raw.replace(/^```(?:json)?|```$/g, "").trim()) as { answer?: unknown };
-      const text = validateAssistantAnswer(json.answer, facts, question);
-      if (!text) logger.warn("askAssistant: answer failed fail-closed validation");
+      const json = parseModelJson<{ answer?: unknown }>(raw);
+      if (!json) logger.warn("askAssistant: reply was not JSON", { model, rawStart: raw.slice(0, 200) });
+      const text = json ? validateAssistantAnswer(json.answer, facts, question) : null;
+      if (json && !text) logger.warn("askAssistant: answer failed fail-closed validation", { model, answer: String(json.answer ?? "").slice(0, 400) });
       return { text, model, tokens };
     } catch (e) {
       logger.warn("askAssistant: request error", { err: String(e), attempt });

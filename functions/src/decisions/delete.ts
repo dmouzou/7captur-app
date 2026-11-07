@@ -1,4 +1,4 @@
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { deleteDecisionInput } from "../shared/decision";
 import { requireMember } from "../workspaces/access";
@@ -29,6 +29,14 @@ export const deleteDecision = onCall(async (request) => {
     batch.delete(doc.ref);
   }
   batch.delete(decRef);
+  // Audit entry in the SAME batch: the delete cannot be saved without it. Records who, when and what, never the decision content.
+  const d = snap.data() ?? {};
+  batch.set(db.collection("auditEvents").doc(), {
+    actorUid: uid, actorEmail: request.auth?.token.email ?? null, actorRole: "member", action: "delete_decision",
+    target: `workspaces/${workspaceId}/decisions/${decisionId}`, workspaceId,
+    reason: null, before: { status: d.status ?? null, recommendationId: d.recommendationId ?? null, followUps: followupsSnap.size }, after: null, meta: null,
+    createdAt: FieldValue.serverTimestamp(),
+  });
   await batch.commit();
 
   return { ok: true };

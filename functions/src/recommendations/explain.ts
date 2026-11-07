@@ -1,5 +1,6 @@
 import type { Recommendation } from "../shared/recommendation";
 import { getActiveAiConfig, DEFAULT_AI_MODEL, normalizeAiModel } from "../config/aiConfig";
+import { parseModelJson } from "../config/aiJson";
 import { logger } from "firebase-functions/v2";
 
 export const PROMPT_VERSION = "explain-v2";
@@ -85,7 +86,8 @@ export async function explainWithAI(
       }
       const body = (await res.json()) as { content?: { type: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number } };
       const raw = body.content?.find((c) => c.type === "text")?.text ?? "";
-      const json = JSON.parse(raw.replace(/^```(?:json)?|```$/g, "").trim()) as { summary?: unknown };
+      const json = parseModelJson<{ summary?: unknown }>(raw);
+      if (!json) { logger.warn("explainWithAI: reply was not JSON", { model, rawStart: raw.slice(0, 200) }); return null; }
       const text = validateSummary(json.summary, rec);
       if (!text) {
         logger.warn("explainWithAI: summary failed fail-closed validation", { rawSummary: json.summary });

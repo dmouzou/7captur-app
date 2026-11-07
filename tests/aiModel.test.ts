@@ -14,3 +14,13 @@ describe("normalizeAiModel", () => {
   });
   it("never defaults to a retired model", () => expect(DEFAULT_AI_MODEL).not.toMatch(/claude-3/));
 });
+
+import { parseModelJson } from "../functions/src/config/aiJson";
+describe("parseModelJson", () => {
+  it("parses plain, fenced and prose-wrapped JSON, and rejects text with no object", () => {
+    expect(parseModelJson('{"answer":"a"}')).toEqual({ answer: "a" });
+    expect(parseModelJson('```json\n{"answer":"a"}\n```')).toEqual({ answer: "a" });
+    expect(parseModelJson('Here you go: {"answer":"a"} Hope that helps.')).toEqual({ answer: "a" });
+    expect(parseModelJson("no json here")).toBeNull();
+  });
+});
