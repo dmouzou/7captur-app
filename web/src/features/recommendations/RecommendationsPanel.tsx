@@ -8,6 +8,7 @@ import { PLANS } from "../../shared/plans";
 import { periodIds } from "../../shared/periods";
 import type { Recommendation } from "../../shared/recommendation";
 import { Icon } from "../../components/Icon";
+import { CurrencyChoice } from "./CurrencyChoice";
 
 type Rec = Recommendation & { id: string; status: string; aiSummary?: { text: string } };
 
@@ -707,6 +708,7 @@ export function RecommendationsPanel({
                       )}
                     </div>
                   )}
+                  {r.evidence.currencyMismatch && !r.evidence.currencyMismatch.decided && <CurrencyChoice mismatch={r.evidence.currencyMismatch} />}
                   {r.evidence.fx && (
                     <p className="muted" style={{ margin: "10px 0 0", fontSize: 12.5 }}>
                       {r.evidence.fx.convertedRecords} record(s) converted to {r.evidence.fx.reportingCurrency} using ECB rates dated {r.evidence.fx.rateDate}.

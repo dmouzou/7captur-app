@@ -6,7 +6,7 @@ import { PLANS, type PlanId } from "../../shared/plans";
 
 export interface WorkspaceState {
   workspaceId: string; businessId: string; workspaceName: string; businessName: string;
-  plan: PlanId; timezone: string; currency: string; convertCurrencies: boolean; objective: string; country: string;
+  plan: PlanId; timezone: string; currency: string; /** null until the owner has chosen. */ convertCurrencies: boolean | null; objective: string; country: string;
   ownerUid: string; userRole: "owner" | "editor" | "viewer"; billingStatus: string; restrictAtMs: number | null; trialEndsAtMs: number | null;
   daysLeft: number;
   isTrialing: boolean; isTrialExpired: boolean; isReadOnly: boolean; hasSubscription: boolean;
@@ -148,7 +148,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             plan,
             timezone: String(curWsData.timezone || curBizData.timezone || "America/New_York"),
             currency: String(curBizData.currency || curWsData.defaultCurrency || "USD"),
-            convertCurrencies: curBizData.convertCurrencies !== false,
+            convertCurrencies: typeof curBizData.convertCurrencies === "boolean" ? curBizData.convertCurrencies : null,
             objective: String(curBizData.objective || "profitability"),
             country: String(curWsData.country || "US"),
             ownerUid: String(curWsData.ownerUid || ""),

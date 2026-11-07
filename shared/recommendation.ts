@@ -27,6 +27,8 @@ export interface Recommendation {
     provenance: Record<string, number>;
     missing: string[];
     warnings: string[];
+    /** Present when records in another currency were left out. `decided` is false until the owner chooses what to do. */
+    currencyMismatch?: { reportingCurrency: string; excluded: Record<string, number>; decided: boolean };
     /** Present only when records in other currencies were converted. */
     fx?: { reportingCurrency: string; rateDate: string; source: "ecb"; rates: Record<string, number>; convertedRecords: number };
   };
@@ -84,6 +86,8 @@ export interface Recommendation {
     keptAttributedRevenue?: number | null;
     /** True ROAS. Null unless fees are visible. Never shown as True ROAS when null. */
     trueRoas?: number | null;
+    /** All net revenue divided by all ad spend. An upper bound: it credits every order to ads. */
+    blendedRoas?: number | null;
     feesVisible?: boolean;
     ratioToBreakEven?: number | null;
     costPerOrder?: number | null;

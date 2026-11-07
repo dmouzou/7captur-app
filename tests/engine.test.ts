@@ -115,6 +115,27 @@ describe("engine rules-v4: hard gates constrain the action", () => {
     expect(r.action).toMatch(/Hold spend/);
     expect(r.category).toBe("measurement");
   });
+
+  it("no links at all: not measurable yet (never 0.00x), blended return shown, no scaling, cheap tracking steps offered", () => {
+    const records = { ...volume({ linkedEvery: 1000 }), costs: goldenCosts() } as never;
+    const r = runEngine({ records, business: biz, today });
+    const f = r.financials!;
+    expect(f.trueRoas).toBeNull();
+    expect(f.attributedRoas).toBeNull();
+    expect(f.blendedRoas).toBeGreaterThan(3);
+    expect(JSON.stringify(r)).not.toMatch(/0\.00x/);
+    expect(r.rationale.join(" ")).not.toMatch(/True ROAS is/);
+    expect(r.rationale.join(" ")).toMatch(/not measurable yet/);
+    expect(r.action).toMatch(/Hold spend/);
+    expect(r.what_would_change_the_decision.join(" ")).toMatch(/discount code/);
+  });
+
+  it("no links but blended return below break-even: careful reduce, even crediting ads with every order", () => {
+    const records = { ...volume({ linkedEvery: 1000, spendEach: 2000 }), costs: goldenCosts() } as never;
+    const r = runEngine({ records, business: biz, today });
+    expect(r.action).toMatch(/Reduce total ad spend by about 20%/);
+    expect(r.action).toMatch(/every order came from ads/);
+  });
 });
 
 describe("engine rules-v4: True ROAS golden fixture", () => {
@@ -229,14 +250,26 @@ describe("engine rules-v4: currency", () => {
   });
 
   it("conversion on: converted with the rate and date recorded", () => {
-    const r = runEngine({ records, business: { ...biz, objective: "awareness" }, today, fx });
+    const r = runEngine({ records, business: { ...biz, objective: "awareness", convertCurrencies: true }, today, fx });
     expect(r.evidence.sampleSize.promotions).toBe(1);
     expect(r.evidence.fx).toMatchObject({ reportingCurrency: "USD", rateDate: "2026-10-28", convertedRecords: 1 });
     expect(r.evidence.warnings.join()).toMatch(/ECB reference rates dated 2026-10-28/);
   });
 
+  it("owner has not chosen yet: nothing is converted silently, the choice is surfaced", () => {
+    const r = runEngine({ records, business: { ...biz, objective: "awareness" }, today, fx });
+    expect(r.evidence.sampleSize.promotions).toBe(0);
+    expect(r.evidence.fx).toBeUndefined();
+    expect(r.evidence.currencyMismatch).toMatchObject({ reportingCurrency: "USD", decided: false });
+  });
+
+  it("owner chose to keep them out: no prompt", () => {
+    const r = runEngine({ records, business: { ...biz, objective: "awareness", convertCurrencies: false }, today, fx });
+    expect(r.evidence.currencyMismatch?.decided).toBe(true);
+  });
+
   it("no rate available: left out, never guessed", () => {
-    const r = runEngine({ records, business: biz, today, fx: { ...fx, rates: {} } });
+    const r = runEngine({ records, business: { ...biz, convertCurrencies: true }, today, fx: { ...fx, rates: {} } });
     expect(r.evidence.sampleSize.promotions).toBe(0);
   });
 });

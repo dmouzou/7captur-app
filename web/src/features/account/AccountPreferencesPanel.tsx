@@ -54,7 +54,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
   const [workspaceName, setWorkspaceName] = useState(ws.workspaceName || "");
   const [objective, setObjective] = useState(ws.objective || "profitability");
   const [currency, setCurrency] = useState(ws.currency || "USD");
-  const [convertCurrencies, setConvertCurrencies] = useState(ws.convertCurrencies !== false);
+  const [convertCurrencies, setConvertCurrencies] = useState(ws.convertCurrencies === true);
   const [timezone, setTimezone] = useState(ws.timezone || "America/New_York");
   const [country, setCountry] = useState(ws.country || "US");
   const [defaultViewMode, setDefaultViewMode] = useState<"beginner" | "advanced">("beginner");
@@ -96,7 +96,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
         workspaceName: workspaceName.trim() || undefined,
         objective,
         currency,
-        convertCurrencies,
+        ...(convertCurrencies !== (ws.convertCurrencies === true) || ws.convertCurrencies !== null ? { convertCurrencies } : {}),
         timezone,
         country: country.toUpperCase(),
         notificationPrefs: {
@@ -269,7 +269,7 @@ export function AccountPreferencesPanel({ onOpenBilling }: AccountPreferencesPan
               <label style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <input type="checkbox" checked={convertCurrencies} onChange={(e) => setConvertCurrencies(e.target.checked)} />
                 <span>
-                  Convert records in other currencies into {currency} using European Central Bank daily rates. Converted figures show the rate date. If this is off, records in other currencies are left out of comparisons.
+                  Convert records in other currencies into {currency} using European Central Bank daily rates. Converted figures show the rate date. If this is off, records in other currencies are left out of every figure.
                 </span>
               </label>
             </div>

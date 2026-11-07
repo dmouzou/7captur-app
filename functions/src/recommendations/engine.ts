@@ -8,6 +8,14 @@ export const FORMULA_VERSION = "true-roas-v2";
 export const WINDOW_DAYS = 28;
 
 /** Versioned thresholds. Change only with an engine version bump. */
+/** Low-effort ways to tell which promotion brought an order, cheapest first. */
+const CHEAP_TRACKING = [
+  "Add one question at checkout or in chat: \"How did you find us?\" and link the order to the answer.",
+  "Give each promotion its own discount code and link orders that use it.",
+  "Put a different link (with ?utm_campaign=) on each promotion and note which orders follow.",
+  "For today's orders only, link each one to your best guess and mark it as estimated.",
+];
+
 export const THRESHOLDS = {
   /** True ROAS must be at least this many times break-even before a small increase is suggested. */
   scaleAtRatio: 1.25,
@@ -87,7 +95,9 @@ export function runEngine(input: EngineInput): Recommendation {
   const objective: Obj = (OBJECTIVES as readonly string[]).includes(business.objective) ? (business.objective as Obj) : "profitability";
   const warnings: string[] = [];
   const missing: string[] = [];
-  const convertOn = business.convertCurrencies !== false;
+  // Conversion is the owner's choice. Until they answer (undefined) nothing is converted and nothing is guessed.
+  const convertOn = business.convertCurrencies === true;
+  const excludedBy: Record<string, number> = {};
 
   /* ---- currency: convert when allowed and a rate exists, otherwise leave out, never guess ---- */
   const fxRatesUsed: Record<string, number> = {};
@@ -100,6 +110,7 @@ export function runEngine(input: EngineInput): Recommendation {
       if (c) { fxRatesUsed[from] = Math.round(c.rate * 1e6) / 1e6; convertedRecords++; return c.rate; }
     }
     excluded++;
+    excludedBy[from] = (excludedBy[from] ?? 0) + 1;
     return null;
   };
 
@@ -120,7 +131,7 @@ export function runEngine(input: EngineInput): Recommendation {
     const f = rateTo(c.currency);
     return f === null ? [] : [{ ...c, amount: c.amount * f }];
   });
-  if (excluded > 0) warnings.push(`${excluded} record(s) in a currency other than ${cur} were left out because currency conversion is off or no rate is available.`);
+  if (excluded > 0) warnings.push(`${excluded} record(s) in a currency other than ${cur} were left out of every figure. ${business.convertCurrencies === undefined ? "Choose how to handle them (convert, switch your reporting currency, or keep them out)." : "Conversion is off or no rate is available."}`);
   if (convertedRecords > 0 && input.fx) warnings.push(`${convertedRecords} record(s) were converted to ${cur} using ECB reference rates dated ${input.fx.date}.`);
 
   const prov: Record<string, number> = {};
@@ -197,12 +208,16 @@ export function runEngine(input: EngineInput): Recommendation {
   if (!input.processorConnected && !known.disputes) unknownCosts.push("payment disputes");
   const confidence: "high" | "medium" | "low" = unknownCosts.length === 0 ? "high" : unknownCosts.length <= 2 ? "medium" : "low";
 
+  const linksTooThin = attributionCoverage < THRESHOLDS.minAttributionCoverage;
+  const blendedRoas = spend > 0 && netRevenue > 0 ? netRevenue / spend : null;
   const financials = {
     grossSales: r2(grossSales), discounts: r2(discounts), refunds: r2(refunds), returns: r2(total.returns),
     fees: r2(total.fees), disputes: r2(total.disputes), netRevenue: r2(netRevenue),
     attributedRevenue: r2(attributedNet),
-    keptAttributedRevenue: feesVisible ? r2(keptAttributed) : null,
-    trueRoas: trueRoas !== null ? r2(trueRoas) : null,
+    // With too few linked orders the attributed figures are understated, so they are "not measurable yet", never 0.00x.
+    keptAttributedRevenue: feesVisible && !linksTooThin ? r2(keptAttributed) : null,
+    trueRoas: trueRoas !== null && !linksTooThin ? r2(trueRoas) : null,
+    blendedRoas: blendedRoas !== null ? r2(blendedRoas) : null,
     feesVisible,
     ratioToBreakEven: ratio !== null ? r2(ratio) : null,
     costPerOrder: attributedOrders > 0 && spend > 0 ? r2(spend / attributedOrders) : null,
@@ -210,7 +225,7 @@ export function runEngine(input: EngineInput): Recommendation {
     otherVariableCosts: r2(total.fees + total.returns + total.disputes),
     contributionMargin: cm !== null ? r3(cm) : null,
     breakEvenRoas: breakEven !== null ? r2(breakEven) : null,
-    attributedRoas: attributedRoas !== null ? r2(attributedRoas) : null,
+    attributedRoas: attributedRoas !== null && !linksTooThin ? r2(attributedRoas) : null,
     attributionCoverage: r3(attributionCoverage),
     contributionAfterMarketing: contributionAfterMarketing !== null ? r2(contributionAfterMarketing) : null,
     operatingResult: operatingResult !== null ? r2(operatingResult) : null,
@@ -249,6 +264,7 @@ export function runEngine(input: EngineInput): Recommendation {
   const ordersPerDay = confirmedOrders / WINDOW_DAYS;
   const evidence = (m: string[] = missing): Recommendation["evidence"] => ({
     asOf: today, windowStart: start, windowEnd: today, sampleSize, provenance: prov, missing: m, warnings,
+    ...(excluded > 0 ? { currencyMismatch: { reportingCurrency: cur, excluded: excludedBy, decided: business.convertCurrencies !== undefined } } : {}),
     ...(convertedRecords > 0 && input.fx ? { fx: { reportingCurrency: cur, rateDate: input.fx.date, source: "ecb" as const, rates: fxRatesUsed, convertedRecords } } : {}),
   });
   const quality = (mode: Recommendation["mode"], status: "sufficient" | "partial" | "insufficient"): NonNullable<Recommendation["evidence_quality"]> => ({
@@ -448,11 +464,15 @@ export function runEngine(input: EngineInput): Recommendation {
   /* ---- profitability / orders: the money decision ---- */
   const moneyRec = (): Recommendation | null => {
     if (!(spend > 0 && confirmed.length > 0)) return null;
-    const metricName = objective === "orders" ? "Attributed ROAS (before fees)" : feesVisible ? "True ROAS" : "Attributed ROAS (fees unknown)";
-    const metricValue = objective === "orders" ? attributedRoas : trueRoas ?? attributedRoas;
+    const blended = !attributionPass; // too few orders are linked to judge individual promotions
+    const blendedRatio = blendedRoas !== null && breakEven !== null ? blendedRoas / breakEven : null;
+    const metricName = blended ? "Blended return (all net revenue / ad spend)" : objective === "orders" ? "Attributed ROAS (before fees)" : feesVisible ? "True ROAS" : "Attributed ROAS (fees unknown)";
+    const metricValue = blended ? blendedRoas : objective === "orders" ? attributedRoas : trueRoas ?? attributedRoas;
     const metricShown = metricValue !== null ? `${metricValue.toFixed(2)}x` : "n/a";
     const be = breakEven;
-    const rule = objective === "orders"
+    const rule = blended
+      ? "Too few orders are linked to a promotion, so the engine compares all net revenue with all ad spend (blended return) against break-even ROAS. Blended return credits every order to ads, so it can only flatter them: it can justify holding or reducing spend, never scaling."
+      : objective === "orders"
       ? "Order objectives judge attributed ROAS and cost per order against break-even ROAS (1 divided by contribution margin)."
       : "Profit objectives judge True ROAS against break-even ROAS (1 divided by contribution margin). A True ROAS figure appears only when fees are visible.";
     const decisionBasis = { objective, metric: metricName, rule };
@@ -461,9 +481,9 @@ export function runEngine(input: EngineInput): Recommendation {
     const weakest = [...perPromo].sort((a, b) => a.roas - b.roas)[0];
 
     // The metric the ratio uses. Orders objective uses attributed ROAS, profit uses True ROAS.
-    const judged = objective === "orders" ? attributedRoas : trueRoas;
+    const judged = blended ? null : objective === "orders" ? attributedRoas : trueRoas;
     const judgedRatio = judged !== null && be !== null ? judged / be : null;
-    const preFeeRatio = attributedRoas !== null && be !== null ? attributedRoas / be : null;
+    const preFeeRatio = !blended && attributedRoas !== null && be !== null ? attributedRoas / be : null;
 
     type Stance = "scale" | "hold" | "cut";
     let stance: Stance = "hold";
@@ -471,8 +491,10 @@ export function runEngine(input: EngineInput): Recommendation {
 
     if (!volumeGatesPass) {
       block = `Not enough data to change spend: ${failedText(gates.slice(0, 3)).join("; ")}.`;
-    } else if (!attributionPass) {
-      block = `Only ${pct(attributionCoverage)} of net revenue is linked to a post or promotion (${pct(THRESHOLDS.minAttributionCoverage)} needed), so ROAS cannot be trusted to move money.`;
+    } else if (blended) {
+      if (be === null) block = `Only ${pct(attributionCoverage)} of net revenue is linked to a promotion and cost of goods is not entered, so neither the ads nor the break-even point can be judged yet.`;
+      else if (blendedRatio !== null && blendedRatio < THRESHOLDS.cutBelowRatio) stance = "cut"; // below break-even even if ads got credit for every order
+      else block = `Which promotions bring orders is not measurable yet (${pct(attributionCoverage)} of net revenue is linked, ${pct(THRESHOLDS.minAttributionCoverage)} needed), so spend is not increased. Blended return is ${blendedRatio !== null ? `${blendedRatio.toFixed(2)} times break-even` : "unknown"}.`;
     } else if (be === null) {
       block = "Cost of goods is not entered, so break-even ROAS cannot be calculated.";
     } else if (preFeeRatio !== null && preFeeRatio < THRESHOLDS.cutBelowRatio) {
@@ -488,11 +510,15 @@ export function runEngine(input: EngineInput): Recommendation {
     }
     if (objective === "orders" && stance !== "cut" && !feesVisible && stance === "scale") { stance = "hold"; block = "Fees are not visible, so spend cannot be increased on attributed ROAS alone."; }
 
-    const ratioText = judgedRatio !== null ? `${judgedRatio.toFixed(2)} times break-even` : null;
+    const shownRatio = blended ? blendedRatio : judgedRatio;
+    const ratioText = shownRatio !== null ? `${shownRatio.toFixed(2)} times break-even` : null;
     const rationale: string[] = [
       `Over the last ${WINDOW_DAYS} days: net revenue ${money(netRevenue, cur)}, ad spend ${money(spend, cur)}, ${confirmedOrders} confirmed orders, ${pct(attributionCoverage)} of revenue linked to a promotion.`,
     ];
-    if (feesVisible && trueRoas !== null) rationale.push(`True ROAS is ${trueRoas.toFixed(2)}x: attributed net revenue after fees, returns and disputes (${money(keptAttributed, cur)}) divided by ad spend.`);
+    if (blended) {
+      rationale.push(`Which promotions brought orders is not measurable yet: only ${pct(attributionCoverage)} of net revenue is linked to a post or promotion.`);
+      if (blendedRoas !== null) rationale.push(`Blended return is ${blendedRoas.toFixed(2)}x (all net revenue divided by all ad spend). It credits every order to ads, so it is an upper bound, not True ROAS.`);
+    } else if (feesVisible && trueRoas !== null) rationale.push(`True ROAS is ${trueRoas.toFixed(2)}x: attributed net revenue after fees, returns and disputes (${money(keptAttributed, cur)}) divided by ad spend.`);
     else if (attributedRoas !== null) rationale.push(`Attributed ROAS (fees unknown) is ${attributedRoas.toFixed(2)}x. This is before fees, so it is not called True ROAS.`);
     if (be !== null) rationale.push(`Break-even ROAS is ${be.toFixed(2)}x (contribution margin ${pct(cm as number)}).`);
 
@@ -506,7 +532,12 @@ export function runEngine(input: EngineInput): Recommendation {
       : stance === "cut" ? "Pausing too quickly can hide a slow-converting promotion. Change one promotion at a time."
       : "Holding spend means slower growth if the promotions are in fact working well.";
 
-    if (stance === "cut") {
+    if (stance === "cut" && blended) {
+      kind = "cut";
+      const step = Math.round(THRESHOLDS.maxSuggestedIncrease * 100);
+      action = `Reduce total ad spend by about ${step}% and review. Even if every order came from ads, blended return (${blendedRoas!.toFixed(2)}x) is below break-even (${be!.toFixed(2)}x).`;
+      stop = [`Restore spend if total orders fall by more than the spend saved is worth.`];
+    } else if (stance === "cut") {
       kind = "cut";
       const target = weakest && perPromo.length > 1 ? `the ${label(weakest.p)}, the weakest (${weakest.roas.toFixed(2)}x attributed)` : "overall promotion spend";
       action = `Reduce spend: cut ${target}. ${judgedRatio !== null ? `Return is ${ratioText}.` : `Even before fees, attributed ROAS (${metricShown}) is below break-even (${be!.toFixed(2)}x).`}`;
@@ -539,6 +570,7 @@ export function runEngine(input: EngineInput): Recommendation {
     // Alternatives: computed from the same numbers, never hard-coded.
     const why = (s: Stance): string => {
       if (block && s !== "hold") return block;
+      if (blended && s === "scale") return `Scaling needs real evidence of which ads bring orders. Only ${pct(attributionCoverage)} of net revenue is linked.`;
       if (s === "scale") {
         if (!feesVisible) return "Fees are not visible, so scaling is blocked and no True ROAS figure is claimed.";
         return `Return is ${ratioText ?? "unknown"}, below the ${THRESHOLDS.scaleAtRatio.toFixed(2)}x needed to scale.`;
@@ -559,11 +591,14 @@ export function runEngine(input: EngineInput): Recommendation {
     ];
 
     const wwc: string[] = [];
-    const roasLabel = objective !== "orders" && feesVisible ? "True ROAS" : objective === "orders" ? "Attributed ROAS" : "Attributed ROAS (fees unknown)";
+    const roasLabel = blended ? "Blended return" : objective !== "orders" && feesVisible ? "True ROAS" : objective === "orders" ? "Attributed ROAS" : "Attributed ROAS (fees unknown)";
     if (be !== null) wwc.push(`${roasLabel} moving below break-even (${be.toFixed(2)}x, now ${metricShown}) would call for a cut.`);
-    if (be !== null) wwc.push(`Return reaching ${(be * THRESHOLDS.scaleAtRatio).toFixed(2)}x (${THRESHOLDS.scaleAtRatio.toFixed(2)} times break-even) with fees visible would allow a small increase.`);
+    if (be !== null && !blended) wwc.push(`Return reaching ${(be * THRESHOLDS.scaleAtRatio).toFixed(2)}x (${THRESHOLDS.scaleAtRatio.toFixed(2)} times break-even) with fees visible would allow a small increase.`);
     if (unknownCosts.length) wwc.push(`Entering ${unknownCosts.join(", ")} would change break-even and return.`);
-    if (!attributionPass) wwc.push(`Linking more orders (now ${pct(attributionCoverage)}, ${pct(THRESHOLDS.minAttributionCoverage)} needed).`);
+    if (!attributionPass) {
+      wwc.push(`Linking more orders (now ${pct(attributionCoverage)}, ${pct(THRESHOLDS.minAttributionCoverage)} needed) would let the engine judge each promotion and consider scaling.`);
+      wwc.push(...CHEAP_TRACKING);
+    }
     if (!volumeGatesPass) wwc.push(`Reaching the data minimums: ${failedText(gates.slice(0, 3)).join("; ")}.`);
 
     const metrics: NonNullable<Recommendation["metrics"]> = [
@@ -582,7 +617,7 @@ export function runEngine(input: EngineInput): Recommendation {
       primary_action: { type, description: action },
       rationale, unknowns, risk,
       doNotActIf: "A cost you have not entered is large, or the period had an unusual sale or stock problem.",
-      nextMeasurement: "Keep linking orders to promotions and re-check return against break-even at the review date.",
+      nextMeasurement: !attributionPass ? `Pick the cheapest tracking step: ${CHEAP_TRACKING[0].replace(/\.$/, "")}. Then re-check at the review date.` : "Keep linking orders to promotions and re-check return against break-even at the review date.",
       evidence: evidence(),
       evidence_quality: quality(volumeGatesPass ? "optimize" : "improve", sufficient ? "sufficient" : "partial"),
       decisionBasis, metrics, financials, alternatives,
