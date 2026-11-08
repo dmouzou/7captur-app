@@ -81,7 +81,12 @@ describe("engine rules-v4: basics", () => {
     const records = {
       ...empty(),
       promotions: Array.from({ length: 8 }, (_, i) => promo(`p${i}`, { startDate: day(i), spend: 100 })),
-      sales: [sale("s1", { promotionId: "p0", amount: 500 }), sale("s2", { promotionId: "p1", amount: 100, date: day(13) }), sale("s3", { date: day(14) }), sale("s4", { date: day(15) }), sale("s5", { date: day(16) }), sale("s6", { date: day(17) }), sale("s7", { date: day(18) }), sale("s8", { date: day(19) })],
+      // Each promotion needs 10 linked orders before it can be named best or worst.
+      sales: [
+        ...Array.from({ length: 12 }, (_, i) => sale(`a${i}`, { promotionId: "p0", amount: 50, date: day(i) })),
+        ...Array.from({ length: 10 }, (_, i) => sale(`b${i}`, { promotionId: "p1", amount: 10, date: day(i) })),
+        ...Array.from({ length: 6 }, (_, i) => sale(`c${i}`, { date: day(14 + i) })),
+      ],
     };
     const r = runEngine({ records, business: { ...biz, objective: "reduced_waste" }, today });
     expect(r.action).toMatch(/Pause or cut/);
@@ -297,5 +302,100 @@ describe("engine rules-v4: review plan and honesty", () => {
     const records = { ...empty(), posts: [post("a", { provenance: "screenshot_extracted" }), post("b", { provenance: "manual" })] };
     const r = runEngine({ records, business: { ...biz, objective: "content_testing" }, today });
     expect(r.evidence.provenance).toEqual({ manual: 2 });
+  });
+});
+
+describe("engine rules-v4: loophole regressions (V3 review)", () => {
+  const run = (records: unknown, b: Partial<typeof biz> & { convertCurrencies?: boolean } = {}) => runEngine({ records: records as never, business: { ...biz, ...b }, today });
+  const costs = goldenCosts();
+
+  it("B: orders linked only to an organic post (no promotion promotes it) are not ad sales", () => {
+    const v = volume();
+    const r = run({ ...v, costs, sales: v.sales.map((s) => ({ ...s, promotionId: undefined, postId: "organic-1" })) });
+    expect(r.financials!.attributedRevenue).toBe(0);
+    expect(r.action).not.toMatch(/Increase spend/);
+    expect(r.financials!.trueRoas).toBeNull();
+  });
+
+  it("C: a link to a promotion that does not exist counts for nothing", () => {
+    const v = volume();
+    const r = run({ ...v, costs, sales: v.sales.map((s) => ({ ...s, promotionId: "deleted-promo" })) });
+    expect(r.financials!.attributedRevenue).toBe(0);
+    expect(r.action).not.toMatch(/Increase spend/);
+  });
+
+  it("E: one huge linked order cannot carry the attribution gate", () => {
+    const v = volume();
+    const sales = v.sales.map((s, i) => (i === 0 ? { ...s, amount: 20000, promotionId: "p0" } : { ...s, promotionId: undefined }));
+    const r = run({ ...v, costs, sales });
+    expect(r.financials!.attributionCoverage!).toBeLessThan(0.1);
+    expect(r.action).not.toMatch(/Increase spend/);
+  });
+
+  it("I: spend left out because of an unchosen currency blocks scaling", () => {
+    const v = golden();
+    const r = run({ ...v, promotions: [...v.promotions, promo("usd-less", { startDate: day(3), spend: 4000, currency: "INR" })] } as never);
+    expect(r.action).not.toMatch(/Increase spend/);
+    expect(r.evidence.currencyMismatch).toMatchObject({ decided: false });
+  });
+
+  it("D3: linked orders look below break-even but the blended upper bound is above it: hold, never cut", () => {
+    const v = volume({ spendEach: 1000 });
+    // 13 of 20 orders linked (61% of revenue). Linked return 0.81x is below break-even 1.10x, blended 1.34x is above it.
+    const sales = v.sales.map((s, i) => (i < 13 ? { ...s, amount: 500, promotionId: `p${i % 8}` } : { ...s, amount: 600, promotionId: undefined }));
+    const r = run({ ...v, costs: [cost("cogs", { category: "cogs", amount: 1000 })], sales });
+    expect(r.financials!.attributionCoverage!).toBeGreaterThanOrEqual(THRESHOLDS.minAttributionCoverage);
+    expect(r.action).not.toMatch(/Reduce spend|Pause or cut/);
+    expect(r.action).toMatch(/Hold spend/);
+  });
+
+  it("A: a confirmed order carrying a refund amount is reduced by the refund", () => {
+    const v = volume();
+    const plain = run({ ...v, costs });
+    const refunded = run({ ...v, costs, sales: v.sales.map((s) => ({ ...s, refundAmount: 100 })) });
+    expect(refunded.financials!.netRevenue).toBeCloseTo(plain.financials!.netRevenue - 2000, 1);
+  });
+
+  it("L: a refund larger than the order is capped at the order", () => {
+    const v = volume();
+    const r = run({ ...v, costs, sales: v.sales.map((s) => ({ ...s, refundAmount: 99999 })) });
+    expect(r.financials!.netRevenue).toBeGreaterThanOrEqual(0);
+  });
+
+  it("H: the same order number from two sources is counted once", () => {
+    const v = volume();
+    const dup = v.sales.map((s, i) => ({ ...s, orderNumber: `#${1000 + i}`, provenance: "connected" }));
+    const both = [...dup, ...dup.map((s) => ({ ...s, id: `${s.id}-csv`, provenance: "imported" }))];
+    const once = run({ ...v, costs, sales: dup });
+    const twice = run({ ...v, costs, sales: both });
+    expect(twice.financials!.netRevenue).toBe(once.financials!.netRevenue);
+    expect(twice.evidence.warnings.join(" ")).toMatch(/counted once/);
+  });
+
+  it("N: a brand-new promotion with no orders is never named the cut target", () => {
+    const v = volume({ spendEach: 2000 });
+    const r = run({ ...v, costs, promotions: [...v.promotions, promo("new", { startDate: day(19), spend: 50 })] });
+    expect(r.action).not.toMatch(/promotion from 2026-10-21/);
+    expect(r.action).not.toMatch(new RegExp(`promotion from ${day(19)}`));
+  });
+
+  it("O2: two promotions promoting one post split its orders instead of crediting the later one", () => {
+    const base = { ...empty(), promotions: [promo("a", { postId: "x", spend: 100 }), promo("b", { postId: "x", spend: 100 })], sales: Array.from({ length: 20 }, (_, i) => sale(`s${i}`, { postId: "x", amount: 100 })) };
+    const r = run({ ...base, costs });
+    expect(r.financials!.attributedRevenue).toBe(2000);
+  });
+
+  it("J: an awareness goal with no reach recorded asks for reach, never for more spend", () => {
+    const v = volume();
+    const r = run({ ...v, costs }, { objective: "awareness" });
+    expect(r.action).toMatch(/Record reach/);
+    expect(r.action).not.toMatch(/Increase|Reduce|Cut|Pause/);
+  });
+
+  it("F: a percentage cost only applies to orders inside its dates", () => {
+    const v = volume();
+    const all = run({ ...v, costs: [cost("f", { category: "fees", kind: "percentage", amount: 10, effectiveDate: "2026-10-02" })] });
+    const late = run({ ...v, costs: [cost("f", { category: "fees", kind: "percentage", amount: 10, effectiveDate: day(10) })] });
+    expect(late.financials!.fees).toBeLessThan(all.financials!.fees);
   });
 });

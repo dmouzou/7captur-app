@@ -24,7 +24,7 @@ function qualityOf(rec: Recommendation): EvidenceQuality {
 }
 
 const isHold = (rec: Recommendation) => rec.primary_action?.type === "hold";
-const isCut = (rec: Recommendation) => rec.category === "budget" && rec.primary_action?.type === "budget_adjustment" && /^Reduce spend|^Pause or cut/.test(rec.action);
+const isCut = (rec: Recommendation) => rec.category === "budget" && rec.primary_action?.type === "budget_adjustment" && /^Reduce (total ad )?spend|^Pause or cut/.test(rec.action);
 const ratioOf = (rec: Recommendation) => rec.financials?.ratioToBreakEven ?? null;
 
 function queueFor(q: EvidenceQuality, rec: Recommendation): QueueStatus {

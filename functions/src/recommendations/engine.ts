@@ -26,6 +26,8 @@ export const THRESHOLDS = {
   minDaysWithRecords: 14,
   minDaysWithSpend: 7,
   minConfirmedOrders: 20,
+  /** A promotion needs this many linked orders (or enquiries, when no orders exist) before it can be named a winner or a cut target. */
+  minOrdersPerPromotion: 10,
 };
 
 type WithId<T> = T & { id: string; provenance?: string };
@@ -118,13 +120,32 @@ export function runEngine(input: EngineInput): Recommendation {
   const posts = input.records.posts.filter((p) => inWin(p.publishedAt));
   const leads = input.records.leads.filter((l) => inWin(l.date));
 
-  const promos = input.records.promotions.filter((p) => inWin(p.startDate)).flatMap((p) => {
+  const promosInWindow = input.records.promotions.filter((p) => inWin(p.startDate));
+  const promos = promosInWindow.flatMap((p) => {
     const f = rateTo(p.currency);
     return f === null ? [] : [{ ...p, spend: p.spend * f }];
   });
-  const sales = input.records.sales.filter((s) => inWin(s.date)).flatMap((s) => {
-    const f = rateTo(s.currency);
-    return f === null ? [] : [{ ...s, amount: s.amount * f, refundAmount: (s.refundAmount ?? 0) * f, discountAmount: (s.discountAmount ?? 0) * f }];
+  const excludedPromos = promosInWindow.length - promos.length;
+  // The same order can arrive twice (a store sync and a CSV). One order number is one order; keep the connected copy.
+  const provRank = (p?: string) => (p === "connected" ? 0 : p === "imported" ? 1 : 2);
+  const bestByOrder = new Map<string, WithId<SaleRecord>>();
+  const noOrderNo: WithId<SaleRecord>[] = [];
+  for (const s of input.records.sales.filter((x) => inWin(x.date))) {
+    const k = (s.orderNumber ?? "").trim().toLowerCase().replace(/^#/, "");
+    if (!k) { noOrderNo.push(s); continue; }
+    const cur0 = bestByOrder.get(k);
+    if (!cur0 || provRank(s.provenance) < provRank(cur0.provenance)) bestByOrder.set(k, s);
+  }
+  const dedupedSales = [...bestByOrder.values(), ...noOrderNo];
+  const duplicateOrders = input.records.sales.filter((x) => inWin(x.date)).length - dedupedSales.length;
+  if (duplicateOrders > 0) warnings.push(`${duplicateOrders} order(s) appeared more than once with the same order number (for example from a store connection and a file). Each order is counted once.`);
+  const sales = dedupedSales.flatMap((s0) => {
+    const f = rateTo(s0.currency);
+    if (f === null) return [];
+    // A refund larger than the order cannot happen. A confirmed order with a refund on it is a refunded order.
+    const amount0 = s0.amount, refund0 = Math.min(s0.refundAmount ?? 0, amount0);
+    const status = s0.status === "confirmed" && refund0 > 0 ? (refund0 >= amount0 ? "refunded" : "partially_refunded") : s0.status;
+    return [{ ...s0, status, amount: amount0 * f, refundAmount: refund0 * f, discountAmount: (s0.discountAmount ?? 0) * f }];
   });
   const costsIn = input.records.costs.flatMap((c) => {
     if (c.kind === "percentage") return [c];
@@ -150,6 +171,8 @@ export function runEngine(input: EngineInput): Recommendation {
   const netRevenue = grossSales - discounts - refunds;
   const spend = sum(promos.map((p) => p.spend));
 
+  /** Net revenue of one order: nothing when fully refunded, the amount less the refund when partly refunded. */
+  const netSale = (s: (typeof sales)[number]) => (s.status === "refunded" ? 0 : s.amount - (s.status === "partially_refunded" ? s.refundAmount : 0));
   const costActive = (c: (typeof costsIn)[number]) => {
     if (c.effectiveDate > today) return false;
     if (c.endDate && c.endDate < start) return false;
@@ -165,7 +188,7 @@ export function runEngine(input: EngineInput): Recommendation {
     const hi = c.endDate && c.endDate < today ? c.endDate : today;
     const overlap = Math.max(0, daysBetween(lo, hi) + 1);
     let amt: number;
-    if (c.kind === "percentage") amt = (c.amount / 100) * netRevenue;
+    if (c.kind === "percentage") amt = (c.amount / 100) * sum(counted.filter((s) => s.date >= lo && s.date <= hi).map(netSale));
     else if (c.scope === "per_order") amt = c.amount * counted.filter((s) => s.date >= lo && s.date <= hi).length;
     else if (c.scope === "per_unit") amt = c.amount * sum(counted.filter((s) => s.date >= lo && s.date <= hi).map((s) => s.quantity ?? 1));
     else if (c.frequency === "monthly") amt = (c.amount * overlap) / 30.4375;
@@ -177,14 +200,24 @@ export function runEngine(input: EngineInput): Recommendation {
   if (legacy > 0) warnings.push(`${legacy} cost entr${legacy === 1 ? "y has" : "ies have"} no frequency, so each is counted once on its date. Set monthly, yearly or per order for a fairer result.`);
 
   /* ---- attribution ---- */
-  const promoOfPost = new Map<string, string>();
-  for (const p of promos) if (p.postId) promoOfPost.set(p.postId, p.id);
-  const promoOf = (s: (typeof sales)[number]) => s.promotionId ?? (s.postId ? promoOfPost.get(s.postId) : undefined);
-  const linked = confirmed.filter((s) => s.postId || s.promotionId);
+  // A sale counts as linked only when its link leads to a promotion that is in the window. A link to an organic post, a
+  // deleted promotion or one outside the window proves nothing about ad return. If two promotions promote the same post,
+  // the order is split between them.
+  const promoIds = new Set(promos.map((p) => p.id));
+  const promosOfPost = new Map<string, string[]>();
+  for (const p of promos) if (p.postId) promosOfPost.set(p.postId, [...(promosOfPost.get(p.postId) ?? []), p.id]);
+  const sharesOf = (s: (typeof sales)[number]): [string, number][] => {
+    if (s.promotionId && promoIds.has(s.promotionId)) return [[s.promotionId, 1]];
+    const ids = s.postId ? promosOfPost.get(s.postId) : undefined;
+    return ids && ids.length ? ids.map((id) => [id, 1 / ids.length] as [string, number]) : [];
+  };
+  const linked = confirmed.filter((s) => sharesOf(s).length > 0);
   const netOf = (s: (typeof sales)[number]) => s.amount - (s.status === "partially_refunded" ? s.refundAmount : 0);
   const attributedNet = sum(linked.map(netOf));
-  const attributionCoverage = netRevenue > 0 ? attributedNet / netRevenue : 0;
   const share = netRevenue > 0 ? attributedNet / netRevenue : 0;
+  // Coverage must hold by revenue AND by order count, so one large linked order cannot carry the gate.
+  const orderShare = confirmed.length > 0 ? linked.length / confirmed.length : 0;
+  const attributionCoverage = Math.min(share, orderShare);
 
   /* ---- financial components ---- */
   const feesVisible = Boolean(input.processorConnected) || known.fees;
@@ -195,7 +228,7 @@ export function runEngine(input: EngineInput): Recommendation {
   const cogsKnown = known.cogs;
   const cm = cogsKnown && netRevenue > 0 ? (netRevenue - total.cogs - total.shipping) / netRevenue : null;
   const breakEven = cm !== null && cm > 0 ? 1 / cm : null;
-  const ratio = trueRoas !== null && breakEven !== null ? trueRoas / breakEven : null;
+  const ratio = trueRoas !== null && breakEven !== null && attributionCoverage >= THRESHOLDS.minAttributionCoverage ? trueRoas / breakEven : null;
   const contributionAfterMarketing = cm === null ? null : netRevenue - total.cogs - total.shipping - deductions - spend;
   const operatingResult = contributionAfterMarketing === null ? null : contributionAfterMarketing - total.other;
   const attributedOrders = linked.length;
@@ -275,17 +308,21 @@ export function runEngine(input: EngineInput): Recommendation {
 
   /* ---- per-promotion view (used by several objectives) ---- */
   const perPromo = promos.filter((p) => p.spend > 0).map((p) => {
-    const mine = linked.filter((s) => promoOf(s) === p.id);
-    const revenue = sum(mine.map(netOf));
+    const mine = linked.flatMap((s) => sharesOf(s).filter(([id]) => id === p.id).map(([, w]) => ({ s, w })));
+    const revenue = sum(mine.map((m) => netOf(m.s) * m.w));
+    const orderCount = sum(mine.map((m) => m.w));
     const enquiries = leads.filter((l) => l.promotionId === p.id);
     const qualified = enquiries.filter((l) => l.qualified).length;
     return {
-      p, revenue, orders: mine.length, roas: revenue / p.spend, enquiries: enquiries.length, qualified,
+      p, revenue, orders: orderCount, roas: revenue / p.spend, enquiries: enquiries.length, qualified,
       cpe: enquiries.length ? p.spend / enquiries.length : null,
       cpq: qualified ? p.spend / qualified : null,
       reach: p.reach ?? 0,
     };
   });
+  // A promotion can be named best or worst only with enough evidence behind it.
+  const anyPromoOrders = perPromo.some((x) => x.orders > 0);
+  const eligible = (x: (typeof perPromo)[number]) => (anyPromoOrders ? x.orders : x.enquiries) >= THRESHOLDS.minOrdersPerPromotion;
   const label = (p: { platform: string; startDate: string }) => `${p.platform} promotion from ${p.startDate}`;
 
   /* ---- shared builders ---- */
@@ -428,15 +465,14 @@ export function runEngine(input: EngineInput): Recommendation {
 
   /* ---- reduced_waste: cut the weakest spend ---- */
   const wasteRec = (): Recommendation | null => {
-    if (perPromo.length < 2) return null;
-    const anyOutcome = perPromo.some((x) => x.orders > 0 || x.qualified > 0 || x.enquiries > 0);
-    if (!anyOutcome) return null;
-    const score = (x: (typeof perPromo)[number]) => (perPromo.some((y) => y.orders > 0) ? x.roas : x.enquiries / x.p.spend);
-    const sorted = [...perPromo].sort((a, b) => score(a) - score(b));
+    const pool = perPromo.filter(eligible);
+    if (pool.length < 2) return null;
+    const byOrders = anyPromoOrders;
+    const score = (x: (typeof perPromo)[number]) => (byOrders ? x.roas : x.enquiries / x.p.spend);
+    const sorted = [...pool].sort((a, b) => score(a) - score(b));
     const weakest = sorted[0], strongest = sorted[sorted.length - 1];
-    const byOrders = perPromo.some((y) => y.orders > 0);
     const gatesOk = sampleDays >= THRESHOLDS.minDaysWithRecords && spendDays >= THRESHOLDS.minDaysWithSpend;
-    const weakText = byOrders ? `${weakest.orders} linked order(s), ${money(weakest.revenue, cur)} attributed on ${money(weakest.p.spend, cur)} spend` : `${weakest.enquiries} enquiries on ${money(weakest.p.spend, cur)} spend`;
+    const weakText = byOrders ? `${Math.round(weakest.orders)} linked order(s), ${money(weakest.revenue, cur)} attributed on ${money(weakest.p.spend, cur)} spend` : `${weakest.enquiries} enquiries on ${money(weakest.p.spend, cur)} spend`;
     const action = gatesOk
       ? `Pause or cut the ${label(weakest.p)}, the weakest spend (${weakText}). Change only this one.`
       : `Hold all spend for now. The ${label(weakest.p)} looks weakest (${weakText}), but there are not enough days of records to cut it.`;
@@ -477,8 +513,9 @@ export function runEngine(input: EngineInput): Recommendation {
       : "Profit objectives judge True ROAS against break-even ROAS (1 divided by contribution margin). A True ROAS figure appears only when fees are visible.";
     const decisionBasis = { objective, metric: metricName, rule };
 
-    const strongest = [...perPromo].filter((x) => x.revenue > 0).sort((a, b) => b.roas - a.roas)[0];
-    const weakest = [...perPromo].sort((a, b) => a.roas - b.roas)[0];
+    const pool = perPromo.filter(eligible);
+    const strongest = [...pool].filter((x) => x.revenue > 0).sort((a, b) => b.roas - a.roas)[0];
+    const weakest = [...pool].sort((a, b) => a.roas - b.roas)[0];
 
     // The metric the ratio uses. Orders objective uses attributed ROAS, profit uses True ROAS.
     const judged = blended ? null : objective === "orders" ? attributedRoas : trueRoas;
@@ -498,11 +535,15 @@ export function runEngine(input: EngineInput): Recommendation {
     } else if (be === null) {
       block = "Cost of goods is not entered, so break-even ROAS cannot be calculated.";
     } else if (preFeeRatio !== null && preFeeRatio < THRESHOLDS.cutBelowRatio) {
-      stance = "cut"; // below break-even even before fees, so fees can only make it worse
+      // Below break-even even before fees. Unlinked revenue may still come from ads, so a cut also needs the blended
+      // upper bound (all revenue credited to ads) to be below break-even. With full coverage the two are equal.
+      if (blendedRatio !== null && blendedRatio < THRESHOLDS.cutBelowRatio) stance = "cut";
+      else block = `Linked orders alone look below break-even, but ${pct(1 - attributionCoverage)} of net revenue is not linked to a promotion and may come from ads, so spend is not cut on this evidence.`;
     } else if (judgedRatio === null) {
       block = "Fees are not visible, so spend cannot be increased and no True ROAS figure is claimed.";
     } else if (objective !== "orders" && judgedRatio < THRESHOLDS.cutBelowRatio) {
-      stance = "cut";
+      if (blendedRatio !== null && blendedRatio < THRESHOLDS.cutBelowRatio) stance = "cut";
+      else block = `True ROAS on linked orders is below break-even, but ${pct(1 - attributionCoverage)} of net revenue is not linked to a promotion and may come from ads, so spend is not cut on this evidence.`;
     } else if (judgedRatio >= THRESHOLDS.scaleAtRatio && feesVisible) {
       stance = "scale";
     } else {
@@ -510,6 +551,10 @@ export function runEngine(input: EngineInput): Recommendation {
     }
     if (objective === "orders" && stance !== "cut" && !feesVisible && stance === "scale") { stance = "hold"; block = "Fees are not visible, so spend cannot be increased on attributed ROAS alone."; }
 
+    if (stance === "scale" && excludedPromos > 0) {
+      stance = "hold";
+      block = `${excludedPromos} promotion record(s) in another currency are left out, so ad spend may be understated and a return above break-even cannot be trusted. Choose how to handle them first.`;
+    }
     const shownRatio = blended ? blendedRatio : judgedRatio;
     const ratioText = shownRatio !== null ? `${shownRatio.toFixed(2)} times break-even` : null;
     const rationale: string[] = [
@@ -539,11 +584,11 @@ export function runEngine(input: EngineInput): Recommendation {
       stop = [`Restore spend if total orders fall by more than the spend saved is worth.`];
     } else if (stance === "cut") {
       kind = "cut";
-      const target = weakest && perPromo.length > 1 ? `the ${label(weakest.p)}, the weakest (${weakest.roas.toFixed(2)}x attributed)` : "overall promotion spend";
+      const target = weakest && pool.length > 1 ? `the ${label(weakest.p)}, the weakest (${weakest.roas.toFixed(2)}x attributed)` : "overall promotion spend";
       action = `Reduce spend: cut ${target}. ${judgedRatio !== null ? `Return is ${ratioText}.` : `Even before fees, attributed ROAS (${metricShown}) is below break-even (${be!.toFixed(2)}x).`}`;
       stop = [`Restore spend if orders fall by more than the spend saved is worth.`];
     } else if (stance === "scale") {
-      const target = strongest && perPromo.length > 1 ? `the ${label(strongest.p)} (${strongest.roas.toFixed(2)}x attributed)` : "one promotion";
+      const target = strongest && pool.length > 1 ? `the ${label(strongest.p)} (${strongest.roas.toFixed(2)}x attributed)` : "one promotion";
       const inc = Math.round(THRESHOLDS.maxSuggestedIncrease * 100);
       action = `Increase spend on ${target} by no more than ${inc}%, then review. Return is ${ratioText}.`;
       stop = [`Revert if ${objective === "orders" ? "attributed ROAS" : "True ROAS"} over the test falls below break-even (${be!.toFixed(2)}x).`];
@@ -646,7 +691,18 @@ export function runEngine(input: EngineInput): Recommendation {
   else if (objective === "qualified_enquiries") rec = enquiryRec();
   else rec = moneyRec();
 
-  // Fallbacks when the objective's own evidence is missing.
+  // Fallbacks when the objective's own evidence is missing. A non-money objective never falls into spend advice.
+  const moneyObjective = objective === "orders" || objective === "profitability";
+  if (!rec && !moneyObjective) {
+    const ask: Record<string, [string, string]> = {
+      awareness: ["Record reach for each promotion, next to its spend.", "Awareness is judged on cost per 1,000 people reached, and no promotion has reach recorded."],
+      qualified_enquiries: ["Record each enquiry with the promotion that brought it, and mark which ones are qualified.", "Qualified-enquiry goals are judged on cost per qualified enquiry, and no promotion has linked enquiries."],
+      reduced_waste: ["Record spend per promotion, and link the orders or enquiries each one brought.", "Reducing waste needs at least two promotions with enough linked orders or enquiries to compare."],
+      content_testing: ["Add reach and likes for at least two recent posts.", "Content testing compares engagement per reach, and fewer than two posts have reach recorded."],
+    };
+    const [a, why] = ask[objective] ?? ask.content_testing;
+    return { ...measurement(a, [why], ["Which option is working, because the data for your goal is not there yet."], "explore"), evidence: evidence() };
+  }
   rec ??= moneyRec() ?? enquiryRec() ?? (hasSignal ? trackingRec() : null) ?? contentRec();
   if (rec) return rec;
 
