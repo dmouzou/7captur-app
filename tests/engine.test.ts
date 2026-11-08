@@ -399,3 +399,11 @@ describe("engine rules-v4: loophole regressions (V3 review)", () => {
     expect(late.financials!.fees).toBeLessThan(all.financials!.fees);
   });
 });
+
+describe("freshness gate", () => {
+  it("warns and blocks scale when a connected source is stale", () => {
+    const rec = runEngine({ records: golden(), business: biz, today, processorConnected: true, staleSources: ["shopify"] });
+    expect(rec.evidence.warnings.join(" ")).toMatch(/48 hours/);
+    expect(rec.action).not.toMatch(/^Increase/);
+  });
+});

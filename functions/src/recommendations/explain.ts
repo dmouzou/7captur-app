@@ -75,7 +75,7 @@ export async function explainWithAI(
       const res = await f(API_URL, {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model, max_tokens: 300, system, messages: [{ role: "user", content: user }] }),
+        body: JSON.stringify({ model, max_tokens: 200, system, messages: [{ role: "user", content: user }] }),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 8000),
       });
       if (res.status === 429 || res.status >= 500) { await new Promise((r) => setTimeout(r, 400 * (attempt + 1))); continue; }

@@ -138,17 +138,23 @@ export function computeSuggestedOutcome(
   const baseDays = Math.max(1, daysBetween(baseStart, baseEnd));
   const newDays = Math.max(1, daysBetween(newStart, newEnd));
 
-  const baseSales = records.sales.filter((s) => s.date >= baseStart && s.date <= baseEnd && s.currency === currency && s.status !== "refunded");
-  const newSales = records.sales.filter((s) => s.date > newStart && s.date <= newEnd && s.currency === currency && s.status !== "refunded");
+  const net = (s: { amount: number; refundAmount?: number }) => s.amount - Math.min(s.amount, s.refundAmount ?? 0);
+  const inBase = (d: string) => d >= baseStart && d <= baseEnd;
+  const inNew = (d: string) => d > newStart && d <= newEnd;
+  const live = (s: { currency: string; status: string }) => s.currency === currency && s.status !== "refunded";
 
-  const baseRev = baseSales.reduce((sum, s) => sum + s.amount, 0);
-  const newRev = newSales.reduce((sum, s) => sum + s.amount, 0);
+  const baseRev = records.sales.filter((s) => live(s) && inBase(s.date)).reduce((sum, s) => sum + net(s), 0);
+  const newRev = records.sales.filter((s) => live(s) && inNew(s.date)).reduce((sum, s) => sum + net(s), 0);
+  const baseSpend = records.promotions.filter((p) => p.currency === currency && inBase(p.startDate)).reduce((sum, p) => sum + p.spend, 0);
+  const newSpend = records.promotions.filter((p) => p.currency === currency && inNew(p.startDate)).reduce((sum, p) => sum + p.spend, 0);
 
   if (baseRev > 0 || newRev > 0) {
-    const baseRevDaily = baseRev / baseDays;
-    const newRevDaily = newRev / newDays;
-    if (newRevDaily > baseRevDaily * 1.05) return "better";
-    if (newRevDaily < baseRevDaily * 0.95) return "worse";
+    // Compare what is left after ad spend, per day. More revenue bought with more spend is not "better".
+    const baseDaily = (baseRev - baseSpend) / baseDays;
+    const newDaily = (newRev - newSpend) / newDays;
+    const tol = Math.max(Math.abs(baseDaily), Math.abs(newDaily)) * 0.05;
+    if (newDaily > baseDaily + tol) return "better";
+    if (newDaily < baseDaily - tol) return "worse";
     return "as_expected";
   }
 

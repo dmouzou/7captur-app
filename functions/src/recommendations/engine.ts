@@ -45,6 +45,8 @@ export interface EngineInput {
   fx?: FxRates | null;
   /** True when Stripe or PayPal is connected, so processor fees are visible. */
   processorConnected?: boolean;
+  /** Connected sources whose last successful sync is older than 48 hours (or never). Computed by the caller. */
+  staleSources?: string[];
 }
 
 export function addDays(d: string, n: number): string {
@@ -239,6 +241,8 @@ export function runEngine(input: EngineInput): Recommendation {
   if (!feesVisible) unknownCosts.push("payment fees");
   if (!known.returns) unknownCosts.push("return costs");
   if (!input.processorConnected && !known.disputes) unknownCosts.push("payment disputes");
+  const staleSources = input.staleSources ?? [];
+  if (staleSources.length) warnings.push(`${staleSources.join(", ")} has not synced in over 48 hours. Figures may miss recent activity.`);
   const confidence: "high" | "medium" | "low" = unknownCosts.length === 0 ? "high" : unknownCosts.length <= 2 ? "medium" : "low";
 
   const linksTooThin = attributionCoverage < THRESHOLDS.minAttributionCoverage;
@@ -551,6 +555,10 @@ export function runEngine(input: EngineInput): Recommendation {
     }
     if (objective === "orders" && stance !== "cut" && !feesVisible && stance === "scale") { stance = "hold"; block = "Fees are not visible, so spend cannot be increased on attributed ROAS alone."; }
 
+    if (stance === "scale" && staleSources.length > 0) {
+      stance = "hold";
+      block = `${staleSources.join(", ")} has not synced in over 48 hours, so recent sales or spend may be missing. Reconnect or re-sync first.`;
+    }
     if (stance === "scale" && excludedPromos > 0) {
       stance = "hold";
       block = `${excludedPromos} promotion record(s) in another currency are left out, so ad spend may be understated and a return above break-even cannot be trusted. Choose how to handle them first.`;
@@ -656,7 +664,7 @@ export function runEngine(input: EngineInput): Recommendation {
       ...(be !== null ? [{ name: "Break-even ROAS", value: `${be.toFixed(2)}x`, definition_version: "v4" }] : []),
     ];
 
-    const sufficient = volumeGatesPass && attributionPass && be !== null && feesVisible;
+    const sufficient = volumeGatesPass && attributionPass && be !== null && feesVisible && staleSources.length === 0;
     return {
       ...base, category, mode: volumeGatesPass ? "optimize" : "improve", action,
       primary_action: { type, description: action },

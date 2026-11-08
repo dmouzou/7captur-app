@@ -60,17 +60,21 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
   await requireMember(db, workspaceId, uid, true);
 
   const recRef = db.doc(`workspaces/${workspaceId}/recommendations/${requestId}`);
-  if ((await recRef.get()).exists) return { recommendationId: requestId, duplicate: true };
-
-  const biz = await db.doc(`workspaces/${workspaceId}/businesses/${businessId}`).get();
-  const ws = await db.doc(`workspaces/${workspaceId}`).get();
+  const [existing, biz, ws] = await Promise.all([
+    recRef.get(),
+    db.doc(`workspaces/${workspaceId}/businesses/${businessId}`).get(),
+    db.doc(`workspaces/${workspaceId}`).get(),
+  ]);
+  if (existing.exists) return { recommendationId: requestId, duplicate: true };
   if (!biz.exists || !ws.exists) throw new HttpsError("not-found", "Business not found.");
 
   const today = localToday(new Date(), ws.data()!.timezone);
   const from = addDays(today, -(WINDOW_DAYS - 1));
-  const [posts, promotions, leads, sales, costs] = await Promise.all(
-    (["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => loadWindow(db, workspaceId, businessId, c, from, today))
-  );
+  const [[posts, promotions, leads, sales, costs], fxSnap, procSnap] = await Promise.all([
+    Promise.all((["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => loadWindow(db, workspaceId, businessId, c, from, today))),
+    db.doc("config/fx").get(),
+    db.collection(`workspaces/${workspaceId}/connections`).where("status", "==", "connected").get(),
+  ]);
 
   // Safety net: check for recent recommendation (<30 min), zero data, or no new data since last recommendation
   if (!overrideSafetyNet) {
@@ -149,10 +153,12 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
 
   try {
     const b = biz.data()!;
-    const [fxSnap, procSnap] = await Promise.all([
-      db.doc("config/fx").get(),
-      db.collection(`workspaces/${workspaceId}/connections`).where("status", "==", "connected").get(),
-    ]);
+    const staleCutoff = Date.now() - 48 * 3600 * 1000;
+    const staleSources = procSnap.docs.filter((d) => {
+      const t = d.data().lastSyncedAt;
+      const ms = t?.toMillis ? t.toMillis() : t ? new Date(t).getTime() : 0;
+      return ms < staleCutoff && !["manual", "csv"].includes(String(d.data().provider));
+    }).map((d) => String(d.data().provider));
     const processorConnected = procSnap.docs.some((d) => ["stripe", "paypal"].includes(String(d.data().provider)));
     const rec = runEngine({
       records: {
@@ -162,6 +168,7 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
       today,
       fx: fxSnap.exists ? (fxSnap.data() as FxRates) : null,
       processorConnected,
+      staleSources,
     });
     const dropped = posts.dropped + promotions.dropped + leads.dropped + sales.dropped + costs.dropped;
     if (dropped > 0) rec.evidence.warnings.push(`${dropped} record(s) had invalid values and were ignored.`);
@@ -169,7 +176,7 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
     // Optional AI phrasing. Never blocks or fails the recommendation; rejected output is dropped.
     let ai = null;
     try {
-      ai = await explainWithAI(rec);
+      if (rec.category !== "measurement") ai = await explainWithAI(rec);
     } catch (aiErr) {
       logger.warn("explainWithAI caught non-fatal error", { err: String(aiErr) });
     }

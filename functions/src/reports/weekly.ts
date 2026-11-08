@@ -2,24 +2,22 @@ import { FieldValue, Timestamp, getFirestore, type Firestore } from "firebase-ad
 import { getAuth } from "firebase-admin/auth";
 import { logger } from "firebase-functions/v2";
 import { onSchedule } from "firebase-functions/v2/scheduler";
-import { recordSchemas, type RecordCollection } from "../shared/records";
+import type { RecordCollection } from "../shared/records";
 import { getPlan } from "../shared/plans";
 import { enqueueMail, weeklyEmail } from "../notify/mail";
 import { addNotification } from "../notify/inapp";
 import { localToday, periodIds } from "../recommendations/usage";
+import { loadWindow } from "../recommendations/generate";
 import { buildWeeklyReport, type RecEvent } from "./buildReport";
 import { addDays, nextWeeklyRun } from "./time";
 import type { DecisionForReview } from "../decisions/sufficiency";
 
 const MAX_ATTEMPTS = 3;
-const MAX_DOCS = 2000;
 
-async function loadRecords(db: Firestore, wid: string, bid: string, coll: RecordCollection) {
-  const snap = await db.collection(`workspaces/${wid}/${coll}`).where("businessId", "==", bid).limit(MAX_DOCS).get();
-  return snap.docs.flatMap((d) => {
-    const p = (recordSchemas[coll] as typeof recordSchemas.posts).safeParse(d.data());
-    return p.success ? [{ ...p.data, id: d.id }] : [];
-  });
+/** Dated window with pagination (same loader as recommendations), 90 days back so reviews have a baseline. */
+async function loadRecords(db: Firestore, wid: string, bid: string, coll: RecordCollection, today: string) {
+  const { rows } = await loadWindow(db, wid, bid, coll, addDays(today, -90), today);
+  return rows;
 }
 
 const dateOf = (t: unknown, tz: string) => (t instanceof Timestamp ? localToday(t.toDate(), tz) : "1970-01-01");
@@ -49,7 +47,7 @@ export async function runWeeklyForWorkspace(db: Firestore, wid: string, now = ne
   const prefs = (userSnap.data()?.notificationPrefs ?? {}) as { weeklyEmail?: boolean; weeklyStatusOnly?: boolean };
 
   const [posts, promotions, leads, sales, costs] = await Promise.all(
-    (["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => loadRecords(db, wid, bid, c)),
+    (["posts", "promotions", "leads", "sales", "costs"] as const).map((c) => loadRecords(db, wid, bid, c, today)),
   );
   const recSnap = await db.collection(`workspaces/${wid}/recommendations`).where("businessId", "==", bid).limit(500).get();
   const evSnap = await db.collection(`workspaces/${wid}/recommendationEvents`).orderBy("createdAt", "desc").limit(500).get();

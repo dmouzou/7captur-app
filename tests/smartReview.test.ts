@@ -228,3 +228,24 @@ describe("Product Copy Invariant", () => {
     }
   });
 });
+
+describe("REVIEW-01: suggested outcome compares return after spend", () => {
+  const dec = { id: "d", reviewOn: "2026-10-15", evidenceUsed: { windowStart: "2026-09-01", windowEnd: "2026-09-15" } } as never;
+  const mk = (baseSpend: number, newSpend: number) => ({
+    posts: [], leads: [], costs: [],
+    promotions: [
+      { startDate: "2026-09-05", spend: baseSpend, currency: "USD" },
+      { startDate: "2026-09-25", spend: newSpend, currency: "USD" },
+    ],
+    sales: [
+      { date: "2026-09-05", amount: 1000, currency: "USD", status: "confirmed" },
+      { date: "2026-09-25", amount: 1200, currency: "USD", status: "confirmed" },
+    ],
+  });
+  it("more revenue bought with more spend is worse, not better", () => {
+    expect(computeSuggestedOutcome(dec, mk(100, 600) as never, "USD", "2026-09-15", "2026-09-29")).toBe("worse");
+  });
+  it("more revenue at the same spend is better", () => {
+    expect(computeSuggestedOutcome(dec, mk(100, 100) as never, "USD", "2026-09-15", "2026-09-29")).toBe("better");
+  });
+});
