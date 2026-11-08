@@ -82,7 +82,7 @@ export function AssistantPanel({
       {
         id: "initial",
         sender: "assistant",
-        text: `Hi, I'm the 7Captur assistant for ${ws.workspaceName}. Ask me about your data, your evidence level, your recommendations or how to add data. Answers about your numbers and about 7Captur are fixed and free. Open-ended questions are written by AI and use 1 AI credit, and I will always tell you before that happens.`,
+        text: `Hi, I'm Captain, your 7Captur guide for ${ws.workspaceName}. Ask me about your data, your evidence level, your recommendations or how to add data. Answers about your numbers and about 7Captur are fixed and free. Open-ended questions are written by AI and use 1 AI credit, and I will always tell you before that happens.`,
         context: "Workspace opened",
         timestamp: Date.now(),
         source: "engine",
@@ -162,7 +162,7 @@ export function AssistantPanel({
         type="button"
         className="chat-fab-button"
         onClick={onToggle}
-        aria-label={isOpen ? "Close Assistant" : "Ask 7Captur Assistant"}
+        aria-label={isOpen ? "Close Captain" : "Ask Captain"}
         style={{
           position: "fixed",
           bottom: 24,
@@ -185,7 +185,7 @@ export function AssistantPanel({
         }}
       >
         <Icon name="help" size={19} />
-        <span>{isOpen ? "Close Assistant" : "Ask 7Captur"}</span>
+        <span>{isOpen ? "Close Captain" : "Ask Captain"}</span>
       </button>
 
       {/* Side Slide-Over Panel */}
@@ -206,7 +206,7 @@ export function AssistantPanel({
             display: "flex",
             flexDirection: "column",
           }}
-          aria-label="7Captur Assistant"
+          aria-label="Captain"
         >
           {/* Panel Header */}
           <div
@@ -222,7 +222,7 @@ export function AssistantPanel({
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 14.5, fontWeight: 600, color: "var(--ink)" }}>
-                  7Captur Assistant
+                  Captain
                 </span>
                 <span className="badge badge-primary" style={{ fontSize: 10 }} title="Open-ended questions are answered by AI and use 1 AI credit">
                   {left} of {monthly} AI credits left
@@ -237,7 +237,7 @@ export function AssistantPanel({
               type="button"
               className="btn-secondary"
               onClick={onClose}
-              aria-label="Close assistant"
+              aria-label="Close Captain"
               style={{
                 width: 32,
                 height: 32,

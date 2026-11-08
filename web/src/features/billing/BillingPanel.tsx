@@ -259,7 +259,7 @@ export function BillingPanel() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
           <Meter label="Recommendations this week" used={usage.week} limit={plan.recommendations.weekly} note="Resets every Monday" />
           <Meter label="Imports this month" used={usage.imports} limit={plan.importsPerMonth} note="Resets on the 1st" />
-          <Meter label="AI follow-up questions this month" used={usage.ai} limit={plan.aiFollowUps.monthly} note="Used when you ask the assistant a free-form question" />
+          <Meter label="AI follow-up questions this month" used={usage.ai} limit={plan.aiFollowUps.monthly} note="Used when you ask Captain a free-form question" />
         </div>
         <p className="muted" style={{ margin: "14px 0 0", fontSize: 13 }}>
           Up to {plan.maxConnections} connected platforms per workspace and {plan.maxBusinesses} business workspace{plan.maxBusinesses === 1 ? "" : "s"}. Allowances are shared by all your workspaces and reset in {ws.accountTimezone} time.

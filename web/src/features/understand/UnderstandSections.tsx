@@ -165,7 +165,7 @@ export function UnderstandHero({ busy, onGenerate, onAsk }: { busy: boolean; onG
             <Icon name="sparkle" size={17} />{busy ? "Working it out…" : "Generate a recommendation"}
           </button>
           <button type="button" className="btn-secondary" onClick={onAsk} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 16px", fontSize: 13.5, borderRadius: 10, margin: 0 }}>
-            <Icon name="help" size={17} />Ask 7Captur
+            <Icon name="help" size={17} />Ask Captain
           </button>
         </div>
       </div>
