@@ -123,3 +123,16 @@ describe("xlsx cells", () => {
     expect(a.valid[0].record).toMatchObject({ date: "2026-10-05", amount: 1234.5 });
   });
 });
+
+describe("order number is the identity of an order", () => {
+  it("two rows with the same order number are one order even when the amount was edited", () => {
+    const { a } = run("date,amount,order_number\n2026-10-01,100,#1001\n2026-10-01,120,1001\n2026-10-02,50,1002\n");
+    expect(a.valid).toHaveLength(2);
+    expect(a.duplicatesInFile).toHaveLength(1);
+  });
+  it("the same order number gives the same record key across files", () => {
+    const x = run("date,amount,order_number\n2026-10-01,100,#1001\n").a.valid[0].key;
+    const y = run("date,amount,order_number\n2026-10-03,90,1001\n").a.valid[0].key;
+    expect(x).toBe(y);
+  });
+});

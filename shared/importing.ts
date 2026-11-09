@@ -510,7 +510,9 @@ export function analyzeRows(
     const r = normalizeRow(coll, row, mapping, opts);
     r.defaultsApplied.forEach((d) => defaults.add(d));
     if (!r.record) { a.invalid.push({ line, errors: r.errors }); return; }
-    const key = canonicalJson(r.record);
+    // An order number identifies an order: the same number twice is one order even when other columns were edited.
+    const on = coll === "sales" ? String((r.record as Record<string, unknown>).orderNumber ?? "").trim().toLowerCase().replace(/^#/, "") : "";
+    const key = on ? `order:${on}` : canonicalJson(r.record);
     const seen = first.get(key);
     if (seen !== undefined) { a.duplicatesInFile.push({ line, firstLine: seen }); return; }
     first.set(key, line);

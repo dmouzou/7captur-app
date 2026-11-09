@@ -65,7 +65,26 @@ export function computeFinance(input: EngineInput, n: ReturnType<typeof import("
   const attributionCoverage = Math.min(share, orderShare);
 
   /* ---- financial components ---- */
-  const feesVisible = Boolean(input.processorConnected) || known.fees;
+  // Entered fees count as visible only when they cover most orders. A recurring fee (percentage, per order, monthly) that
+  // starts late in the window says nothing about the orders before it. A one-off amount is read as the period's total.
+  const recurringFee = (c: (typeof costsIn)[number]) => c.kind === "percentage" || c.scope === "per_order" || c.scope === "per_unit" || c.frequency === "monthly" || c.frequency === "yearly";
+  const feeRows = costsIn.filter((c) => c.category === "fees" && c.effectiveDate <= today);
+  const feeCovered = counted.filter((s) => feeRows.some((c) => !recurringFee(c) || (c.effectiveDate <= s.date && (!c.endDate || c.endDate >= s.date)))).length;
+  const feeCoverage = counted.length > 0 ? feeCovered / counted.length : feeRows.length > 0 ? 1 : 0;
+  const feesEntered = known.fees && feeCoverage >= 0.8;
+  if (known.fees && !feesEntered && !input.processorConnected) warnings.push(`Payment fees are entered but cover only ${Math.round(feeCoverage * 100)}% of orders (fees must be recurring and start before the orders). They are treated as not visible.`);
+  const feesVisible = Boolean(input.processorConnected) || feesEntered;
+
+  // Several percentage rows of one cost category that overlap are added together. That is right for separate fees and
+  // wrong for a rate that changed, and the records cannot tell which, so the owner is asked.
+  const pctRows = costsIn.filter((c) => c.kind === "percentage" && costActive(c));
+  const stacked = new Set<string>();
+  for (const a of pctRows) for (const b of pctRows) {
+    if (a === b || a.category !== b.category) continue;
+    const aEnd = a.endDate ?? today, bEnd = b.endDate ?? today;
+    if (a.effectiveDate <= bEnd && b.effectiveDate <= aEnd) stacked.add(a.category);
+  }
+  if (stacked.size > 0) warnings.push(`More than one percentage ${[...stacked].join(" and ")} entry applies to the same orders, so they are added together. If a rate changed, set an end date on the old entry.`);
   const deductions = total.fees + total.returns + total.disputes;
   const keptAttributed = attributedNet - deductions * share;
   const attributedRoas = spend > 0 && confirmed.length > 0 ? attributedNet / spend : null;

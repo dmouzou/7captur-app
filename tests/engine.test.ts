@@ -407,3 +407,25 @@ describe("freshness gate", () => {
     expect(rec.action).not.toMatch(/^Increase/);
   });
 });
+
+describe("fee coverage and stacked percentage rows", () => {
+  const noFees = () => golden(false);
+  it("a fee that starts late in the window does not make fees visible", () => {
+    const records = { ...noFees(), costs: [...noFees().costs, cost("fee-late", { category: "fees", kind: "percentage", amount: 3, effectiveDate: "2026-10-28" })] };
+    const r = runEngine({ records: records as never, business: biz, today });
+    expect(r.evidence.warnings.join(" ")).toMatch(/cover only/);
+    expect(r.financials?.feesVisible).toBe(false);
+  });
+  it("a recurring fee from before the window counts as visible", () => {
+    const records = { ...noFees(), costs: [...noFees().costs, cost("fee-ok", { category: "fees", kind: "percentage", amount: 3, effectiveDate: "2026-09-01" })] };
+    const r = runEngine({ records: records as never, business: biz, today });
+    expect(r.financials?.feesVisible).toBe(true);
+  });
+  it("overlapping percentage rows of one category are flagged", () => {
+    const records = { ...noFees(), costs: [...noFees().costs,
+      cost("f1", { category: "fees", kind: "percentage", amount: 3, effectiveDate: "2026-09-01" }),
+      cost("f2", { category: "fees", kind: "percentage", amount: 2, effectiveDate: "2026-09-15" })] };
+    const r = runEngine({ records: records as never, business: biz, today });
+    expect(r.evidence.warnings.join(" ")).toMatch(/added together/);
+  });
+});
