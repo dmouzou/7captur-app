@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NoDataDialog } from "./NoDataDialog";
 import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../../services/firebase";
@@ -862,7 +863,8 @@ export function RecommendationsPanel({
       </div>
 
       {/* Safety Net Confirmation Modal (Spec Item 2) */}
-      {safetyModal && (
+      {safetyModal?.reason === "no_records" && <NoDataDialog onNavigate={onNavigate} onClose={() => setSafetyModal(null)} />}
+      {safetyModal && safetyModal.reason !== "no_records" && (
         <div
           role="dialog"
           aria-modal="true"
@@ -915,8 +917,6 @@ export function RecommendationsPanel({
                 <h3 style={{ margin: 0, fontSize: "1.2rem", color: "var(--ink)" }}>
                   {safetyModal.reason === "recent_recommendation"
                     ? "Recent Recommendation Active"
-                    : safetyModal.reason === "no_records"
-                    ? "No Recent Records Found"
                     : "No New Data Since Last Run"}
                 </h3>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>

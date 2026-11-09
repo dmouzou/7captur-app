@@ -8,6 +8,7 @@ import { runEngine, ENGINE_VERSION, addDays, WINDOW_DAYS } from "./engine";
 import type { FxRates } from "../shared/fx";
 import { explainWithAI } from "./explain";
 import { ANTHROPIC_API_KEY } from "../config";
+import { commercialRecordCount, NO_RECORDS_MESSAGE } from "./preflight";
 import { confirmReservation, localToday, releaseReservation, reserveRecommendation } from "./usage";
 import { ensureAccountForWorkspace } from "../accounts/account";
 import { addNotification } from "../notify/inapp";
@@ -76,6 +77,11 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
     db.collection(`workspaces/${workspaceId}/connections`).where("status", "==", "connected").get(),
   ]);
 
+  // Hard rule, not overridable: no commercial records in the window means no recommendation and no credit used.
+  if (commercialRecordCount({ posts: posts.rows, promotions: promotions.rows, leads: leads.rows, sales: sales.rows }) === 0) {
+    throw new HttpsError("failed-precondition", NO_RECORDS_MESSAGE, { reason: "no_records" });
+  }
+
   // Safety net: check for recent recommendation (<30 min), zero data, or no new data since last recommendation
   if (!overrideSafetyNet) {
     const lastRecSnap = await db.collection(`workspaces/${workspaceId}/recommendations`)
@@ -100,15 +106,6 @@ export const generateRecommendation = onCall({ secrets: [ANTHROPIC_API_KEY], tim
           );
         }
       }
-    }
-
-    const totalRecords = posts.rows.length + promotions.rows.length + leads.rows.length + sales.rows.length + costs.rows.length;
-    if (totalRecords === 0) {
-      throw new HttpsError(
-        "failed-precondition",
-        "No marketing, enquiry, sales, or cost records were found in the 28-day window. Generating without data will lack actionable calibration.",
-        { reason: "no_records" }
-      );
     }
 
     if (lastRecTime !== null) {

@@ -1,4 +1,5 @@
 import { RecommendationsPanel } from "../recommendations/RecommendationsPanel";
+import { NoDataDialog } from "../recommendations/NoDataDialog";
 import { useEffect, useMemo, useState } from "react";
 import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -211,7 +212,8 @@ export function UnderstandPanel({ onNavigate, onOpenChat, onReportIssue }: Under
       <RecommendationsPanel embedded onNavigate={(t) => onNavigate(t)} onReportIssue={onReportIssue} />
 
       {/* Safety Net Advisory Modal */}
-      {safetyModal && (
+      {safetyModal?.reason === "no_records" && <NoDataDialog onNavigate={onNavigate} onClose={() => setSafetyModal(null)} />}
+      {safetyModal && safetyModal.reason !== "no_records" && (
         <div
           role="dialog"
           aria-modal="true"
